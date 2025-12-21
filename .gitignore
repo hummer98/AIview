@@ -1,0 +1,50 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Xcode project files (keep shared schemes)
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+
+# Swift Package Manager
+.build/
+Packages/
+Package.resolved
+*.xcworkspace/xcshareddata/swiftpm/
+
+# CocoaPods (if used)
+Pods/
+*.xcworkspace
+
+# Carthage (if used)
+Carthage/Build/
+Carthage/Checkouts/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Thumbnails
+Thumbs.db
+
+# IDE
+*.swp
+*.swo
+*~
+
+# Kiro runtime (ephemeral state)
+.kiro/runtime/
+
+# Kiro logs (optional: remove this line if you want to keep logs)
+.kiro/specs/*/logs/
+
+# Environment and secrets
+.env
+.env.local
+*.pem
+*.key
