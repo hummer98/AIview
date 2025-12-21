@@ -1,0 +1,148 @@
+version: '3'
+
+vars:
+  PROJECT: AIview.xcodeproj
+  SCHEME: AIview
+  BUILD_DIR: build
+  ARCHIVE_PATH: build/AIview.xcarchive
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  dev:
+    desc: Build and run development version
+    cmds:
+      - task: build
+      - open "{{.BUILD_DIR}}/Build/Products/Debug/AIview.app"
+
+  build:
+    desc: Build debug version
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -configuration Debug -derivedDataPath {{.BUILD_DIR}} build
+
+  build:release:
+    desc: Build release version
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -configuration Release -derivedDataPath {{.BUILD_DIR}} build
+
+  test:
+    desc: Run all tests (unit + UI)
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' test
+
+  test:unit:
+    desc: Run unit tests only
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewTests test
+
+  test:ui:
+    desc: Run UI tests only
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests test
+
+  test:perf:
+    desc: Run scroll performance tests (200 images)
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests/ScrollPerformanceUITests test
+
+  test:perf:nocache:
+    desc: Run scroll performance test without cache
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests/ScrollPerformanceUITests/testScrollPerformance_withoutCache test
+
+  test:perf:cache:
+    desc: Run scroll performance test with cache
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests/ScrollPerformanceUITests/testScrollPerformance_withCache test
+
+  test:perf:memory:
+    desc: Run memory usage test during image load
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests/ScrollPerformanceUITests/testMemoryUsage_duringImageLoad test
+
+  test:perf:keynav:
+    desc: Run key navigation responsiveness test
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests/ScrollPerformanceUITests/testKeyNavigationResponsiveness test
+
+  test:perf:keynav:loading:
+    desc: Run key navigation test during thumbnail generation
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests/ScrollPerformanceUITests/testKeyNavigationDuringThumbnailGeneration test
+
+  test:coverage:
+    desc: Run tests with coverage
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -enableCodeCoverage YES test
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} clean
+      - rm -rf {{.BUILD_DIR}}
+
+  open:
+    desc: Open project in Xcode
+    cmds:
+      - open {{.PROJECT}}
+
+  lint:
+    desc: Run SwiftLint
+    cmds:
+      - swiftlint lint --path AIview
+
+  lint:fix:
+    desc: Run SwiftLint with auto-fix
+    cmds:
+      - swiftlint lint --fix --path AIview
+
+  format:
+    desc: Format code with SwiftFormat
+    cmds:
+      - swiftformat AIview AIviewTests AIviewUITests
+
+  format:check:
+    desc: Check formatting without changes
+    cmds:
+      - swiftformat --lint AIview AIviewTests AIviewUITests
+
+  archive:
+    desc: Create release archive
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -configuration Release -archivePath {{.ARCHIVE_PATH}} archive
+
+  log:
+    desc: Stream all app logs (Ctrl+C to stop)
+    cmds:
+      - log stream --predicate 'subsystem == "com.aiview.app"' --level debug --style compact
+
+  log:error:
+    desc: Stream error logs only
+    cmds:
+      - log stream --predicate 'subsystem == "com.aiview.app"' --level error --style compact
+
+  log:image:
+    desc: Stream ImageLoader logs
+    cmds:
+      - log stream --predicate 'subsystem == "com.aiview.app" AND category == "ImageLoader"' --level debug --style compact
+
+  log:cache:
+    desc: Stream CacheManager logs
+    cmds:
+      - log stream --predicate 'subsystem == "com.aiview.app" AND category == "CacheManager"' --level debug --style compact
+
+  doctor:
+    desc: Check if all required tools are installed
+    cmds:
+      - echo "Checking required tools..."
+      - echo ""
+      - echo "=== Required ==="
+      - command -v xcodebuild >/dev/null && echo "✓ xcodebuild $(xcodebuild -version | head -1)" || echo "✗ xcodebuild not found (install Xcode)"
+      - echo ""
+      - echo "=== Optional (for lint/format) ==="
+      - command -v swiftlint >/dev/null && echo "✓ swiftlint $(swiftlint version)" || echo "✗ swiftlint not found (brew install swiftlint)"
+      - command -v swiftformat >/dev/null && echo "✓ swiftformat $(swiftformat --version)" || echo "✗ swiftformat not found (brew install swiftformat)"
+    silent: true
