@@ -1,0 +1,38 @@
+import Foundation
+
+/// アプリケーション全体の状態を管理
+/// メニューコマンドとビュー間の橋渡しを担当
+/// Requirements: 1.1, 1.4, 1.5
+@MainActor
+@Observable
+final class AppState {
+    /// フォルダ選択ダイアログを表示するフラグ
+    var showFolderPicker = false
+
+    /// 最近使ったフォルダから開くURL（nilでない場合、ビューで処理される）
+    var openRecentFolderURL: URL?
+
+    /// 最近使ったフォルダストア
+    private let recentFoldersStore = RecentFoldersStore()
+
+    /// 最近使ったフォルダ一覧を取得
+    var recentFolders: [URL] {
+        recentFoldersStore.getRecentFolders()
+    }
+
+    /// 履歴をクリア
+    func clearRecentFolders() {
+        recentFoldersStore.clearRecentFolders()
+    }
+
+    /// 最近使ったフォルダを開く（Security-Scoped Bookmark対応）
+    func openRecentFolder(_ url: URL) {
+        if let bookmarkData = recentFoldersStore.getBookmarkData(for: url),
+           let restoredURL = recentFoldersStore.restoreURL(from: bookmarkData) {
+            _ = recentFoldersStore.startAccessingFolder(restoredURL)
+            openRecentFolderURL = restoredURL
+        } else {
+            openRecentFolderURL = url
+        }
+    }
+}
