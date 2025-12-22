@@ -1,6 +1,34 @@
 import SwiftUI
 import AppKit
 
+/// サムネイルのロード状態
+enum ThumbnailLoadState {
+    case loading
+    case loaded(NSImage)
+    case failed(retryCount: Int)
+
+    var image: NSImage? {
+        if case .loaded(let image) = self {
+            return image
+        }
+        return nil
+    }
+
+    var isLoading: Bool {
+        if case .loading = self {
+            return true
+        }
+        return false
+    }
+
+    var isFailed: Bool {
+        if case .failed = self {
+            return true
+        }
+        return false
+    }
+}
+
 /// サムネイルカルーセル
 /// NSCollectionViewベースの仮想化スクロール
 /// Requirements: 2.2-2.5, 9.1-9.3
@@ -11,7 +39,9 @@ struct ThumbnailCarousel: View {
     let thumbnailCacheManager: ThumbnailCacheManager
     var favorites: [String: Int] = [:]
 
-    @State private var thumbnails: [URL: NSImage] = [:]
+    @State private var thumbnailStates: [URL: ThumbnailLoadState] = [:]
+
+    private static let maxRetryCount = 3
 
     private let thumbnailSize: CGFloat = 80
     private let spacing: CGFloat = 4
@@ -23,7 +53,7 @@ struct ThumbnailCarousel: View {
                     ForEach(Array(imageURLs.enumerated()), id: \.offset) { index, url in
                         ThumbnailItemView(
                             url: url,
-                            thumbnail: thumbnails[url],
+                            loadState: thumbnailStates[url],
                             isSelected: index == currentIndex,
                             size: thumbnailSize,
                             favoriteLevel: favorites[url.lastPathComponent] ?? 0
@@ -50,33 +80,54 @@ struct ThumbnailCarousel: View {
     }
 
     private func loadThumbnail(for url: URL) {
-        guard thumbnails[url] == nil else { return }
+        // 既にロード済みまたはロード中の場合はスキップ
+        if let state = thumbnailStates[url] {
+            if case .loaded = state { return }
+            if case .loading = state { return }
+        }
 
         let size = CGSize(width: thumbnailSize, height: thumbnailSize)
 
         // まずメモリキャッシュをチェック（同期的）
         if let cached = thumbnailCacheManager.getCachedThumbnail(for: url, size: size) {
-            thumbnails[url] = cached
+            thumbnailStates[url] = .loaded(cached)
             return
         }
 
+        // ローディング状態に設定
+        thumbnailStates[url] = .loading
+
         // 非同期でディスクキャッシュとサムネイル生成
         Task(priority: .background) {
-            // ディスクキャッシュをチェック
-            if let cached = await thumbnailCacheManager.getDiskCachedThumbnail(for: url, size: size) {
-                // メモリキャッシュに追加済み（getDiskCachedThumbnail内で）
-                await MainActor.run { thumbnails[url] = cached }
-                return
-            }
+            await loadThumbnailWithRetry(for: url, size: size, retryCount: 0)
+        }
+    }
 
-            // キャッシュミス: サムネイルを生成
-            if let thumbnail = await Self.generateThumbnail(for: url, size: thumbnailSize) {
-                // メモリキャッシュに保存
-                thumbnailCacheManager.cacheThumbnail(thumbnail, for: url, size: size)
-                // ディスクキャッシュに保存
-                await thumbnailCacheManager.storeThumbnailToDisk(thumbnail, for: url, size: size)
-                // UIを更新
-                await MainActor.run { thumbnails[url] = thumbnail }
+    private func loadThumbnailWithRetry(for url: URL, size: CGSize, retryCount: Int) async {
+        // ディスクキャッシュをチェック
+        if let cached = await thumbnailCacheManager.getDiskCachedThumbnail(for: url, size: size) {
+            await MainActor.run { thumbnailStates[url] = .loaded(cached) }
+            return
+        }
+
+        // キャッシュミス: サムネイルを生成
+        if let thumbnail = await Self.generateThumbnail(for: url, size: thumbnailSize) {
+            // メモリキャッシュに保存
+            thumbnailCacheManager.cacheThumbnail(thumbnail, for: url, size: size)
+            // ディスクキャッシュに保存
+            await thumbnailCacheManager.storeThumbnailToDisk(thumbnail, for: url, size: size)
+            // UIを更新
+            await MainActor.run { thumbnailStates[url] = .loaded(thumbnail) }
+        } else {
+            // 生成失敗: リトライまたはエラー状態に設定
+            let nextRetryCount = retryCount + 1
+            if nextRetryCount < Self.maxRetryCount {
+                // 少し待ってからリトライ（exponential backoff）
+                try? await Task.sleep(nanoseconds: UInt64(100_000_000 * (1 << retryCount))) // 100ms, 200ms, 400ms
+                await loadThumbnailWithRetry(for: url, size: size, retryCount: nextRetryCount)
+            } else {
+                // 最大リトライ回数に達した: エラー状態に設定
+                await MainActor.run { thumbnailStates[url] = .failed(retryCount: nextRetryCount) }
             }
         }
     }
@@ -103,20 +154,29 @@ struct ThumbnailCarousel: View {
 /// サムネイルアイテムビュー
 struct ThumbnailItemView: View {
     let url: URL
-    let thumbnail: NSImage?
+    let loadState: ThumbnailLoadState?
     let isSelected: Bool
     let size: CGFloat
     var favoriteLevel: Int = 0
 
     var body: some View {
         ZStack {
-            if let thumbnail = thumbnail {
-                Image(nsImage: thumbnail)
+            if let image = loadState?.image {
+                Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: size, height: size)
                     .clipped()
+            } else if loadState?.isFailed == true {
+                // エラー状態: アイコン表示
+                Rectangle()
+                    .fill(Color.red.opacity(0.2))
+                    .frame(width: size, height: size)
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.red.opacity(0.7))
+                    .font(.system(size: size * 0.3))
             } else {
+                // ローディング状態（nilまたは.loading）
                 Rectangle()
                     .fill(Color.gray.opacity(0.3))
                     .frame(width: size, height: size)
