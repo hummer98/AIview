@@ -15,14 +15,18 @@ final class AppState {
     /// 最近使ったフォルダストア
     private let recentFoldersStore = RecentFoldersStore()
 
-    /// 最近使ったフォルダ一覧を取得
-    var recentFolders: [URL] {
-        recentFoldersStore.getRecentFolders()
+    /// 最近使ったフォルダ一覧のキャッシュ（@Observable で変更検知）
+    private(set) var recentFolders: [URL] = []
+
+    /// 履歴を再読み込み
+    func refreshRecentFolders() {
+        recentFolders = recentFoldersStore.getRecentFolders()
     }
 
     /// 履歴をクリア
     func clearRecentFolders() {
         recentFoldersStore.clearRecentFolders()
+        refreshRecentFolders()
     }
 
     /// 最近使ったフォルダを開く（Security-Scoped Bookmark対応）

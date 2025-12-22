@@ -59,10 +59,13 @@ struct MainWindowView: View {
             if let url = newValue {
                 Task {
                     await viewModel.openFolder(url)
+                    // 履歴リストを更新（先頭に移動するため）
+                    appState?.refreshRecentFolders()
                 }
                 appState?.openRecentFolderURL = nil
             }
         }
+        .navigationTitle(viewModel.currentFolderURL?.path ?? "AIview")
         .onAppear {
             // UIテスト用の環境変数を確認
             if let folderPath = ProcessInfo.processInfo.environment["AIVIEW_TEST_FOLDER"] {
@@ -243,6 +246,8 @@ struct MainWindowView: View {
             if let url = urls.first {
                 Task {
                     await viewModel.openFolder(url)
+                    // 履歴リストを更新
+                    appState?.refreshRecentFolders()
                 }
             }
         case .failure(let error):

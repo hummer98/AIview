@@ -16,14 +16,16 @@ struct AIviewApp: App {
             ContentView()
                 .environment(appState)
                 .onAppear {
+                    // 起動時に履歴を読み込み
+                    appState.refreshRecentFolders()
+
                     if isUITestMode {
                         // UIテスト時はウィンドウを画面中央に配置
                         centerWindow()
                     }
                 }
         }
-        .windowStyle(.hiddenTitleBar)
-        .windowToolbarStyle(.unified(showsTitle: false))
+        .windowToolbarStyle(.unified(showsTitle: true))
         .commands {
             AppCommands(appState: appState)
         }
