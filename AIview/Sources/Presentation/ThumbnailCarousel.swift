@@ -1,5 +1,8 @@
 import SwiftUI
 import AppKit
+import os
+
+private let logger = Logger(subsystem: "com.aiview", category: "ThumbnailCarousel")
 
 /// サムネイルのロード状態
 enum ThumbnailLoadState {
@@ -43,6 +46,14 @@ struct ThumbnailCarousel: View {
 
     private static let maxRetryCount = 3
 
+    /// サムネイル生成用の専用DispatchQueue
+    /// cooperative thread poolをブロックしないよう、ブロッキングI/Oはこのキューで実行
+    private static let thumbnailQueue = DispatchQueue(
+        label: "com.aiview.thumbnailGeneration",
+        qos: .utility,
+        attributes: .concurrent
+    )
+
     private let thumbnailSize: CGFloat = 80
     private let spacing: CGFloat = 4
 
@@ -80,21 +91,35 @@ struct ThumbnailCarousel: View {
     }
 
     private func loadThumbnail(for url: URL) {
+        let filename = url.lastPathComponent
+
         // 既にロード済みまたはロード中の場合はスキップ
         if let state = thumbnailStates[url] {
-            if case .loaded = state { return }
-            if case .loading = state { return }
+            if case .loaded = state {
+                logger.debug("[\(filename)] skip: already loaded")
+                return
+            }
+            if case .loading = state {
+                logger.debug("[\(filename)] skip: already loading")
+                return
+            }
+            if case .failed = state {
+                logger.debug("[\(filename)] skip: already failed")
+                return
+            }
         }
 
         let size = CGSize(width: thumbnailSize, height: thumbnailSize)
 
         // まずメモリキャッシュをチェック（同期的）
         if let cached = thumbnailCacheManager.getCachedThumbnail(for: url, size: size) {
+            logger.debug("[\(filename)] memory cache hit")
             thumbnailStates[url] = .loaded(cached)
             return
         }
 
         // ローディング状態に設定
+        logger.info("[\(filename)] start loading")
         thumbnailStates[url] = .loading
 
         // 非同期でディスクキャッシュとサムネイル生成
@@ -104,50 +129,104 @@ struct ThumbnailCarousel: View {
     }
 
     private func loadThumbnailWithRetry(for url: URL, size: CGSize, retryCount: Int) async {
+        let filename = url.lastPathComponent
+
+        // Taskがキャンセルされているかチェック
+        if Task.isCancelled {
+            logger.warning("[\(filename)] task cancelled at start (retry: \(retryCount))")
+            await resetLoadingState(for: url)
+            return
+        }
+
         // ディスクキャッシュをチェック
+        logger.debug("[\(filename)] checking disk cache (retry: \(retryCount))")
         if let cached = await thumbnailCacheManager.getDiskCachedThumbnail(for: url, size: size) {
+            logger.debug("[\(filename)] disk cache hit")
             await MainActor.run { thumbnailStates[url] = .loaded(cached) }
             return
         }
 
+        // Taskがキャンセルされているかチェック
+        if Task.isCancelled {
+            logger.warning("[\(filename)] task cancelled after disk cache check")
+            await resetLoadingState(for: url)
+            return
+        }
+
         // キャッシュミス: サムネイルを生成
-        if let thumbnail = await Self.generateThumbnail(for: url, size: thumbnailSize) {
+        logger.debug("[\(filename)] generating thumbnail (retry: \(retryCount))")
+        let startTime = CFAbsoluteTimeGetCurrent()
+        let thumbnail = await Self.generateThumbnail(for: url, size: thumbnailSize)
+        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+
+        if Task.isCancelled {
+            logger.warning("[\(filename)] task cancelled after generate (elapsed: \(elapsed, format: .fixed(precision: 2))s)")
+            await resetLoadingState(for: url)
+            return
+        }
+
+        if let thumbnail = thumbnail {
+            logger.debug("[\(filename)] generated successfully (elapsed: \(elapsed, format: .fixed(precision: 2))s)")
             // メモリキャッシュに保存
             thumbnailCacheManager.cacheThumbnail(thumbnail, for: url, size: size)
             // ディスクキャッシュに保存
             await thumbnailCacheManager.storeThumbnailToDisk(thumbnail, for: url, size: size)
             // UIを更新
             await MainActor.run { thumbnailStates[url] = .loaded(thumbnail) }
+            logger.info("[\(filename)] loaded successfully")
         } else {
             // 生成失敗: リトライまたはエラー状態に設定
             let nextRetryCount = retryCount + 1
+            logger.warning("[\(filename)] generate failed (retry: \(retryCount)/\(Self.maxRetryCount), elapsed: \(elapsed, format: .fixed(precision: 2))s)")
             if nextRetryCount < Self.maxRetryCount {
                 // 少し待ってからリトライ（exponential backoff）
-                try? await Task.sleep(nanoseconds: UInt64(100_000_000 * (1 << retryCount))) // 100ms, 200ms, 400ms
+                let delayMs = 100 * (1 << retryCount)
+                logger.debug("[\(filename)] will retry after \(delayMs)ms")
+                try? await Task.sleep(nanoseconds: UInt64(delayMs * 1_000_000))
                 await loadThumbnailWithRetry(for: url, size: size, retryCount: nextRetryCount)
             } else {
                 // 最大リトライ回数に達した: エラー状態に設定
+                logger.error("[\(filename)] max retries reached, marking as failed")
                 await MainActor.run { thumbnailStates[url] = .failed(retryCount: nextRetryCount) }
             }
         }
     }
 
+    /// キャンセル時に状態をリセット（再度onAppearでロード可能にする）
+    private func resetLoadingState(for url: URL) async {
+        await MainActor.run {
+            // .loading状態の場合のみリセット（.loadedや.failedは保持）
+            if case .loading = thumbnailStates[url] {
+                thumbnailStates[url] = nil
+                logger.debug("[\(url.lastPathComponent)] reset loading state for retry")
+            }
+        }
+    }
+
     static func generateThumbnail(for url: URL, size: CGFloat) async -> NSImage? {
-        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-            return nil
+        // 専用DispatchQueueでブロッキングI/Oを実行し、cooperative thread poolを解放
+        await withCheckedContinuation { continuation in
+            thumbnailQueue.async {
+                guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                let options: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: size * 2, // Retina対応
+                    kCGImageSourceShouldCacheImmediately: true
+                ]
+
+                guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                let result = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                continuation.resume(returning: result)
+            }
         }
-
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: size * 2, // Retina対応
-            kCGImageSourceShouldCacheImmediately: true
-        ]
-
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
-            return nil
-        }
-
-        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 }
 
