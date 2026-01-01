@@ -61,4 +61,5 @@ extension Logger {
     static let folderScanner = Logger(subsystem: subsystem, category: "FolderScanner")
     static let metadata = Logger(subsystem: subsystem, category: "Metadata")
     static let fileSystem = Logger(subsystem: subsystem, category: "FileSystem")
+    static let slideshow = Logger(subsystem: subsystem, category: "Slideshow")
 }

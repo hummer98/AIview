@@ -40,6 +40,11 @@
 		A1000032 /* FavoriteIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000032 /* FavoriteIndicator.swift */; };
 		A1000033 /* FavoritesIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000033 /* FavoritesIntegrationTests.swift */; };
 		A1000034 /* FavoritesE2ETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000034 /* FavoritesE2ETests.swift */; };
+		A1000035 /* SlideshowTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000035 /* SlideshowTimer.swift */; };
+		A1000036 /* SlideshowTimerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000036 /* SlideshowTimerTests.swift */; };
+		A1000037 /* ImageBrowserViewModelSlideshowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000037 /* ImageBrowserViewModelSlideshowTests.swift */; };
+		A1000038 /* ToastOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000038 /* ToastOverlay.swift */; };
+		A1000039 /* SlideshowSettingsDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000039 /* SlideshowSettingsDialog.swift */; };
 		A1000040 /* ScrollPerformanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000040 /* ScrollPerformanceUITests.swift */; };
 		A1000041 /* DummyImageGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000041 /* DummyImageGenerator.swift */; };
 /* End PBXBuildFile section */
@@ -98,6 +103,11 @@
 		A2000032 /* FavoriteIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteIndicator.swift; sourceTree = "<group>"; };
 		A2000033 /* FavoritesIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesIntegrationTests.swift; sourceTree = "<group>"; };
 		A2000034 /* FavoritesE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesE2ETests.swift; sourceTree = "<group>"; };
+		A2000035 /* SlideshowTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowTimer.swift; sourceTree = "<group>"; };
+		A2000036 /* SlideshowTimerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowTimerTests.swift; sourceTree = "<group>"; };
+		A2000037 /* ImageBrowserViewModelSlideshowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserViewModelSlideshowTests.swift; sourceTree = "<group>"; };
+		A2000038 /* ToastOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastOverlay.swift; sourceTree = "<group>"; };
+		A2000039 /* SlideshowSettingsDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowSettingsDialog.swift; sourceTree = "<group>"; };
 		A2000040 /* ScrollPerformanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollPerformanceUITests.swift; sourceTree = "<group>"; };
 		A2000041 /* DummyImageGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DummyImageGenerator.swift; sourceTree = "<group>"; };
 		A5000005 /* AIviewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIviewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -191,6 +201,7 @@
 				A2000027 /* ThumbnailCacheManager.swift */,
 				A2000010 /* MetadataExtractor.swift */,
 				A2000011 /* ImageBrowserViewModel.swift */,
+				A2000035 /* SlideshowTimer.swift */,
 			);
 			path = Domain;
 			sourceTree = "<group>";
@@ -205,6 +216,8 @@
 				A2000016 /* PrivacyOverlay.swift */,
 				A2000029 /* SettingsView.swift */,
 				A2000032 /* FavoriteIndicator.swift */,
+				A2000038 /* ToastOverlay.swift */,
+				A2000039 /* SlideshowSettingsDialog.swift */,
 			);
 			path = Presentation;
 			sourceTree = "<group>";
@@ -222,6 +235,8 @@
 				A2000031 /* FavoritesStoreTests.swift */,
 				A2000033 /* FavoritesIntegrationTests.swift */,
 				A2000034 /* FavoritesE2ETests.swift */,
+				A2000036 /* SlideshowTimerTests.swift */,
+				A2000037 /* ImageBrowserViewModelSlideshowTests.swift */,
 			);
 			path = AIviewTests;
 			sourceTree = "<group>";
@@ -381,6 +396,9 @@
 				A1000029 /* SettingsView.swift in Sources */,
 				A1000030 /* FavoritesStore.swift in Sources */,
 				A1000032 /* FavoriteIndicator.swift in Sources */,
+				A1000035 /* SlideshowTimer.swift in Sources */,
+				A1000038 /* ToastOverlay.swift in Sources */,
+				A1000039 /* SlideshowSettingsDialog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -398,6 +416,8 @@
 				A1000031 /* FavoritesStoreTests.swift in Sources */,
 				A1000033 /* FavoritesIntegrationTests.swift in Sources */,
 				A1000034 /* FavoritesE2ETests.swift in Sources */,
+				A1000036 /* SlideshowTimerTests.swift in Sources */,
+				A1000037 /* ImageBrowserViewModelSlideshowTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

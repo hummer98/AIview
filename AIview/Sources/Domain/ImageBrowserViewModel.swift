@@ -62,6 +62,36 @@ final class ImageBrowserViewModel {
         isFiltering && filteredIndices.isEmpty
     }
 
+    // MARK: - Slideshow State
+
+    /// スライドショーがアクティブかどうか
+    private(set) var isSlideshowActive: Bool = false
+
+    /// スライドショーが一時停止中かどうか
+    private(set) var isSlideshowPaused: Bool = false
+
+    /// スライドショーの表示間隔（秒）
+    private(set) var slideshowInterval: Int = SettingsStore.defaultSlideshowIntervalSeconds
+
+    /// スライドショー設定ダイアログを表示するかどうか
+    var showSlideshowSettings: Bool = false
+
+    /// トースト通知メッセージ
+    private(set) var toastMessage: String?
+
+    /// スライドショー開始前のサムネイル表示状態
+    private var thumbnailVisibleBeforeSlideshow: Bool = true
+
+    /// スライドショー用タイマー
+    private var slideshowTimer: SlideshowTimer?
+
+    /// スライドショーステータステキスト
+    var slideshowStatusText: String {
+        if isSlideshowPaused { return "一時停止中" }
+        if isSlideshowActive { return "再生中 \(slideshowInterval)秒" }
+        return ""
+    }
+
     // MARK: - Computed Properties
 
     var currentImageURL: URL? {
@@ -638,5 +668,180 @@ final class ImageBrowserViewModel {
 
         // 先読みを開始
         imageLoader.prefetch(urls: prefetchURLs, priority: .prefetch, direction: .forward)
+    }
+
+    // MARK: - Slideshow Operations
+
+    /// スライドショーを開始
+    /// Requirements: 1.4, 2.1, 8.1
+    func startSlideshow(interval: Int) {
+        let clampedInterval = max(1, min(60, interval))
+        slideshowInterval = clampedInterval
+
+        // サムネイル表示状態を保存して非表示に
+        thumbnailVisibleBeforeSlideshow = isThumbnailVisible
+        isThumbnailVisible = false
+
+        // スライドショー状態を設定
+        isSlideshowActive = true
+        isSlideshowPaused = false
+
+        // 設定を永続化
+        let settings = SettingsStore()
+        settings.slideshowIntervalSeconds = clampedInterval
+
+        // タイマーを開始
+        slideshowTimer = SlideshowTimer()
+        slideshowTimer?.start(interval: clampedInterval) { [weak self] in
+            Task { @MainActor in
+                await self?.moveToNextWithLoop()
+            }
+        }
+
+        // トースト通知
+        showToast("スライドショー開始 \(clampedInterval)秒間隔")
+
+        Logger.slideshow.info("Slideshow started: interval=\(clampedInterval, privacy: .public)s")
+    }
+
+    /// スライドショーを一時停止/再開
+    /// Requirements: 3.1, 3.2
+    func toggleSlideshowPause() {
+        guard isSlideshowActive else { return }
+
+        if isSlideshowPaused {
+            // 再開
+            slideshowTimer?.resume()
+            isSlideshowPaused = false
+            showToast("スライドショー再開")
+            Logger.slideshow.info("Slideshow resumed")
+        } else {
+            // 一時停止
+            slideshowTimer?.pause()
+            isSlideshowPaused = true
+            showToast("スライドショー一時停止")
+            Logger.slideshow.info("Slideshow paused")
+        }
+    }
+
+    /// スライドショーを終了
+    /// Requirements: 6.1, 6.2, 6.3, 6.4
+    func stopSlideshow() {
+        guard isSlideshowActive else { return }
+
+        // タイマーを停止
+        slideshowTimer?.stop()
+        slideshowTimer = nil
+
+        // 状態をリセット
+        isSlideshowActive = false
+        isSlideshowPaused = false
+
+        // サムネイル表示状態を復元
+        isThumbnailVisible = thumbnailVisibleBeforeSlideshow
+
+        showToast("スライドショー終了")
+
+        Logger.slideshow.info("Slideshow stopped")
+    }
+
+    /// スライドショーの表示間隔を調整
+    /// Requirements: 5.1, 5.2
+    func adjustSlideshowInterval(_ delta: Int) {
+        guard isSlideshowActive else { return }
+
+        let newInterval = max(1, min(60, slideshowInterval + delta))
+        guard newInterval != slideshowInterval else { return }
+
+        slideshowInterval = newInterval
+        slideshowTimer?.updateInterval(newInterval)
+
+        // 設定を永続化
+        let settings = SettingsStore()
+        settings.slideshowIntervalSeconds = newInterval
+
+        showToast("間隔: \(newInterval)秒")
+
+        Logger.slideshow.info("Slideshow interval adjusted: \(newInterval, privacy: .public)s")
+    }
+
+    /// スライドショー中の手動ナビゲーション（タイマーリセット付き）
+    /// Requirements: 4.1, 4.2
+    func navigateDuringSlideshow(direction: PrefetchDirection) async {
+        switch direction {
+        case .forward:
+            await moveToNextWithLoop()
+        case .backward:
+            await moveToPreviousWithLoop()
+        }
+
+        // タイマーをリセット
+        slideshowTimer?.reset()
+    }
+
+    /// 次の画像へ移動（ループあり）
+    /// Requirements: 2.4
+    func moveToNextWithLoop() async {
+        guard !imageURLs.isEmpty else { return }
+
+        let nextIndex: Int
+        if isFiltering {
+            let currentFilterIdx = currentFilteredIndex
+            if currentFilterIdx >= filteredIndices.count - 1 {
+                // ループ: 最初に戻る
+                nextIndex = filteredIndices.first ?? 0
+            } else {
+                nextIndex = filteredIndices[currentFilterIdx + 1]
+            }
+        } else {
+            if currentIndex >= imageURLs.count - 1 {
+                // ループ: 最初に戻る
+                nextIndex = 0
+            } else {
+                nextIndex = currentIndex + 1
+            }
+        }
+
+        if nextIndex != currentIndex {
+            await jumpToIndex(nextIndex)
+        }
+    }
+
+    /// 前の画像へ移動（ループあり）
+    /// Requirements: 2.4
+    func moveToPreviousWithLoop() async {
+        guard !imageURLs.isEmpty else { return }
+
+        let prevIndex: Int
+        if isFiltering {
+            let currentFilterIdx = currentFilteredIndex
+            if currentFilterIdx <= 0 {
+                // ループ: 最後に移動
+                prevIndex = filteredIndices.last ?? 0
+            } else {
+                prevIndex = filteredIndices[currentFilterIdx - 1]
+            }
+        } else {
+            if currentIndex <= 0 {
+                // ループ: 最後に移動
+                prevIndex = imageURLs.count - 1
+            } else {
+                prevIndex = currentIndex - 1
+            }
+        }
+
+        if prevIndex != currentIndex {
+            await jumpToIndex(prevIndex)
+        }
+    }
+
+    /// トースト通知を表示
+    func showToast(_ message: String) {
+        toastMessage = message
+    }
+
+    /// トースト通知をクリア
+    func clearToast() {
+        toastMessage = nil
     }
 }

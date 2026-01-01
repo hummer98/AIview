@@ -8,6 +8,7 @@ final class SettingsStore {
     private enum Keys {
         static let fullImageCacheSizeMB = "fullImageCacheSizeMB"
         static let thumbnailCacheSizeMB = "thumbnailCacheSizeMB"
+        static let slideshowIntervalSeconds = "slideshowIntervalSeconds"
     }
 
     // MARK: - Default Values
@@ -17,6 +18,9 @@ final class SettingsStore {
 
     /// デフォルトのサムネイルキャッシュサイズ (MB)
     static let defaultThumbnailCacheSizeMB: Int = 256
+
+    /// デフォルトのスライドショー間隔 (秒)
+    static let defaultSlideshowIntervalSeconds: Int = 3
 
     // MARK: - Properties
 
@@ -33,6 +37,7 @@ final class SettingsStore {
         defaults.register(defaults: [
             Keys.fullImageCacheSizeMB: Self.defaultFullImageCacheSizeMB,
             Keys.thumbnailCacheSizeMB: Self.defaultThumbnailCacheSizeMB,
+            Keys.slideshowIntervalSeconds: Self.defaultSlideshowIntervalSeconds,
         ])
     }
 
@@ -58,5 +63,21 @@ final class SettingsStore {
     /// サムネイルキャッシュサイズ (バイト)
     var thumbnailCacheSizeBytes: Int {
         thumbnailCacheSizeMB * 1024 * 1024
+    }
+
+    // MARK: - Slideshow Settings
+
+    /// スライドショー間隔 (秒) - 1〜60秒の範囲
+    var slideshowIntervalSeconds: Int {
+        get {
+            let value = defaults.integer(forKey: Keys.slideshowIntervalSeconds)
+            // 範囲チェック（0はUserDefaultsの未設定時のデフォルト）
+            if value < 1 { return Self.defaultSlideshowIntervalSeconds }
+            return min(60, value)
+        }
+        set {
+            let clampedValue = max(1, min(60, newValue))
+            defaults.set(clampedValue, forKey: Keys.slideshowIntervalSeconds)
+        }
     }
 }

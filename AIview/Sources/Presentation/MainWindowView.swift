@@ -122,16 +122,44 @@ struct MainWindowView: View {
                 .transition(.move(edge: .trailing))
             }
         }
+        .overlay {
+            // トースト通知
+            ToastOverlay(message: viewModel.toastMessage) {
+                viewModel.clearToast()
+            }
+        }
+        .sheet(isPresented: $viewModel.showSlideshowSettings) {
+            SlideshowSettingsDialog(
+                hasImages: viewModel.hasImages,
+                initialInterval: SettingsStore().slideshowIntervalSeconds,
+                onStart: { interval in
+                    viewModel.showSlideshowSettings = false
+                    viewModel.startSlideshow(interval: interval)
+                },
+                onCancel: {
+                    viewModel.showSlideshowSettings = false
+                }
+            )
+        }
     }
 
     // MARK: - Status Bar
 
     private var statusBar: some View {
         HStack {
-            // フィルタリング状態またはカウント
-            Text(viewModel.filterStatusText)
-                .foregroundColor(viewModel.isFiltering ? .yellow : .white)
-                .font(.system(size: 12))
+            // スライドショー状態またはフィルタリング状態
+            if viewModel.isSlideshowActive {
+                HStack(spacing: 8) {
+                    Image(systemName: viewModel.isSlideshowPaused ? "pause.fill" : "play.fill")
+                    Text(viewModel.slideshowStatusText)
+                }
+                .foregroundColor(.green)
+                .font(.system(size: 12, weight: .medium))
+            } else {
+                Text(viewModel.filterStatusText)
+                    .foregroundColor(viewModel.isFiltering ? .yellow : .white)
+                    .font(.system(size: 12))
+            }
 
             Spacer()
 
@@ -147,11 +175,16 @@ struct MainWindowView: View {
             Spacer()
 
             HStack(spacing: 12) {
-                Text("← → ナビ")
-                Text("1-5 ★設定")
-                Text("Shift+1-5 フィルタ")
-                Text("T サムネイル")
-                Text("D 削除")
+                if viewModel.isSlideshowActive {
+                    Text("Space 一時停止")
+                    Text("ESC 終了")
+                    Text("↑↓ 間隔")
+                } else {
+                    Text("← → ナビ")
+                    Text("S スライドショー")
+                    Text("1-5 ★設定")
+                    Text("T サムネイル")
+                }
             }
             .foregroundColor(.white.opacity(0.5))
             .font(.system(size: 10))
@@ -164,8 +197,10 @@ struct MainWindowView: View {
     // MARK: - Key Handling
 
     private func handleKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
-        // デバッグ: キー入力を確認
-        print("KeyPress: key=\(keyPress.key), characters='\(keyPress.characters)', modifiers=\(keyPress.modifiers)")
+        // スライドショー中のキー処理
+        if viewModel.isSlideshowActive {
+            return handleSlideshowKeyPress(keyPress)
+        }
 
         // SHIFT+数字キー: フィルタリング操作
         if keyPress.modifiers.contains(.shift) {
@@ -218,6 +253,49 @@ struct MainWindowView: View {
             Task {
                 try? await viewModel.deleteCurrentImage()
             }
+            return .handled
+
+        case KeyEquivalent("s"):
+            // スライドショー設定ダイアログを表示
+            viewModel.showSlideshowSettings = true
+            return .handled
+
+        default:
+            return .ignored
+        }
+    }
+
+    /// スライドショー中のキー処理
+    private func handleSlideshowKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
+        switch keyPress.key {
+        case .space:
+            // 一時停止/再開
+            viewModel.toggleSlideshowPause()
+            return .handled
+
+        case .escape:
+            // スライドショー終了
+            viewModel.stopSlideshow()
+            return .handled
+
+        case .rightArrow:
+            // 次の画像（タイマーリセット）
+            Task { await viewModel.navigateDuringSlideshow(direction: .forward) }
+            return .handled
+
+        case .leftArrow:
+            // 前の画像（タイマーリセット）
+            Task { await viewModel.navigateDuringSlideshow(direction: .backward) }
+            return .handled
+
+        case .upArrow:
+            // 間隔を増加
+            viewModel.adjustSlideshowInterval(1)
+            return .handled
+
+        case .downArrow:
+            // 間隔を減少
+            viewModel.adjustSlideshowInterval(-1)
             return .handled
 
         default:

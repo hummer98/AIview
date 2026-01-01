@@ -1,0 +1,38 @@
+{
+  "feature_name": "slideshow",
+  "created_at": "2025-12-27T22:14:00+09:00",
+  "updated_at": "2025-12-27T13:33:59.709Z",
+  "language": "ja",
+  "phase": "implementation-complete",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": false,
+  "documentReview": {
+    "rounds": 1,
+    "status": "complete",
+    "roundDetails": [
+      {
+        "roundNumber": 1,
+        "status": "reply_complete",
+        "fixApplied": true
+      }
+    ]
+  },
+  "inspection": {
+    "status": "passed",
+    "date": "2025-12-27",
+    "report": "inspection-1.md"
+  }
+}
