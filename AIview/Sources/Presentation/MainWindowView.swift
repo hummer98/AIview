@@ -87,7 +87,8 @@ struct MainWindowView: View {
                 isLoading: viewModel.isLoading,
                 hasImages: viewModel.hasImages,
                 favoriteLevel: viewModel.currentFavoriteLevel,
-                isFilterEmpty: viewModel.isFilterEmpty
+                isFilterEmpty: viewModel.isFilterEmpty,
+                currentImagePath: viewModel.currentImageURL?.path
             )
 
             // ステータスバー
@@ -204,7 +205,7 @@ struct MainWindowView: View {
 
         // SHIFT+数字キー: フィルタリング操作
         if keyPress.modifiers.contains(.shift) {
-            if let level = numericKeyToLevel(keyPress.key) {
+            if let level = shiftedKeyToLevel(keyPress.key) {
                 if level == 0 {
                     viewModel.clearFilter()
                 } else {
@@ -312,6 +313,19 @@ struct MainWindowView: View {
         case KeyEquivalent("3"): return 3
         case KeyEquivalent("4"): return 4
         case KeyEquivalent("5"): return 5
+        default: return nil
+        }
+    }
+
+    /// シフト記号をレベル（0-5）に変換（日本語キーボード対応）
+    private func shiftedKeyToLevel(_ key: KeyEquivalent) -> Int? {
+        switch key {
+        case KeyEquivalent("!"): return 1  // Shift+1
+        case KeyEquivalent("\""): return 2 // Shift+2
+        case KeyEquivalent("#"): return 3  // Shift+3
+        case KeyEquivalent("$"): return 4  // Shift+4
+        case KeyEquivalent("%"): return 5  // Shift+5
+        case KeyEquivalent(")"), KeyEquivalent("0"): return 0  // Shift+0 (フィルタ解除) - JIS/US両対応
         default: return nil
         }
     }
