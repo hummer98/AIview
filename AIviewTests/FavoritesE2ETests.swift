@@ -291,4 +291,244 @@ final class FavoritesE2ETests: XCTestCase {
         await viewModel.moveToNext()
         XCTAssertEqual(viewModel.filterStatusText, "★3+ : 2 / 2枚")
     }
+
+    // MARK: - E2E Tests: Subdirectory Mode with Favorites Filter
+
+    /// E2E: お気に入りフィルタ時にサブフォルダも対象になる
+    /// Requirements: 1.4, 3.1
+    func testE2E_FilterWithSubdirectories_IncludesSubfolderImages() async throws {
+        // Given - サブフォルダ構造を作成
+        let subFolder1 = testFolderURL.appendingPathComponent("subfolder1")
+        let subFolder2 = testFolderURL.appendingPathComponent("subfolder2")
+        try FileManager.default.createDirectory(at: subFolder1, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: subFolder2, withIntermediateDirectories: true)
+
+        // サブフォルダに画像を追加
+        let pngData = createMinimalPNG()
+        try pngData.write(to: subFolder1.appendingPathComponent("sub1_image.png"))
+        try pngData.write(to: subFolder2.appendingPathComponent("sub2_image.png"))
+
+        // 各フォルダにお気に入りデータを設定
+        // 親フォルダ: test_image_01.png = レベル5
+        try createFavoritesFile(at: testFolderURL, favorites: ["test_image_01.png": 5])
+        // サブフォルダ1: sub1_image.png = レベル5
+        try createFavoritesFile(at: subFolder1, favorites: ["sub1_image.png": 5])
+        // サブフォルダ2: sub2_image.png = レベル3
+        try createFavoritesFile(at: subFolder2, favorites: ["sub2_image.png": 3])
+
+        // When - フォルダを開いてサブフォルダ付きフィルタを適用
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        await viewModel.setFilterLevelWithSubdirectories(5)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // Then - サブディレクトリモードが有効
+        XCTAssertTrue(viewModel.isSubdirectoryMode, "サブディレクトリモードが有効であること")
+        XCTAssertTrue(viewModel.isFiltering, "フィルタリング中であること")
+
+        // Then - レベル5の画像が2枚（親フォルダ1枚 + サブフォルダ1枚）
+        XCTAssertEqual(viewModel.filteredCount, 2, "レベル5以上の画像は2枚")
+
+        // フィルタ結果にサブフォルダの画像が含まれている
+        let filteredNames = viewModel.filteredImageURLs.map { $0.lastPathComponent }
+        XCTAssertTrue(filteredNames.contains("test_image_01.png"), "親フォルダの画像が含まれる")
+        XCTAssertTrue(filteredNames.contains("sub1_image.png"), "サブフォルダの画像が含まれる")
+    }
+
+    /// E2E: サブフォルダを含むフィルタ結果内でのナビゲーション
+    /// Requirements: 3.2, 3.5
+    func testE2E_FilterWithSubdirectories_NavigationAcrossFolders() async throws {
+        // Given - サブフォルダ構造を作成
+        let subFolder = testFolderURL.appendingPathComponent("subfolder")
+        try FileManager.default.createDirectory(at: subFolder, withIntermediateDirectories: true)
+
+        let pngData = createMinimalPNG()
+        try pngData.write(to: subFolder.appendingPathComponent("sub_image_01.png"))
+        try pngData.write(to: subFolder.appendingPathComponent("sub_image_02.png"))
+
+        // お気に入り設定: 親2枚、サブ2枚 = 計4枚がレベル4以上
+        try createFavoritesFile(at: testFolderURL, favorites: [
+            "test_image_01.png": 4,
+            "test_image_03.png": 5
+        ])
+        try createFavoritesFile(at: subFolder, favorites: [
+            "sub_image_01.png": 4,
+            "sub_image_02.png": 5
+        ])
+
+        // When - フォルダを開いてフィルタ適用
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        await viewModel.setFilterLevelWithSubdirectories(4)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // Then - 4枚がフィルタ対象
+        XCTAssertEqual(viewModel.filteredCount, 4, "レベル4以上の画像は4枚")
+
+        // ナビゲーションで全てのフィルタ対象画像を巡回できる
+        var visitedNames: [String] = []
+        visitedNames.append(viewModel.currentImageURL?.lastPathComponent ?? "")
+
+        for _ in 1..<4 {
+            await viewModel.moveToNext()
+            if let name = viewModel.currentImageURL?.lastPathComponent {
+                visitedNames.append(name)
+            }
+        }
+
+        // 4枚の異なる画像を訪問
+        XCTAssertEqual(Set(visitedNames).count, 4, "4枚の異なる画像を訪問")
+    }
+
+    /// E2E: フィルタ解除時に親フォルダのみに戻る
+    /// Requirements: 5.1, 5.2
+    func testE2E_ClearFilterWithSubdirectories_RestoresParentFolderOnly() async throws {
+        // Given - サブフォルダ構造を作成
+        let subFolder = testFolderURL.appendingPathComponent("subfolder")
+        try FileManager.default.createDirectory(at: subFolder, withIntermediateDirectories: true)
+
+        let pngData = createMinimalPNG()
+        try pngData.write(to: subFolder.appendingPathComponent("sub_image.png"))
+
+        try createFavoritesFile(at: testFolderURL, favorites: ["test_image_01.png": 5])
+        try createFavoritesFile(at: subFolder, favorites: ["sub_image.png": 5])
+
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // 親フォルダの画像数を記録
+        let parentImageCount = viewModel.imageURLs.count
+        XCTAssertEqual(parentImageCount, 5, "親フォルダには5枚の画像")
+
+        // サブフォルダ付きフィルタを適用
+        await viewModel.setFilterLevelWithSubdirectories(5)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        XCTAssertTrue(viewModel.isSubdirectoryMode)
+        XCTAssertTrue(viewModel.imageURLs.count > parentImageCount, "サブフォルダの画像も含まれる")
+
+        // When - フィルタを解除
+        await viewModel.clearFilterWithSubdirectories()
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // Then - 親フォルダのみに戻る
+        XCTAssertFalse(viewModel.isSubdirectoryMode, "サブディレクトリモードが解除")
+        XCTAssertFalse(viewModel.isFiltering, "フィルタリングが解除")
+        XCTAssertEqual(viewModel.imageURLs.count, parentImageCount, "親フォルダの画像のみ")
+
+        // サブフォルダの画像が含まれていない
+        let imageNames = viewModel.imageURLs.map { $0.lastPathComponent }
+        XCTAssertFalse(imageNames.contains("sub_image.png"), "サブフォルダの画像は含まれない")
+    }
+
+    /// E2E: サブフォルダ内のお気に入り変更がフィルタに反映される
+    /// Requirements: 3.4
+    func testE2E_FilterWithSubdirectories_FavoriteChangeUpdatesFilter() async throws {
+        // Given - サブフォルダ構造を作成
+        let subFolder = testFolderURL.appendingPathComponent("subfolder")
+        try FileManager.default.createDirectory(at: subFolder, withIntermediateDirectories: true)
+
+        let pngData = createMinimalPNG()
+        try pngData.write(to: subFolder.appendingPathComponent("sub_image.png"))
+
+        // 初期状態: 親フォルダの1枚のみレベル5
+        try createFavoritesFile(at: testFolderURL, favorites: ["test_image_01.png": 5])
+
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        await viewModel.setFilterLevelWithSubdirectories(5)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        XCTAssertEqual(viewModel.filteredCount, 1, "初期状態でレベル5は1枚")
+
+        // When - サブフォルダの画像にお気に入りを設定
+        // まずサブフォルダの画像に移動
+        let subImageURL = viewModel.imageURLs.first { $0.lastPathComponent == "sub_image.png" }
+        XCTAssertNotNil(subImageURL, "サブフォルダの画像がimageURLsに含まれる")
+
+        if let index = viewModel.imageURLs.firstIndex(of: subImageURL!) {
+            await viewModel.jumpToIndex(index)
+            try await viewModel.setFavoriteLevel(5)
+        }
+
+        // Then - フィルタ結果が更新される
+        XCTAssertEqual(viewModel.filteredCount, 2, "レベル5が2枚に増加")
+        let filteredNames = viewModel.filteredImageURLs.map { $0.lastPathComponent }
+        XCTAssertTrue(filteredNames.contains("sub_image.png"), "新しく追加された画像がフィルタに含まれる")
+    }
+
+    /// E2E: 複数のサブフォルダからお気に入り画像を取得（1階層のみ）
+    /// Requirements: 1.4
+    /// Note: 実装は1階層のサブディレクトリのみをスキャンする仕様
+    func testE2E_FilterWithSubdirectories_MultipleSubfolders() async throws {
+        // Given - 複数のサブフォルダ構造を作成（1階層のみ）
+        let subA = testFolderURL.appendingPathComponent("subfolder_a")
+        let subB = testFolderURL.appendingPathComponent("subfolder_b")
+        let subC = testFolderURL.appendingPathComponent("subfolder_c")
+        try FileManager.default.createDirectory(at: subA, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: subB, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: subC, withIntermediateDirectories: true)
+
+        let pngData = createMinimalPNG()
+        try pngData.write(to: subA.appendingPathComponent("a_image.png"))
+        try pngData.write(to: subB.appendingPathComponent("b_image.png"))
+        try pngData.write(to: subC.appendingPathComponent("c_image.png"))
+
+        // 各サブフォルダにお気に入りを設定
+        try createFavoritesFile(at: testFolderURL, favorites: ["test_image_01.png": 5])
+        try createFavoritesFile(at: subA, favorites: ["a_image.png": 5])
+        try createFavoritesFile(at: subB, favorites: ["b_image.png": 5])
+        try createFavoritesFile(at: subC, favorites: ["c_image.png": 5])
+
+        // When
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        await viewModel.setFilterLevelWithSubdirectories(5)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // Then - 親フォルダと全サブフォルダの画像がフィルタに含まれる
+        XCTAssertEqual(viewModel.filteredCount, 4, "親 + 3つのサブフォルダから4枚の画像")
+
+        let filteredNames = viewModel.filteredImageURLs.map { $0.lastPathComponent }
+        XCTAssertTrue(filteredNames.contains("test_image_01.png"), "親フォルダの画像")
+        XCTAssertTrue(filteredNames.contains("a_image.png"), "サブフォルダAの画像")
+        XCTAssertTrue(filteredNames.contains("b_image.png"), "サブフォルダBの画像")
+        XCTAssertTrue(filteredNames.contains("c_image.png"), "サブフォルダCの画像")
+    }
+
+    /// E2E: フィルタ結果が空の場合の表示（サブフォルダ含む）
+    /// Requirements: 4.3
+    func testE2E_FilterWithSubdirectories_EmptyResult() async throws {
+        // Given - サブフォルダを作成（お気に入りなし）
+        let subFolder = testFolderURL.appendingPathComponent("subfolder")
+        try FileManager.default.createDirectory(at: subFolder, withIntermediateDirectories: true)
+
+        let pngData = createMinimalPNG()
+        try pngData.write(to: subFolder.appendingPathComponent("sub_image.png"))
+
+        // お気に入りは設定しない
+
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // When - フィルタを適用
+        await viewModel.setFilterLevelWithSubdirectories(1)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // Then - 結果が空
+        XCTAssertTrue(viewModel.isFiltering)
+        XCTAssertTrue(viewModel.isFilterEmpty, "フィルタ結果が空")
+        XCTAssertEqual(viewModel.filteredCount, 0)
+    }
+
+    // MARK: - Helper Methods for Subdirectory Tests
+
+    /// お気に入りファイルを作成するヘルパー
+    private func createFavoritesFile(at folderURL: URL, favorites: [String: Int]) throws {
+        let aiviewDir = folderURL.appendingPathComponent(".aiview")
+        try FileManager.default.createDirectory(at: aiviewDir, withIntermediateDirectories: true)
+        let favoritesFile = aiviewDir.appendingPathComponent("favorites.json")
+        let data = try JSONEncoder().encode(favorites)
+        try data.write(to: favoritesFile)
+    }
 }
