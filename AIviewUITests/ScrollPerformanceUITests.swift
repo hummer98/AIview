@@ -13,6 +13,12 @@ final class ScrollPerformanceUITests: XCTestCase {
     private let imageCount = 100  // PNG形式では生成時間を考慮して100枚に
     private let imageSize = CGSize(width: 2048, height: 2048)  // PNG形式で約4-6MB/枚
 
+    // サムネイルカルーセルのレイアウト定数（ThumbnailCarousel.swiftと同期）
+    private let thumbnailSize: CGFloat = 80
+    private let thumbnailSpacing: CGFloat = 4
+    private let carouselPadding: CGFloat = 8
+    private let estimatedSwipeDistance: CGFloat = 600  // 1回のスワイプで移動する推定距離
+
     // MARK: - Setup / Teardown
 
     override func setUpWithError() throws {
@@ -84,15 +90,11 @@ final class ScrollPerformanceUITests: XCTestCase {
         let clockMetric = XCTClockMetric()
 
         measure(metrics: [cpuMetric, clockMetric]) {
-            // 右方向にスクロール（横スクロール）
-            carousel.swipeLeft(velocity: .fast)
-            carousel.swipeLeft(velocity: .fast)
-            carousel.swipeLeft(velocity: .fast)
+            // 右方向にスクロール（端まで）
+            scrollToEnd(carousel: carousel)
 
-            // 左方向にスクロール（戻る）
-            carousel.swipeRight(velocity: .fast)
-            carousel.swipeRight(velocity: .fast)
-            carousel.swipeRight(velocity: .fast)
+            // 左方向にスクロール（先頭まで戻る）
+            scrollToStart(carousel: carousel)
         }
     }
 
@@ -120,15 +122,11 @@ final class ScrollPerformanceUITests: XCTestCase {
         let clockMetric = XCTClockMetric()
 
         measure(metrics: [cpuMetric, clockMetric]) {
-            // 右方向にスクロール
-            carousel.swipeLeft(velocity: .fast)
-            carousel.swipeLeft(velocity: .fast)
-            carousel.swipeLeft(velocity: .fast)
+            // 右方向にスクロール（端まで）
+            scrollToEnd(carousel: carousel)
 
-            // 左方向にスクロール（戻る）
-            carousel.swipeRight(velocity: .fast)
-            carousel.swipeRight(velocity: .fast)
-            carousel.swipeRight(velocity: .fast)
+            // 左方向にスクロール（先頭まで戻る）
+            scrollToStart(carousel: carousel)
         }
     }
 
@@ -160,16 +158,15 @@ final class ScrollPerformanceUITests: XCTestCase {
         let memoryMetric = XCTMemoryMetric(application: app)
 
         measure(metrics: [memoryMetric]) {
-            // 全画像を表示するためにスクロール
-            for _ in 0..<10 {
+            // 全画像を表示するためにスクロール（端まで）
+            let swipeCount = calculateSwipesToEnd(carouselWidth: carousel.frame.width)
+            for _ in 0..<swipeCount {
                 carousel.swipeLeft(velocity: .slow)
                 Thread.sleep(forTimeInterval: 0.5)
             }
 
-            // 左に戻る
-            for _ in 0..<10 {
-                carousel.swipeRight(velocity: .fast)
-            }
+            // 先頭まで戻る
+            scrollToStart(carousel: carousel)
         }
     }
 
@@ -251,15 +248,14 @@ final class ScrollPerformanceUITests: XCTestCase {
     /// キャッシュをウォームアップ（全画像を一度表示）
     private func warmupCache(carousel: XCUIElement) {
         // ゆっくりスクロールして全サムネイルを読み込む
-        for _ in 0..<15 {
+        let swipeCount = calculateSwipesToEnd(carouselWidth: carousel.frame.width)
+        for _ in 0..<swipeCount {
             carousel.swipeLeft(velocity: .slow)
             Thread.sleep(forTimeInterval: 0.3)
         }
 
-        // 左に戻る
-        for _ in 0..<15 {
-            carousel.swipeRight(velocity: .fast)
-        }
+        // 先頭まで戻る
+        scrollToStart(carousel: carousel)
     }
 
     /// 連続スクロールを実行
@@ -269,6 +265,32 @@ final class ScrollPerformanceUITests: XCTestCase {
         while Date().timeIntervalSince(startTime) < duration {
             carousel.swipeLeft(velocity: .fast)
             carousel.swipeRight(velocity: .fast)
+        }
+    }
+
+    /// 端までスクロールするのに必要なスワイプ回数を計算
+    private func calculateSwipesToEnd(carouselWidth: CGFloat) -> Int {
+        let totalContentWidth = (thumbnailSize * CGFloat(imageCount))
+            + (thumbnailSpacing * CGFloat(imageCount - 1))
+            + (carouselPadding * 2)
+        let scrollableDistance = totalContentWidth - carouselWidth
+        guard scrollableDistance > 0 else { return 1 }
+        return max(1, Int(ceil(scrollableDistance / estimatedSwipeDistance)))
+    }
+
+    /// カルーセルを端までスクロール（左方向）
+    private func scrollToEnd(carousel: XCUIElement, velocity: XCUIGestureVelocity = .fast) {
+        let swipeCount = calculateSwipesToEnd(carouselWidth: carousel.frame.width)
+        for _ in 0..<swipeCount {
+            carousel.swipeLeft(velocity: velocity)
+        }
+    }
+
+    /// カルーセルを先頭までスクロール（右方向）
+    private func scrollToStart(carousel: XCUIElement, velocity: XCUIGestureVelocity = .fast) {
+        let swipeCount = calculateSwipesToEnd(carouselWidth: carousel.frame.width)
+        for _ in 0..<swipeCount {
+            carousel.swipeRight(velocity: velocity)
         }
     }
 }
