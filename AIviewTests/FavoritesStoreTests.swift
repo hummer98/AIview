@@ -191,4 +191,156 @@ final class FavoritesStoreTests: XCTestCase {
         // Then
         XCTAssertTrue(FileManager.default.fileExists(atPath: aiviewDir.path), ".aiviewフォルダが作成されること")
     }
+
+    // MARK: - Aggregated Favorites Tests (Subdirectory Support)
+
+    /// Requirements: 2.1 - 複数フォルダのお気に入りを並列読み込み
+    func testLoadAggregatedFavorites_LoadsMultipleFolders() async throws {
+        // Given - 親フォルダとサブディレクトリにお気に入りを設定
+        let parentFolder = testFolderURL!
+        let subDir1 = parentFolder.appendingPathComponent("subdir1")
+        let subDir2 = parentFolder.appendingPathComponent("subdir2")
+        try FileManager.default.createDirectory(at: subDir1, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: subDir2, withIntermediateDirectories: true)
+
+        // 各フォルダにfavorites.jsonを作成
+        try createFavoritesFile(at: parentFolder, favorites: ["parent.png": 5])
+        try createFavoritesFile(at: subDir1, favorites: ["sub1.png": 4])
+        try createFavoritesFile(at: subDir2, favorites: ["sub2.png": 3])
+
+        let folderURLs = [parentFolder, subDir1, subDir2]
+
+        // When
+        let aggregated = await sut.loadAggregatedFavorites(for: folderURLs)
+
+        // Then
+        XCTAssertEqual(aggregated.count, 3, "3つのフォルダのデータが読み込まれること")
+        XCTAssertEqual(aggregated[parentFolder]?["parent.png"], 5)
+        XCTAssertEqual(aggregated[subDir1]?["sub1.png"], 4)
+        XCTAssertEqual(aggregated[subDir2]?["sub2.png"], 3)
+    }
+
+    /// Requirements: 2.2 - 読み込み失敗時は空の辞書として扱う
+    func testLoadAggregatedFavorites_HandlesFailedLoads() async throws {
+        // Given - 1つのフォルダにのみデータがある
+        let parentFolder = testFolderURL!
+        let subDir1 = parentFolder.appendingPathComponent("subdir1")
+        let subDir2 = parentFolder.appendingPathComponent("subdir2")
+        try FileManager.default.createDirectory(at: subDir1, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: subDir2, withIntermediateDirectories: true)
+
+        try createFavoritesFile(at: subDir1, favorites: ["sub1.png": 4])
+        // subDir2にはfavorites.jsonがない
+
+        let folderURLs = [parentFolder, subDir1, subDir2]
+
+        // When
+        let aggregated = await sut.loadAggregatedFavorites(for: folderURLs)
+
+        // Then - 読み込みに成功したフォルダのデータが返される
+        XCTAssertEqual(aggregated[subDir1]?["sub1.png"], 4)
+        // 失敗したフォルダは空の辞書
+        XCTAssertTrue(aggregated[parentFolder]?.isEmpty ?? true)
+        XCTAssertTrue(aggregated[subDir2]?.isEmpty ?? true)
+    }
+
+    /// Requirements: 2.3 - 統合モード中のお気に入り設定は正しいフォルダに保存
+    func testSetFavoriteInAggregatedMode_SavesCorrectFolder() async throws {
+        // Given - 統合モードで読み込み
+        let parentFolder = testFolderURL!
+        let subDir = parentFolder.appendingPathComponent("subdir")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+
+        let folderURLs = [parentFolder, subDir]
+        _ = await sut.loadAggregatedFavorites(for: folderURLs)
+
+        // When - サブディレクトリの画像にお気に入り設定
+        let imageURL = subDir.appendingPathComponent("image.png")
+        try await sut.setFavorite(for: imageURL, level: 5)
+
+        // Then - サブディレクトリのfavorites.jsonに保存される
+        let favoritesFile = subDir
+            .appendingPathComponent(".aiview")
+            .appendingPathComponent("favorites.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: favoritesFile.path))
+
+        let data = try Data(contentsOf: favoritesFile)
+        let saved = try JSONDecoder().decode([String: Int].self, from: data)
+        XCTAssertEqual(saved["image.png"], 5)
+    }
+
+    /// Requirements: 4.3 - 統合モード中のお気に入りレベル取得
+    func testGetFavoriteLevelInAggregatedMode_ReturnsCorrectLevel() async throws {
+        // Given - 単一フォルダでテスト
+        let parentFolder = testFolderURL!
+        try createFavoritesFile(at: parentFolder, favorites: ["parent.png": 5])
+
+        // When - loadAggregatedFavorites
+        let aggregated = await sut.loadAggregatedFavorites(for: [parentFolder])
+
+        // Then - 返り値確認
+        XCTAssertEqual(aggregated.count, 1, "1つのフォルダが読み込まれること")
+        XCTAssertEqual(aggregated[parentFolder]?["parent.png"], 5, "データが正しく読み込まれること")
+
+        // getFavoriteLevelテスト
+        let parentImage = parentFolder.appendingPathComponent("parent.png")
+        let parentLevel = await sut.getFavoriteLevel(for: parentImage)
+        XCTAssertEqual(parentLevel, 5, "parentLevel should be 5 but was \(parentLevel)")
+    }
+
+    /// Requirements: 5.2 - loadFavorites呼び出しで統合モードを解除
+    func testLoadFavorites_ClearsAggregatedMode() async throws {
+        // Given - 統合モードで読み込み
+        let parentFolder = testFolderURL!
+        let subDir = parentFolder.appendingPathComponent("subdir")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+        try createFavoritesFile(at: subDir, favorites: ["sub.png": 4])
+
+        _ = await sut.loadAggregatedFavorites(for: [parentFolder, subDir])
+
+        // When - 通常モードで読み込み直し
+        await sut.loadFavorites(for: parentFolder)
+
+        // Then - サブディレクトリのお気に入りは見えなくなる
+        let subImage = subDir.appendingPathComponent("sub.png")
+        let subLevel = await sut.getFavoriteLevel(for: subImage)
+        XCTAssertEqual(subLevel, 0)
+    }
+
+    /// Requirements: 2.4 - 統合モード中のお気に入り解除
+    func testRemoveFavoriteInAggregatedMode_RemovesFromCorrectFolder() async throws {
+        // Given
+        let parentFolder = testFolderURL!
+        let subDir = parentFolder.appendingPathComponent("subdir")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+        try createFavoritesFile(at: subDir, favorites: ["image.png": 4])
+
+        _ = await sut.loadAggregatedFavorites(for: [parentFolder, subDir])
+
+        // When
+        let imageURL = subDir.appendingPathComponent("image.png")
+        try await sut.removeFavorite(for: imageURL)
+
+        // Then
+        let level = await sut.getFavoriteLevel(for: imageURL)
+        XCTAssertEqual(level, 0)
+
+        // ディスクからも削除されていることを確認
+        let favoritesFile = subDir.appendingPathComponent(".aiview").appendingPathComponent("favorites.json")
+        if FileManager.default.fileExists(atPath: favoritesFile.path) {
+            let data = try Data(contentsOf: favoritesFile)
+            let saved = try JSONDecoder().decode([String: Int].self, from: data)
+            XCTAssertNil(saved["image.png"])
+        }
+    }
+
+    // MARK: - Helper Methods
+
+    private func createFavoritesFile(at folderURL: URL, favorites: [String: Int]) throws {
+        let aiviewDir = folderURL.appendingPathComponent(".aiview")
+        try FileManager.default.createDirectory(at: aiviewDir, withIntermediateDirectories: true)
+        let favoritesFile = aiviewDir.appendingPathComponent("favorites.json")
+        let data = try JSONEncoder().encode(favorites)
+        try data.write(to: favoritesFile)
+    }
 }

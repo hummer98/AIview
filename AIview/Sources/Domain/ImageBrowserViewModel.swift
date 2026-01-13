@@ -62,6 +62,20 @@ final class ImageBrowserViewModel {
         isFiltering && filteredIndices.isEmpty
     }
 
+    // MARK: - Subdirectory Mode State
+
+    /// サブディレクトリモードが有効かどうか
+    private(set) var isSubdirectoryMode: Bool = false
+
+    /// 発見されたサブディレクトリURLのリスト
+    private(set) var subdirectoryURLs: [URL] = []
+
+    /// 親フォルダ直下の画像URL（復元用に保持）
+    private(set) var parentFolderImageURLs: [URL] = []
+
+    /// 統合されたお気に入りデータ（フォルダURL→ファイル名→レベル）
+    private var aggregatedFavorites: [URL: [String: Int]] = [:]
+
     // MARK: - Slideshow State
 
     /// スライドショーがアクティブかどうか
@@ -195,6 +209,12 @@ final class ImageBrowserViewModel {
         filterLevel = nil
         filteredIndices = []
         isScanningFolder = true
+
+        // サブディレクトリモードをリセット
+        isSubdirectoryMode = false
+        subdirectoryURLs = []
+        parentFolderImageURLs = []
+        aggregatedFavorites = [:]
 
         // お気に入りを読み込み
         await favoritesStore.loadFavorites(for: url)
@@ -535,11 +555,19 @@ final class ImageBrowserViewModel {
 
     // MARK: - Favorites Operations
 
-    /// お気に入りレベルを設定（1-5）
+    /// お気に入りレベルを設定（1-5）またはトグル解除
+    /// 同じレベルを再度指定した場合は解除する
     /// Requirements: 1.1, 1.4, 2.1
     func setFavoriteLevel(_ level: Int) async throws {
         guard let url = currentImageURL else { return }
         guard level >= 1, level <= 5 else { return }
+
+        // 現在のレベルと同じ場合はトグルで解除
+        let currentLevel = getFavoriteLevel(for: url)
+        if currentLevel == level {
+            try await removeFavorite()
+            return
+        }
 
         try await favoritesStore.setFavorite(for: url, level: level)
         favorites[url.lastPathComponent] = level
@@ -571,16 +599,37 @@ final class ImageBrowserViewModel {
     }
 
     /// 指定ファイルのお気に入りレベルを取得
+    /// サブディレクトリモード時は統合データから取得
     func getFavoriteLevel(for url: URL) -> Int {
-        return favorites[url.lastPathComponent] ?? 0
+        if isSubdirectoryMode {
+            // 統合モードからお気に入りを取得
+            // シンボリックリンク解決後のパスで比較
+            let folderPath = url.deletingLastPathComponent().resolvingSymlinksInPath().path
+            let filename = url.lastPathComponent
+            for (key, favs) in aggregatedFavorites {
+                if key.resolvingSymlinksInPath().path == folderPath {
+                    return favs[filename] ?? 0
+                }
+            }
+            return 0
+        } else {
+            return favorites[url.lastPathComponent] ?? 0
+        }
     }
 
     // MARK: - Filter Operations
 
-    /// フィルタリングを開始
-    /// Requirements: 3.1, 3.3, 3.4
+    /// フィルタリングを開始またはトグル解除
+    /// 同じレベルを再度指定した場合は解除する
+    /// Requirements: 3.1, 3.2, 3.3, 3.4
     func setFilterLevel(_ level: Int) {
         guard level >= 1, level <= 5 else { return }
+
+        // 現在のフィルターレベルと同じ場合はトグルで解除
+        if filterLevel == level {
+            clearFilter()
+            return
+        }
 
         filterLevel = level
         rebuildFilteredIndices()
@@ -843,5 +892,166 @@ final class ImageBrowserViewModel {
     /// トースト通知をクリア
     func clearToast() {
         toastMessage = nil
+    }
+
+    // MARK: - Subdirectory Mode Operations
+
+    /// サブディレクトリモードを有効化
+    /// - 親フォルダと1階層下のサブディレクトリの画像を探索
+    /// - 複数フォルダのお気に入りを統合読み込み
+    /// Requirements: 1.1, 2.1
+    func enableSubdirectoryMode() async {
+        guard let folderURL = currentFolderURL, !isSubdirectoryMode else { return }
+
+        // 親フォルダの画像URLを保存（復元用）
+        parentFolderImageURLs = imageURLs
+
+        // サブディレクトリをスキャン（直接戻り値版を使用してレースコンディションを回避）
+        do {
+            let result = try await folderScanner.scanWithSubdirectories(folderURL: folderURL)
+
+            // 結果を状態に反映（既にMainActor上なので直接更新可能）
+            subdirectoryURLs = result.subdirectoryURLs
+            imageURLs = result.imageURLs
+        } catch {
+            Logger.app.warning("Subdirectory scan failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+
+        // 複数フォルダのお気に入りを統合読み込み
+        // subdirectoryURLs は確実に設定済み
+        var allFolderURLs = [folderURL]
+        allFolderURLs.append(contentsOf: subdirectoryURLs)
+        aggregatedFavorites = await favoritesStore.loadAggregatedFavorites(for: allFolderURLs)
+
+        // モードを有効化
+        isSubdirectoryMode = true
+
+        Logger.app.info("Subdirectory mode enabled: \(self.subdirectoryURLs.count, privacy: .public) subdirectories")
+    }
+
+    /// サブディレクトリモードを無効化
+    /// - 親フォルダ直下の画像のみの表示に復帰
+    /// - フィルターをクリア
+    /// Requirements: 5.1, 5.2
+    func disableSubdirectoryMode() async {
+        guard isSubdirectoryMode else { return }
+
+        // フィルターをクリア
+        filterLevel = nil
+        filteredIndices = []
+
+        // 親フォルダの画像を復元
+        imageURLs = parentFolderImageURLs
+
+        // 状態をリセット
+        isSubdirectoryMode = false
+        subdirectoryURLs = []
+        parentFolderImageURLs = []
+        aggregatedFavorites = [:]
+
+        // 親フォルダのお気に入りのみを読み込み直し
+        if let folderURL = currentFolderURL {
+            await favoritesStore.loadFavorites(for: folderURL)
+            favorites = await favoritesStore.getAllFavorites()
+        }
+
+        Logger.app.info("Subdirectory mode disabled")
+    }
+
+    /// フィルター適用時にサブディレクトリモードを有効化（最適化版）またはトグル解除
+    /// 同じレベルを再度指定した場合は解除する
+    /// favorites.json に記載されているファイルのみを対象にスキャン
+    /// Requirements: 3.1, 5.1
+    func setFilterLevelWithSubdirectories(_ level: Int) async {
+        guard level >= 1, level <= 5 else { return }
+        guard let folderURL = currentFolderURL else { return }
+
+        // 現在のフィルターレベルと同じ場合はトグルで解除
+        if filterLevel == level {
+            await clearFilterWithSubdirectories()
+            return
+        }
+
+        // 親フォルダの画像URLを保存（復元用）
+        if !isSubdirectoryMode {
+            parentFolderImageURLs = imageURLs
+        }
+
+        // サブディレクトリを取得
+        let fileManager = FileManager.default
+        var subdirs: [URL] = []
+        if let contents = try? fileManager.contentsOfDirectory(
+            at: folderURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for itemURL in contents {
+                if let resourceValues = try? itemURL.resourceValues(forKeys: [.isDirectoryKey]),
+                   resourceValues.isDirectory == true {
+                    subdirs.append(itemURL)
+                }
+            }
+        }
+        subdirectoryURLs = subdirs
+
+        // 親フォルダ + サブディレクトリのお気に入りを統合読み込み
+        var allFolderURLs = [folderURL]
+        allFolderURLs.append(contentsOf: subdirectoryURLs)
+        aggregatedFavorites = await favoritesStore.loadAggregatedFavorites(for: allFolderURLs)
+
+        // お気に入りファイルのみを取得（ファイル存在確認済み）
+        let favoriteURLs = await favoritesStore.getFavoriteFileURLs(minimumLevel: level)
+
+        // ファイル名でソート
+        let sortedURLs = favoriteURLs.sorted {
+            $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+        }
+
+        // 画像リストを設定（お気に入りファイルのみ）
+        imageURLs = sortedURLs
+
+        // モードとフィルターを設定
+        isSubdirectoryMode = true
+        filterLevel = level
+
+        // フィルタリングインデックス（全ての画像がフィルタ条件を満たす）
+        filteredIndices = Array(0..<imageURLs.count)
+
+        Logger.app.info("Filter with subdirectories (optimized): level >= \(level, privacy: .public), \(self.imageURLs.count, privacy: .public) images from favorites.json")
+
+        // フィルタ結果が空でなければ、最初の画像に移動
+        if !imageURLs.isEmpty {
+            await jumpToIndex(0)
+        }
+
+        // フィルタリング用のプリフェッチを更新
+        updateFilteredPrefetch()
+    }
+
+    /// フィルター解除時にサブディレクトリモードも無効化
+    /// Requirements: 5.1
+    func clearFilterWithSubdirectories() async {
+        await disableSubdirectoryMode()
+
+        Logger.app.info("Filter with subdirectories cleared")
+
+        // 通常のプリフェッチに戻す
+        updatePrefetch(direction: .forward)
+    }
+
+    // MARK: - Private Subdirectory Methods
+
+    /// サブディレクトリモード用のフィルタリングインデックス再構築
+    private func rebuildFilteredIndicesForSubdirectoryMode() {
+        guard let level = filterLevel else {
+            filteredIndices = []
+            return
+        }
+
+        filteredIndices = imageURLs.enumerated().compactMap { index, url in
+            let favoriteLevel = getFavoriteLevel(for: url)
+            return favoriteLevel >= level ? index : nil
+        }
     }
 }
