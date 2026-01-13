@@ -41,6 +41,8 @@ Thumbs.db
 .kiro/runtime/
 
 # Kiro logs (optional: remove this line if you want to keep logs)
+.kiro/logs/
+.kiro/specs/logs/
 .kiro/specs/*/logs/
 
 # Environment and secrets
