@@ -33,10 +33,32 @@ Clean Architecture with layer separation:
 - SwiftFormat for consistent formatting
 - Japanese comments for domain concepts, English for standard patterns
 
-### Testing
-- Unit tests in `AIviewTests/` for all services and data layer
-- Performance tests with baseline measurements
+### Testing Strategy
+
+**Test Categories**:
+| Category | Location | Purpose | Execution |
+|----------|----------|---------|-----------|
+| Unit Tests | `AIviewTests/` | Services, ViewModels, Data layer | `task test:unit` (every commit) |
+| UI Tests | `AIviewUITests/` | User interaction flows | `task test:ui` (every commit) |
+| Performance Tests | `AIviewUITests/ScrollPerformanceUITests` | Scroll/memory benchmarks | `task test:perf` (manual only) |
+
+**Default Test Suite** (`task test`):
+- Runs Unit + UI tests
+- Performance tests are **excluded** from default suite (time-intensive, 100 images × 5 iterations)
+- Skipped via Xcode scheme `SkippedTests` configuration
+
+**Performance Tests** (`task test:perf`):
+- Run manually when optimizing image loading, caching, or scroll behavior
+- Individual test commands available:
+  - `task test:perf:nocache` - Cold cache performance
+  - `task test:perf:cache` - Warm cache performance
+  - `task test:perf:memory` - Memory usage during bulk load
+  - `task test:perf:keynav` - Key navigation responsiveness
+
+**Testing Principles**:
 - No mocking framework - protocol-based dependency injection
+- Test environment via `AIVIEW_TEST_FOLDER` and `AIVIEW_UI_TEST_MODE` env vars
+- Performance baselines tracked via XCTest metrics (CPU, clock, memory)
 
 ## Development Environment
 
