@@ -9,6 +9,8 @@ struct ImageDisplayView: View {
     let hasImages: Bool
     var favoriteLevel: Int = 0
     var isFilterEmpty: Bool = false
+    var currentImagePath: String? = nil
+    @State private var showCopiedToast = false
 
     var body: some View {
         ZStack {
@@ -37,6 +39,12 @@ struct ImageDisplayView: View {
                         if favoriteLevel > 0 {
                             FavoriteIndicator(level: favoriteLevel, size: .large)
                                 .padding(12)
+                        }
+                    }
+                    .overlay(alignment: .top) {
+                        // ファイルパスヘッダー（上部中央）
+                        if let path = currentImagePath {
+                            filePathHeader(path: path)
                         }
                     }
             } else if isLoading {
@@ -70,6 +78,68 @@ struct ImageDisplayView: View {
                     Text("画像を読み込めませんでした")
                         .foregroundColor(.white.opacity(0.7))
                 }
+            }
+        }
+        .overlay {
+            // コピー完了トースト
+            if showCopiedToast {
+                VStack {
+                    Spacer()
+                    Text("パスをコピーしました")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.black.opacity(0.8))
+                        .cornerRadius(6)
+                        .padding(.bottom, 120)
+                }
+                .transition(.opacity)
+            }
+        }
+    }
+
+    // MARK: - File Path Header
+
+    private func filePathHeader(path: String) -> some View {
+        HStack(spacing: 8) {
+            Text(path)
+                .font(.system(size: 11))
+                .foregroundColor(.white.opacity(0.9))
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Button {
+                copyToClipboard(path)
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            .buttonStyle(.plain)
+            .help("パスをコピー")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.6))
+        .cornerRadius(6)
+        .padding(.top, 8)
+    }
+
+    // MARK: - Helpers
+
+    private func copyToClipboard(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+
+        // トースト表示
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showCopiedToast = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showCopiedToast = false
             }
         }
     }
