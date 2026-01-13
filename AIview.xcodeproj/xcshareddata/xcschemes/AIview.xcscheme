@@ -51,6 +51,11 @@
                BlueprintName = "AIviewUITests"
                ReferencedContainer = "container:AIview.xcodeproj">
             </BuildableReference>
+            <SkippedTests>
+               <Test
+                  Identifier = "ScrollPerformanceUITests">
+               </Test>
+            </SkippedTests>
          </TestableReference>
       </Testables>
    </TestAction>

@@ -47,6 +47,7 @@
 		A1000039 /* SlideshowSettingsDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000039 /* SlideshowSettingsDialog.swift */; };
 		A1000040 /* ScrollPerformanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000040 /* ScrollPerformanceUITests.swift */; };
 		A1000041 /* DummyImageGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000041 /* DummyImageGenerator.swift */; };
+		A1000042 /* ImageBrowserViewModelSubdirectoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000042 /* ImageBrowserViewModelSubdirectoryTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -110,6 +111,7 @@
 		A2000039 /* SlideshowSettingsDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowSettingsDialog.swift; sourceTree = "<group>"; };
 		A2000040 /* ScrollPerformanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollPerformanceUITests.swift; sourceTree = "<group>"; };
 		A2000041 /* DummyImageGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DummyImageGenerator.swift; sourceTree = "<group>"; };
+		A2000042 /* ImageBrowserViewModelSubdirectoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserViewModelSubdirectoryTests.swift; sourceTree = "<group>"; };
 		A5000005 /* AIviewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIviewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -237,6 +239,7 @@
 				A2000034 /* FavoritesE2ETests.swift */,
 				A2000036 /* SlideshowTimerTests.swift */,
 				A2000037 /* ImageBrowserViewModelSlideshowTests.swift */,
+				A2000042 /* ImageBrowserViewModelSubdirectoryTests.swift */,
 			);
 			path = AIviewTests;
 			sourceTree = "<group>";
@@ -418,6 +421,7 @@
 				A1000034 /* FavoritesE2ETests.swift in Sources */,
 				A1000036 /* SlideshowTimerTests.swift in Sources */,
 				A1000037 /* ImageBrowserViewModelSlideshowTests.swift in Sources */,
+				A1000042 /* ImageBrowserViewModelSubdirectoryTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -586,7 +590,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aiview.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -612,7 +616,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aiview.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -628,7 +632,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aiview.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -645,7 +649,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aiview.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -661,7 +665,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aiview.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -677,7 +681,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aiview.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
