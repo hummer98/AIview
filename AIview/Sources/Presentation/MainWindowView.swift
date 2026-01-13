@@ -148,15 +148,14 @@ struct MainWindowView: View {
 
     private var statusBar: some View {
         HStack {
-            // スライドショー状態またはフィルタリング状態
-            if viewModel.isSlideshowActive {
-                HStack(spacing: 8) {
+            // スライドショー状態と位置インジケータを並べて表示
+            HStack(spacing: 8) {
+                if viewModel.isSlideshowActive {
                     Image(systemName: viewModel.isSlideshowPaused ? "pause.fill" : "play.fill")
                     Text(viewModel.slideshowStatusText)
+                        .foregroundColor(.green)
+                        .font(.system(size: 12, weight: .medium))
                 }
-                .foregroundColor(.green)
-                .font(.system(size: 12, weight: .medium))
-            } else {
                 Text(viewModel.filterStatusText)
                     .foregroundColor(viewModel.isFiltering ? .yellow : .white)
                     .font(.system(size: 12))
