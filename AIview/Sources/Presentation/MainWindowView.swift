@@ -203,13 +203,15 @@ struct MainWindowView: View {
             return handleSlideshowKeyPress(keyPress)
         }
 
-        // SHIFT+数字キー: フィルタリング操作
+        // SHIFT+数字キー: フィルタリング操作（サブディレクトリを含む）
         if keyPress.modifiers.contains(.shift) {
             if let level = shiftedKeyToLevel(keyPress.key) {
-                if level == 0 {
-                    viewModel.clearFilter()
-                } else {
-                    viewModel.setFilterLevel(level)
+                Task {
+                    if level == 0 {
+                        await viewModel.clearFilterWithSubdirectories()
+                    } else {
+                        await viewModel.setFilterLevelWithSubdirectories(level)
+                    }
                 }
                 return .handled
             }
@@ -270,8 +272,11 @@ struct MainWindowView: View {
     private func handleSlideshowKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
         switch keyPress.key {
         case .space:
-            // 一時停止/再開
-            viewModel.toggleSlideshowPause()
+            // プライバシーモードを発動し、スライドショーを一時停止
+            viewModel.togglePrivacyMode()
+            if !viewModel.isSlideshowPaused {
+                viewModel.toggleSlideshowPause()
+            }
             return .handled
 
         case .escape:
