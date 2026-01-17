@@ -216,6 +216,9 @@ final class ImageBrowserViewModel {
         parentFolderImageURLs = []
         aggregatedFavorites = [:]
 
+        // スライドショーを停止
+        stopSlideshow()
+
         // お気に入りを読み込み
         await favoritesStore.loadFavorites(for: url)
         favorites = await favoritesStore.getAllFavorites()
@@ -892,6 +895,123 @@ final class ImageBrowserViewModel {
     /// トースト通知をクリア
     func clearToast() {
         toastMessage = nil
+    }
+
+    // MARK: - Reload Operations
+
+    /// 現在のフォルダをリロード
+    /// Requirements: 1.1, 1.2, 1.3, 3.1, 3.2, 3.3, 4.1, 4.2, 4.3
+    /// - Returns: リロードが実行された場合はtrue、フォルダ未選択で無視された場合はfalse
+    func reloadCurrentFolder() async -> Bool {
+        // フォルダ未選択時は無視（Requirements: 1.2）
+        guard let folderURL = currentFolderURL else {
+            Logger.app.debug("Reload ignored: no folder selected")
+            return false
+        }
+
+        Logger.app.info("Reloading folder: \(folderURL.path, privacy: .public)")
+
+        // リロード前の状態を保存
+        let savedImageURL = currentImageURL
+        let savedIndex = currentIndex
+        let savedSubdirectoryMode = isSubdirectoryMode
+        let savedFilterLevel = filterLevel
+
+        // 既存のスキャンをキャンセル
+        await folderScanner.cancelCurrentScan()
+        imageLoader.cancelAllExcept(URL(fileURLWithPath: "/dev/null"))
+
+        // スキャン開始フラグを設定
+        isScanningFolder = true
+
+        do {
+            if savedSubdirectoryMode {
+                // サブディレクトリモードでリロード
+                let result = try await folderScanner.scanWithSubdirectories(folderURL: folderURL)
+                subdirectoryURLs = result.subdirectoryURLs
+                imageURLs = result.imageURLs
+            } else {
+                // 通常モードでリロード
+                try await folderScanner.scan(
+                    folderURL: folderURL,
+                    onFirstImage: { [weak self] _ in
+                        // 最初の画像コールバックは無視（リロードでは不要）
+                    },
+                    onProgress: { [weak self] urls in
+                        await MainActor.run {
+                            self?.imageURLs = urls
+                        }
+                    },
+                    onComplete: { [weak self] urls in
+                        await MainActor.run {
+                            self?.imageURLs = urls.sorted {
+                                $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+                            }
+                        }
+                    }
+                )
+            }
+
+            isScanningFolder = false
+
+            // ソート済みの画像リストを確保
+            imageURLs = imageURLs.sorted {
+                $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+            }
+
+            // 位置復元ロジック（Requirements: 3.1, 3.2, 3.3）
+            restorePosition(savedImageURL: savedImageURL, savedIndex: savedIndex)
+
+            // フィルターモードが有効だった場合は再適用
+            if let level = savedFilterLevel {
+                filterLevel = level
+                rebuildFilteredIndices()
+            }
+
+            // プリフェッチを更新
+            if isFiltering {
+                updateFilteredPrefetch()
+            } else {
+                updatePrefetch(direction: .forward)
+            }
+
+            Logger.app.info("Reload complete: \(self.imageURLs.count, privacy: .public) images")
+            return true
+
+        } catch {
+            isScanningFolder = false
+            errorMessage = error.localizedDescription
+            Logger.app.warning("Reload failed: \(error.localizedDescription, privacy: .public)")
+            return true // エラーでもリロードは実行されたのでtrue
+        }
+    }
+
+    /// リロード後の位置復元
+    /// Requirements: 3.1, 3.2, 3.3
+    private func restorePosition(savedImageURL: URL?, savedIndex: Int) {
+        if imageURLs.isEmpty {
+            // 空フォルダ状態（Requirements: 3.3）
+            currentIndex = 0
+            currentImage = nil
+            currentMetadata = nil
+            Logger.app.info("Folder is now empty after reload")
+            return
+        }
+
+        if let savedURL = savedImageURL, let newIndex = imageURLs.firstIndex(of: savedURL) {
+            // 同じ画像が存在する場合（Requirements: 3.1）
+            currentIndex = newIndex
+            Logger.app.debug("Restored to same image at index \(newIndex, privacy: .public)")
+        } else {
+            // 画像が削除された場合、最近接位置を選択（Requirements: 3.2）
+            currentIndex = min(savedIndex, imageURLs.count - 1)
+            Logger.app.debug("Selected nearest image at index \(self.currentIndex, privacy: .public)")
+        }
+
+        // 現在の画像を再読み込み
+        Task {
+            await loadCurrentImage()
+        }
     }
 
     // MARK: - Subdirectory Mode Operations

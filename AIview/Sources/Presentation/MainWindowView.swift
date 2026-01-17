@@ -8,8 +8,36 @@ struct MainWindowView: View {
     @State private var showingFolderPicker = false
 
     var body: some View {
+        mainBody
+    }
+
+    @ViewBuilder
+    private var mainBody: some View {
+        baseContent
+            .onChange(of: appState?.showFolderPicker) { _, newValue in
+                if newValue == true {
+                    showingFolderPicker = true
+                    appState?.showFolderPicker = false
+                }
+            }
+            .onChange(of: appState?.openRecentFolderURL) { _, newValue in
+                handleRecentFolderChange(newValue)
+            }
+            .onChange(of: appState?.shouldReloadFolder) {
+                handleReloadRequest()
+            }
+            .onChange(of: viewModel.currentFolderURL) {
+                appState?.hasCurrentFolder = (viewModel.currentFolderURL != nil)
+            }
+            .navigationTitle(viewModel.currentFolderURL?.path ?? "AIview")
+            .onAppear {
+                handleAppear()
+            }
+    }
+
+    @ViewBuilder
+    private var baseContent: some View {
         ZStack {
-            // メインコンテンツ（プライバシーモードでも破棄しない）
             mainContent
                 .opacity(viewModel.isPrivacyMode ? 0 : 1)
 
@@ -30,10 +58,7 @@ struct MainWindowView: View {
         ) { result in
             handleFolderSelection(result)
         }
-        .alert("エラー", isPresented: .init(
-            get: { viewModel.errorMessage != nil },
-            set: { if !$0 { viewModel.clearError() } }
-        )) {
+        .alert("エラー", isPresented: errorBinding) {
             Button("OK") {
                 viewModel.clearError()
             }
@@ -49,30 +74,30 @@ struct MainWindowView: View {
                 }
             }
         }
-        .onChange(of: appState?.showFolderPicker) { _, newValue in
-            if newValue == true {
-                showingFolderPicker = true
-                appState?.showFolderPicker = false
+    }
+
+    private var errorBinding: Binding<Bool> {
+        .init(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.clearError() } }
+        )
+    }
+
+    private func handleRecentFolderChange(_ newValue: URL?) {
+        if let url = newValue {
+            Task {
+                await viewModel.openFolder(url)
+                appState?.refreshRecentFolders()
             }
+            appState?.openRecentFolderURL = nil
         }
-        .onChange(of: appState?.openRecentFolderURL) { _, newValue in
-            if let url = newValue {
-                Task {
-                    await viewModel.openFolder(url)
-                    // 履歴リストを更新（先頭に移動するため）
-                    appState?.refreshRecentFolders()
-                }
-                appState?.openRecentFolderURL = nil
-            }
-        }
-        .navigationTitle(viewModel.currentFolderURL?.path ?? "AIview")
-        .onAppear {
-            // UIテスト用の環境変数を確認
-            if let folderPath = ProcessInfo.processInfo.environment["AIVIEW_TEST_FOLDER"] {
-                let url = URL(fileURLWithPath: folderPath)
-                Task {
-                    await viewModel.openFolder(url)
-                }
+    }
+
+    private func handleAppear() {
+        if let folderPath = ProcessInfo.processInfo.environment["AIVIEW_TEST_FOLDER"] {
+            let url = URL(fileURLWithPath: folderPath)
+            Task {
+                await viewModel.openFolder(url)
             }
         }
     }
@@ -331,6 +356,18 @@ struct MainWindowView: View {
         case KeyEquivalent("%"): return 5  // Shift+5
         case KeyEquivalent(")"), KeyEquivalent("0"): return 0  // Shift+0 (フィルタ解除) - JIS/US両対応
         default: return nil
+        }
+    }
+
+    // MARK: - Reload Handling
+
+    /// リロードリクエストを処理
+    /// Requirements: 1.1, 2.3
+    private func handleReloadRequest() {
+        guard appState?.shouldReloadFolder == true else { return }
+        Task {
+            _ = await viewModel.reloadCurrentFolder()
+            appState?.clearReloadRequest()
         }
     }
 

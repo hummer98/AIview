@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// アプリケーションのメニューコマンド定義
-/// Requirements: 1.1, 1.4, 1.5
+/// Requirements: 1.1, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4
 struct AppCommands: Commands {
     @Bindable var appState: AppState
 
@@ -43,6 +43,16 @@ struct AppCommands: Commands {
                     }
                 }
             }
+        }
+
+        // 表示メニュー
+        // Requirements: 2.1, 2.2, 2.3, 2.4
+        CommandMenu("表示") {
+            Button("フォルダをリロード") {
+                appState.triggerReload()
+            }
+            .keyboardShortcut("r", modifiers: .command)
+            .disabled(!appState.hasCurrentFolder)
         }
     }
 }
