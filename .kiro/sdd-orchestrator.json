@@ -1,15 +1,15 @@
 {
   "version": 3,
   "profile": {
-    "name": "cc-sdd",
-    "installedAt": "2026-01-04T10:54:29.591Z"
+    "name": "cc-sdd-agent",
+    "installedAt": "2026-01-17T07:15:18.255Z"
   },
   "layout": {
     "leftPaneWidth": 288,
     "rightPaneWidth": 320,
     "bottomPaneHeight": 400,
     "agentListHeight": 160,
-    "globalAgentPanelHeight": 120
+    "projectAgentPanelHeight": 202
   },
   "commandsets": {
     "cc-sdd": {
@@ -18,11 +18,15 @@
     },
     "bug": {
       "version": "1.0.0",
-      "installedAt": "2026-01-04T10:54:29.590Z"
+      "installedAt": "2026-01-17T07:15:18.253Z"
     },
     "document-review": {
       "version": "0.0.0",
-      "installedAt": "2026-01-04T10:54:29.590Z"
+      "installedAt": "2026-01-17T07:15:18.253Z"
+    },
+    "cc-sdd-agent": {
+      "version": "0.0.0",
+      "installedAt": "2026-01-17T07:15:18.253Z"
     }
   }
 }

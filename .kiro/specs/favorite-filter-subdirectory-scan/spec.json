@@ -1,7 +1,7 @@
 {
   "feature_name": "favorite-filter-subdirectory-scan",
   "created_at": "2026-01-04T12:30:00+09:00",
-  "updated_at": "2026-01-04T03:36:49.082Z",
+  "updated_at": "2026-01-17T07:12:59.404Z",
   "language": "ja",
   "phase": "implementation-complete",
   "approvals": {
@@ -41,12 +41,12 @@
       {
         "roundNumber": 1,
         "status": "reply_complete",
-        "fixApplied": true
+        "fixStatus": "applied"
       },
       {
         "roundNumber": 2,
         "status": "reply_complete",
-        "fixApplied": true
+        "fixStatus": "applied"
       }
     ]
   }
