@@ -2,6 +2,18 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [0.2.0] - 2026-01-17
+
+### Added
+
+- Folder reload functionality with Cmd+R keyboard shortcut
+- Reload button in folder selection view
+
+### Developer
+
+- Enhanced SDD workflow with agents and new commands
+- Added reload functionality tests
+
 ## [0.1.0] - 2026-01-14
 
 Initial release of AIview - a macOS image viewer application.
