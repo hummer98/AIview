@@ -48,6 +48,8 @@
 		A1000040 /* ScrollPerformanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000040 /* ScrollPerformanceUITests.swift */; };
 		A1000041 /* DummyImageGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000041 /* DummyImageGenerator.swift */; };
 		A1000042 /* ImageBrowserViewModelSubdirectoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000042 /* ImageBrowserViewModelSubdirectoryTests.swift */; };
+		A1000043 /* ImageBrowserViewModelReloadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000043 /* ImageBrowserViewModelReloadTests.swift */; };
+		A1000044 /* ReloadIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000044 /* ReloadIntegrationTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -112,6 +114,8 @@
 		A2000040 /* ScrollPerformanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollPerformanceUITests.swift; sourceTree = "<group>"; };
 		A2000041 /* DummyImageGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DummyImageGenerator.swift; sourceTree = "<group>"; };
 		A2000042 /* ImageBrowserViewModelSubdirectoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserViewModelSubdirectoryTests.swift; sourceTree = "<group>"; };
+		A2000043 /* ImageBrowserViewModelReloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserViewModelReloadTests.swift; sourceTree = "<group>"; };
+		A2000044 /* ReloadIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReloadIntegrationTests.swift; sourceTree = "<group>"; };
 		A5000005 /* AIviewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIviewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -240,6 +244,8 @@
 				A2000036 /* SlideshowTimerTests.swift */,
 				A2000037 /* ImageBrowserViewModelSlideshowTests.swift */,
 				A2000042 /* ImageBrowserViewModelSubdirectoryTests.swift */,
+				A2000043 /* ImageBrowserViewModelReloadTests.swift */,
+				A2000044 /* ReloadIntegrationTests.swift */,
 			);
 			path = AIviewTests;
 			sourceTree = "<group>";
@@ -422,6 +428,8 @@
 				A1000036 /* SlideshowTimerTests.swift in Sources */,
 				A1000037 /* ImageBrowserViewModelSlideshowTests.swift in Sources */,
 				A1000042 /* ImageBrowserViewModelSubdirectoryTests.swift in Sources */,
+				A1000043 /* ImageBrowserViewModelReloadTests.swift in Sources */,
+				A1000044 /* ReloadIntegrationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
