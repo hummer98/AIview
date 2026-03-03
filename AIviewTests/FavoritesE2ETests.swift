@@ -252,6 +252,46 @@ final class FavoritesE2ETests: XCTestCase {
         XCTAssertEqual(viewModel.currentImageURL, viewModel.imageURLs[0], "最初のお気に入り画像が表示されるべき")
     }
 
+    /// E2E: フィルタ適用時に現在の画像がフィルタ対象外で、お気に入りが後方にのみある場合
+    /// 画像a,b,c,dがあり、c,dがお気に入り。aを表示中にフィルタ適用→cにジャンプ
+    func testE2E_Filtering_JumpsToFirstMatchWhenFavoritesAreAfterCurrent() async throws {
+        // Given - 4枚の画像を用意
+        // テストフォルダを作り直して4枚にする
+        let fourImageFolder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FavoritesE2E_FourImages_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: fourImageFolder, withIntermediateDirectories: true)
+        let pngData = createMinimalPNG()
+        for name in ["a", "b", "c", "d"] {
+            let fileURL = fourImageFolder.appendingPathComponent("\(name).png")
+            try pngData.write(to: fileURL)
+        }
+        defer { try? FileManager.default.removeItem(at: fourImageFolder) }
+
+        await viewModel.openFolder(fourImageFolder)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        XCTAssertEqual(viewModel.imageURLs.count, 4)
+
+        // c(idx2), d(idx3)にお気に入りレベル5を設定
+        await viewModel.jumpToIndex(2)
+        try await viewModel.setFavoriteLevel(5)
+
+        await viewModel.jumpToIndex(3)
+        try await viewModel.setFavoriteLevel(5)
+
+        // a(idx0, お気に入りなし)に移動
+        await viewModel.jumpToIndex(0)
+        XCTAssertEqual(viewModel.currentIndex, 0)
+
+        // When - レベル5でフィルタリング
+        viewModel.setFilterLevel(5)
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        // Then - 最初のお気に入り画像c(idx2)にジャンプしている
+        XCTAssertEqual(viewModel.currentIndex, 2, "お気に入りの最初の画像cにジャンプすべき")
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "c.png", "画像cが表示されるべき")
+    }
+
     /// E2E: フィルタ適用時に現在の画像がフィルタ対象の場合、その位置を維持する
     func testE2E_Filtering_StaysAtCurrentImageWhenInFilter() async throws {
         // Given - フォルダを開いてお気に入りを設定
