@@ -219,6 +219,66 @@ final class FavoritesE2ETests: XCTestCase {
         XCTAssertEqual(viewModel.currentIndex, 3, "通常は次のインデックス3")
     }
 
+    /// E2E: フィルタ適用時に現在の画像がフィルタ対象外の場合、最初の該当画像にジャンプする
+    func testE2E_Filtering_JumpsToFirstMatchWhenCurrentImageNotInFilter() async throws {
+        // Given - フォルダを開いてお気に入りを設定
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // 画像1(idx0),画像3(idx2),画像5(idx4)にレベル5を設定
+        await viewModel.jumpToIndex(0)
+        try await viewModel.setFavoriteLevel(5)
+
+        await viewModel.jumpToIndex(2)
+        try await viewModel.setFavoriteLevel(5)
+
+        await viewModel.jumpToIndex(4)
+        try await viewModel.setFavoriteLevel(5)
+
+        // フィルタ対象外の画像3(idx1, お気に入りなし)に移動
+        await viewModel.jumpToIndex(1)
+        XCTAssertEqual(viewModel.currentIndex, 1)
+        let nonFavoriteURL = viewModel.currentImageURL
+        XCTAssertNotNil(nonFavoriteURL)
+
+        // When - レベル5でフィルタリング
+        viewModel.setFilterLevel(5)
+        // jumpToIndexはTaskで非同期実行されるので待つ
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        // Then - 最初の該当画像(idx0)にジャンプしている
+        XCTAssertEqual(viewModel.currentIndex, 0, "フィルタ対象外の画像からは最初の該当画像にジャンプすべき")
+        XCTAssertNotEqual(viewModel.currentImageURL, nonFavoriteURL, "表示画像が切り替わっているべき")
+        XCTAssertEqual(viewModel.currentImageURL, viewModel.imageURLs[0], "最初のお気に入り画像が表示されるべき")
+    }
+
+    /// E2E: フィルタ適用時に現在の画像がフィルタ対象の場合、その位置を維持する
+    func testE2E_Filtering_StaysAtCurrentImageWhenInFilter() async throws {
+        // Given - フォルダを開いてお気に入りを設定
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // 画像1(idx0),画像3(idx2)にレベル5を設定
+        await viewModel.jumpToIndex(0)
+        try await viewModel.setFavoriteLevel(5)
+
+        await viewModel.jumpToIndex(2)
+        try await viewModel.setFavoriteLevel(5)
+
+        // フィルタ対象の画像3(idx2, レベル5)に移動
+        await viewModel.jumpToIndex(2)
+        XCTAssertEqual(viewModel.currentIndex, 2)
+        let favoriteURL = viewModel.currentImageURL
+
+        // When - レベル5でフィルタリング
+        viewModel.setFilterLevel(5)
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        // Then - 現在位置を維持している
+        XCTAssertEqual(viewModel.currentIndex, 2, "フィルタ対象の画像にいる場合は位置を維持すべき")
+        XCTAssertEqual(viewModel.currentImageURL, favoriteURL, "表示画像が変わらないべき")
+    }
+
     /// E2E: フィルタリング結果が空の場合
     /// Requirements: 4.3
     func testE2E_Filtering_EmptyResult() async throws {
