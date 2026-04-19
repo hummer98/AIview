@@ -126,7 +126,16 @@ extension DiskIOMetricsSnapshot {
         readCount: 0,
         writeCount: 0,
         readHistogram: .empty,
-        writeHistogram: .empty
+        writeHistogram: .empty,
+        evictCount: 0
+    )
+}
+
+extension DiskCacheStateSnapshot {
+    static let empty = DiskCacheStateSnapshot(
+        totalBytes: 0,
+        entryCount: 0,
+        maxBytes: 0
     )
 }
 
@@ -160,6 +169,41 @@ struct DiskIOMetricsSnapshot: Sendable, Equatable, Codable {
     let writeCount: UInt64
     let readHistogram: LatencyHistogramSnapshot
     let writeHistogram: LatencyHistogramSnapshot
+    let evictCount: UInt64
+
+    init(
+        readCount: UInt64,
+        writeCount: UInt64,
+        readHistogram: LatencyHistogramSnapshot,
+        writeHistogram: LatencyHistogramSnapshot,
+        evictCount: UInt64 = 0
+    ) {
+        self.readCount = readCount
+        self.writeCount = writeCount
+        self.readHistogram = readHistogram
+        self.writeHistogram = writeHistogram
+        self.evictCount = evictCount
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case readCount, writeCount, readHistogram, writeHistogram, evictCount
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.readCount = try c.decode(UInt64.self, forKey: .readCount)
+        self.writeCount = try c.decode(UInt64.self, forKey: .writeCount)
+        self.readHistogram = try c.decode(LatencyHistogramSnapshot.self, forKey: .readHistogram)
+        self.writeHistogram = try c.decode(LatencyHistogramSnapshot.self, forKey: .writeHistogram)
+        self.evictCount = try c.decodeIfPresent(UInt64.self, forKey: .evictCount) ?? 0
+    }
+}
+
+/// ディスクキャッシュの状態スナップショット (totalBytes / entryCount / maxBytes)
+struct DiskCacheStateSnapshot: Sendable, Equatable, Codable {
+    let totalBytes: Int64
+    let entryCount: Int
+    let maxBytes: Int64
 }
 
 /// 専用 DispatchQueue の稼働状況
@@ -184,12 +228,60 @@ struct MetricsSnapshot: Sendable, Codable {
     let thumbnailMemory: CacheMetricsSnapshot
     let thumbnailDisk: CacheMetricsSnapshot
     let diskIO: DiskIOMetricsSnapshot
+    let diskCacheState: DiskCacheStateSnapshot
     let thumbnailQueue: QueueMetricsSnapshot
     let cacheManagerLock: LockWaitMetricsSnapshot
     let imageLoaderLock: LockWaitMetricsSnapshot
     let prefetchSuccess: UInt64
     let prefetchFailure: UInt64
     let capturedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case fullImageMemory, thumbnailMemory, thumbnailDisk, diskIO, diskCacheState
+        case thumbnailQueue, cacheManagerLock, imageLoaderLock
+        case prefetchSuccess, prefetchFailure, capturedAt
+    }
+
+    init(
+        fullImageMemory: CacheMetricsSnapshot,
+        thumbnailMemory: CacheMetricsSnapshot,
+        thumbnailDisk: CacheMetricsSnapshot,
+        diskIO: DiskIOMetricsSnapshot,
+        diskCacheState: DiskCacheStateSnapshot = .empty,
+        thumbnailQueue: QueueMetricsSnapshot,
+        cacheManagerLock: LockWaitMetricsSnapshot,
+        imageLoaderLock: LockWaitMetricsSnapshot,
+        prefetchSuccess: UInt64,
+        prefetchFailure: UInt64,
+        capturedAt: Date
+    ) {
+        self.fullImageMemory = fullImageMemory
+        self.thumbnailMemory = thumbnailMemory
+        self.thumbnailDisk = thumbnailDisk
+        self.diskIO = diskIO
+        self.diskCacheState = diskCacheState
+        self.thumbnailQueue = thumbnailQueue
+        self.cacheManagerLock = cacheManagerLock
+        self.imageLoaderLock = imageLoaderLock
+        self.prefetchSuccess = prefetchSuccess
+        self.prefetchFailure = prefetchFailure
+        self.capturedAt = capturedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.fullImageMemory = try c.decode(CacheMetricsSnapshot.self, forKey: .fullImageMemory)
+        self.thumbnailMemory = try c.decode(CacheMetricsSnapshot.self, forKey: .thumbnailMemory)
+        self.thumbnailDisk = try c.decode(CacheMetricsSnapshot.self, forKey: .thumbnailDisk)
+        self.diskIO = try c.decode(DiskIOMetricsSnapshot.self, forKey: .diskIO)
+        self.diskCacheState = try c.decodeIfPresent(DiskCacheStateSnapshot.self, forKey: .diskCacheState) ?? .empty
+        self.thumbnailQueue = try c.decode(QueueMetricsSnapshot.self, forKey: .thumbnailQueue)
+        self.cacheManagerLock = try c.decode(LockWaitMetricsSnapshot.self, forKey: .cacheManagerLock)
+        self.imageLoaderLock = try c.decode(LockWaitMetricsSnapshot.self, forKey: .imageLoaderLock)
+        self.prefetchSuccess = try c.decode(UInt64.self, forKey: .prefetchSuccess)
+        self.prefetchFailure = try c.decode(UInt64.self, forKey: .prefetchFailure)
+        self.capturedAt = try c.decode(Date.self, forKey: .capturedAt)
+    }
 
     func formattedLogString() -> String {
         let df = DateFormatter()
@@ -201,6 +293,13 @@ struct MetricsSnapshot: Sendable, Codable {
         lines.append(formatCacheLine(label: "Thumbnail disk  ", snapshot: thumbnailDisk))
         lines.append(formatDiskIOLine(label: "Disk I/O read ", count: diskIO.readCount, histogram: diskIO.readHistogram))
         lines.append(formatDiskIOLine(label: "Disk I/O write", count: diskIO.writeCount, histogram: diskIO.writeHistogram))
+        lines.append(String(
+            format: "Disk cache state: %lld/%lld bytes, %d entries, %llu evictions",
+            diskCacheState.totalBytes,
+            diskCacheState.maxBytes,
+            diskCacheState.entryCount,
+            diskIO.evictCount
+        ))
         lines.append(String(
             format: "Thumbnail queue: current=%d, peak=%d, avg=%.2f, total=%llu",
             thumbnailQueue.currentInFlight,

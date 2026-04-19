@@ -260,6 +260,34 @@ final class MetricsTests: XCTestCase {
         XCTAssertEqual(snapshot.fullImageMemory.hits, 0)
         XCTAssertEqual(snapshot.thumbnailQueue.totalEnqueued, 0)
         XCTAssertEqual(snapshot.diskIO.readCount, 0)
+        XCTAssertEqual(snapshot.diskIO.evictCount, 0)
+        XCTAssertEqual(snapshot.diskCacheState.totalBytes, 0)
+        XCTAssertEqual(snapshot.diskCacheState.entryCount, 0)
+    }
+
+    // MARK: - DiskCacheState / evictCount backward compat (M5)
+
+    func testDiskIOMetricsSnapshot_jsonDecoding_missingEvictCount_defaultsToZero() throws {
+        let legacyJSON = """
+        {
+          "readCount": 3,
+          "writeCount": 4,
+          "readHistogram": {"boundariesMs":[],"counts":[0],"count":0,"sumMs":0,"maxMs":0},
+          "writeHistogram": {"boundariesMs":[],"counts":[0],"count":0,"sumMs":0,"maxMs":0}
+        }
+        """
+        let data = Data(legacyJSON.utf8)
+        let decoded = try JSONDecoder().decode(DiskIOMetricsSnapshot.self, from: data)
+        XCTAssertEqual(decoded.readCount, 3)
+        XCTAssertEqual(decoded.writeCount, 4)
+        XCTAssertEqual(decoded.evictCount, 0)
+    }
+
+    func testDiskCacheStateSnapshot_empty_hasZeroFields() {
+        let s = DiskCacheStateSnapshot.empty
+        XCTAssertEqual(s.totalBytes, 0)
+        XCTAssertEqual(s.entryCount, 0)
+        XCTAssertEqual(s.maxBytes, 0)
     }
 
     // MARK: - Formatting

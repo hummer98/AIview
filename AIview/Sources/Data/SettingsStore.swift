@@ -8,6 +8,7 @@ final class SettingsStore {
     private enum Keys {
         static let fullImageCacheSizeMB = "fullImageCacheSizeMB"
         static let thumbnailCacheSizeMB = "thumbnailCacheSizeMB"
+        static let diskCacheSizeMB = "diskCacheSizeMB"
         static let slideshowIntervalSeconds = "slideshowIntervalSeconds"
     }
 
@@ -18,6 +19,13 @@ final class SettingsStore {
 
     /// デフォルトのサムネイルキャッシュサイズ (MB)
     static let defaultThumbnailCacheSizeMB: Int = 256
+
+    /// デフォルトのディスクキャッシュサイズ (MB)
+    static let defaultDiskCacheSizeMB: Int = 512
+
+    /// ディスクキャッシュサイズの許容範囲 (MB)
+    static let minDiskCacheSizeMB: Int = 32
+    static let maxDiskCacheSizeMB: Int = 8192
 
     /// デフォルトのスライドショー間隔 (秒)
     static let defaultSlideshowIntervalSeconds: Int = 3
@@ -37,6 +45,7 @@ final class SettingsStore {
         defaults.register(defaults: [
             Keys.fullImageCacheSizeMB: Self.defaultFullImageCacheSizeMB,
             Keys.thumbnailCacheSizeMB: Self.defaultThumbnailCacheSizeMB,
+            Keys.diskCacheSizeMB: Self.defaultDiskCacheSizeMB,
             Keys.slideshowIntervalSeconds: Self.defaultSlideshowIntervalSeconds,
         ])
     }
@@ -63,6 +72,24 @@ final class SettingsStore {
     /// サムネイルキャッシュサイズ (バイト)
     var thumbnailCacheSizeBytes: Int {
         thumbnailCacheSizeMB * 1024 * 1024
+    }
+
+    /// ディスクキャッシュサイズ (MB, 32–8192 にクランプ)
+    var diskCacheSizeMB: Int {
+        get {
+            let raw = defaults.integer(forKey: Keys.diskCacheSizeMB)
+            if raw <= 0 { return Self.defaultDiskCacheSizeMB }
+            return min(Self.maxDiskCacheSizeMB, max(Self.minDiskCacheSizeMB, raw))
+        }
+        set {
+            let clamped = min(Self.maxDiskCacheSizeMB, max(Self.minDiskCacheSizeMB, newValue))
+            defaults.set(clamped, forKey: Keys.diskCacheSizeMB)
+        }
+    }
+
+    /// ディスクキャッシュサイズ (バイト)
+    var diskCacheSizeBytes: Int {
+        diskCacheSizeMB * 1024 * 1024
     }
 
     // MARK: - Slideshow Settings

@@ -171,9 +171,12 @@ final class ImageBrowserViewModel {
         cacheManager: CacheManager? = nil,
         thumbnailCacheManager: ThumbnailCacheManager? = nil
     ) {
-        let diskCacheStore = DiskCacheStore(baseURL: nil)
-        self.diskCacheStore = diskCacheStore
         let settings = SettingsStore()
+        let diskCacheStore = DiskCacheStore(
+            maxSizeBytes: settings.diskCacheSizeBytes,
+            baseURL: nil
+        )
+        self.diskCacheStore = diskCacheStore
         let cache = cacheManager ?? CacheManager(maxSizeBytes: settings.fullImageCacheSizeBytes)
         self.cacheManager = cache
         self.thumbnailCacheManager = thumbnailCacheManager ?? ThumbnailCacheManager(
@@ -184,8 +187,15 @@ final class ImageBrowserViewModel {
         self.folderScanner = folderScanner ?? FolderScanner()
         self.metadataExtractor = metadataExtractor ?? MetadataExtractor()
         self.fileSystemAccess = fileSystemAccess ?? FileSystemAccess()
-        self.recentFoldersStore = recentFoldersStore ?? RecentFoldersStore()
+        let recentStore = recentFoldersStore ?? RecentFoldersStore()
+        self.recentFoldersStore = recentStore
         self.favoritesStore = favoritesStore ?? FavoritesStore()
+
+        // 既存 .aiview/ の削除マイグレーション (M1)
+        let recentURLs = recentStore.getRecentFolders()
+        Task { [diskCacheStore] in
+            await diskCacheStore.migrateLegacyCaches(folders: recentURLs)
+        }
     }
 
     // MARK: - Folder Operations
@@ -227,6 +237,9 @@ final class ImageBrowserViewModel {
 
         // 履歴に追加
         recentFoldersStore.addRecentFolder(url)
+
+        // 古い .aiview/ キャッシュがあれば削除 (m4: 遅延クリーンアップ)
+        await diskCacheStore.cleanupLegacyCacheIfPresent(at: url)
 
         do {
             try await folderScanner.scan(

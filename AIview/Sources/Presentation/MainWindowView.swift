@@ -103,6 +103,7 @@ struct MainWindowView: View {
                 imageLoader: viewModel.imageLoader,
                 queueInstrumentation: QueueInstrumentation.thumbnailQueueShared
             )
+            appState.registerDiskCacheStore(viewModel.diskCacheStore)
             appState.startMetricsSampling()
         }
 

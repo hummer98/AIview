@@ -33,10 +33,13 @@ final class MetricsCollector {
         let loader = imageLoader?.metricsSnapshot()
         let queue = queueInstrumentation?.snapshot() ?? .empty
         let diskIO: DiskIOMetricsSnapshot
+        let diskState: DiskCacheStateSnapshot
         if let store = diskCacheStore {
             diskIO = await store.metricsSnapshot()
+            diskState = await store.stateSnapshot()
         } else {
             diskIO = .empty
+            diskState = .empty
         }
 
         return MetricsSnapshot(
@@ -44,6 +47,7 @@ final class MetricsCollector {
             thumbnailMemory: thumbMgr?.memory ?? .empty,
             thumbnailDisk: thumbMgr?.disk ?? .empty,
             diskIO: diskIO,
+            diskCacheState: diskState,
             thumbnailQueue: queue,
             cacheManagerLock: cacheMgr?.lockWait ?? .empty,
             imageLoaderLock: loader?.lockWait ?? .empty,

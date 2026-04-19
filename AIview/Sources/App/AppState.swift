@@ -17,6 +17,21 @@ final class AppState {
     /// アプリ全体のメトリクス集約器
     let metricsCollector = MetricsCollector()
 
+    // MARK: - Disk Cache Lifecycle
+
+    /// AIviewApp が flush() を呼ぶための参照 (M3)
+    /// - Note: ViewModel が初期化時に登録する
+    @ObservationIgnored private(set) var diskCacheStore: DiskCacheStore?
+
+    func registerDiskCacheStore(_ store: DiskCacheStore) {
+        diskCacheStore = store
+    }
+
+    /// DiskCacheStore.flush() を呼ぶ。未登録なら何もしない。
+    func flushDiskCache() async {
+        await diskCacheStore?.flush()
+    }
+
     /// 1Hz サンプリング用 Task（QueueInstrumentation.avgInFlight の母集団を増やす）
     @ObservationIgnored private var samplingTask: Task<Void, Never>?
 

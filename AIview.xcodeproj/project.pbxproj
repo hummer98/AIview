@@ -54,6 +54,14 @@
 		A1000046 /* MetricsCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000046 /* MetricsCollector.swift */; };
 		A1000047 /* QueueInstrumentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000047 /* QueueInstrumentation.swift */; };
 		A1000048 /* MetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000048 /* MetricsTests.swift */; };
+		A1000049 /* DiskCacheIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000049 /* DiskCacheIdentity.swift */; };
+		A1000050 /* DiskCacheIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000050 /* DiskCacheIndex.swift */; };
+		A1000051 /* DiskCacheLifecycleMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000051 /* DiskCacheLifecycleMonitor.swift */; };
+		A1000052 /* DiskCacheIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000052 /* DiskCacheIdentityTests.swift */; };
+		A1000053 /* DiskCacheIndexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000053 /* DiskCacheIndexTests.swift */; };
+		A1000054 /* DiskCacheStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000054 /* DiskCacheStoreTests.swift */; };
+		A1000055 /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000055 /* SettingsStoreTests.swift */; };
+		A1000056 /* DiskCacheLifecycleMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000056 /* DiskCacheLifecycleMonitorTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -124,6 +132,14 @@
 		A2000046 /* MetricsCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsCollector.swift; sourceTree = "<group>"; };
 		A2000047 /* QueueInstrumentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueInstrumentation.swift; sourceTree = "<group>"; };
 		A2000048 /* MetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsTests.swift; sourceTree = "<group>"; };
+		A2000049 /* DiskCacheIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCacheIdentity.swift; sourceTree = "<group>"; };
+		A2000050 /* DiskCacheIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCacheIndex.swift; sourceTree = "<group>"; };
+		A2000051 /* DiskCacheLifecycleMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCacheLifecycleMonitor.swift; sourceTree = "<group>"; };
+		A2000052 /* DiskCacheIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCacheIdentityTests.swift; sourceTree = "<group>"; };
+		A2000053 /* DiskCacheIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCacheIndexTests.swift; sourceTree = "<group>"; };
+		A2000054 /* DiskCacheStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCacheStoreTests.swift; sourceTree = "<group>"; };
+		A2000055 /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
+		A2000056 /* DiskCacheLifecycleMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCacheLifecycleMonitorTests.swift; sourceTree = "<group>"; };
 		A5000005 /* AIviewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIviewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -190,6 +206,7 @@
 				A2000002 /* ContentView.swift */,
 				A2000025 /* AppState.swift */,
 				A2000026 /* AppCommands.swift */,
+				A2000051 /* DiskCacheLifecycleMonitor.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -200,6 +217,8 @@
 				A2000004 /* FileSystemAccess.swift */,
 				A2000005 /* RecentFoldersStore.swift */,
 				A2000009 /* DiskCacheStore.swift */,
+				A2000049 /* DiskCacheIdentity.swift */,
+				A2000050 /* DiskCacheIndex.swift */,
 				A2000028 /* SettingsStore.swift */,
 				A2000030 /* FavoritesStore.swift */,
 			);
@@ -258,6 +277,11 @@
 				A2000043 /* ImageBrowserViewModelReloadTests.swift */,
 				A2000044 /* ReloadIntegrationTests.swift */,
 				A2000048 /* MetricsTests.swift */,
+				A2000052 /* DiskCacheIdentityTests.swift */,
+				A2000053 /* DiskCacheIndexTests.swift */,
+				A2000054 /* DiskCacheStoreTests.swift */,
+				A2000055 /* SettingsStoreTests.swift */,
+				A2000056 /* DiskCacheLifecycleMonitorTests.swift */,
 			);
 			path = AIviewTests;
 			sourceTree = "<group>";
@@ -423,6 +447,9 @@
 				A1000045 /* Metrics.swift in Sources */,
 				A1000046 /* MetricsCollector.swift in Sources */,
 				A1000047 /* QueueInstrumentation.swift in Sources */,
+				A1000049 /* DiskCacheIdentity.swift in Sources */,
+				A1000050 /* DiskCacheIndex.swift in Sources */,
+				A1000051 /* DiskCacheLifecycleMonitor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -446,6 +473,11 @@
 				A1000043 /* ImageBrowserViewModelReloadTests.swift in Sources */,
 				A1000044 /* ReloadIntegrationTests.swift in Sources */,
 				A1000048 /* MetricsTests.swift in Sources */,
+				A1000052 /* DiskCacheIdentityTests.swift in Sources */,
+				A1000053 /* DiskCacheIndexTests.swift in Sources */,
+				A1000054 /* DiskCacheStoreTests.swift in Sources */,
+				A1000055 /* SettingsStoreTests.swift in Sources */,
+				A1000056 /* DiskCacheLifecycleMonitorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

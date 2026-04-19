@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import os
 
 /// AIview - macOS向け高速画像ビューワーアプリケーション
@@ -6,6 +7,8 @@ import os
 @main
 struct AIviewApp: App {
     @State private var appState = AppState()
+    @State private var lifecycleMonitor: DiskCacheLifecycleMonitor?
+    @Environment(\.scenePhase) private var scenePhase
 
     private var isUITestMode: Bool {
         ProcessInfo.processInfo.environment["AIVIEW_UI_TEST_MODE"] == "1"
@@ -19,6 +22,12 @@ struct AIviewApp: App {
                     // 起動時に履歴を読み込み
                     appState.refreshRecentFolders()
 
+                    if lifecycleMonitor == nil {
+                        lifecycleMonitor = DiskCacheLifecycleMonitor { [appState] in
+                            await appState.flushDiskCache()
+                        }
+                    }
+
                     if isUITestMode {
                         // UIテスト時はウィンドウを画面中央に配置
                         centerWindow()
@@ -26,6 +35,9 @@ struct AIviewApp: App {
                 }
         }
         .windowToolbarStyle(.unified(showsTitle: true))
+        .onChange(of: scenePhase) { _, newPhase in
+            lifecycleMonitor?.handleScenePhase(newPhase)
+        }
         .commands {
             AppCommands(appState: appState)
         }
