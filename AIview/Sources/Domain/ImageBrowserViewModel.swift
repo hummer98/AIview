@@ -206,7 +206,7 @@ final class ImageBrowserViewModel {
 
         // 旧フォルダの処理をキャンセル
         await folderScanner.cancelCurrentScan()
-        imageLoader.cancelAllExcept(URL(fileURLWithPath: "/dev/null"))
+        imageLoader.cancelAll()
 
         // 状態をリセット
         currentFolderURL = url
@@ -934,7 +934,12 @@ final class ImageBrowserViewModel {
 
         // 既存のスキャンをキャンセル
         await folderScanner.cancelCurrentScan()
-        imageLoader.cancelAllExcept(URL(fileURLWithPath: "/dev/null"))
+        imageLoader.cancelAll()
+
+        // ThumbnailCarousel の .task(id: imageURLs) を強制的に再発火させ、
+        // サムネイルの世代交代 (cancel → 再生成) を確実に trigger するため、
+        // スキャン再開前に空配列へリセット (同一内容フォルダのリロード対応)
+        imageURLs = []
 
         // スキャン開始フラグを設定
         isScanningFolder = true

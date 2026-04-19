@@ -16,7 +16,7 @@ final class ThumbnailCarouselTests: XCTestCase {
             .appendingPathComponent("AIviewThumbnailTests_\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
 
-        diskCacheStore = DiskCacheStore(baseDirectory: tempDirectory)
+        diskCacheStore = DiskCacheStore(baseURL: tempDirectory)
         thumbnailCacheManager = ThumbnailCacheManager(
             maxSizeBytes: 10 * 1024 * 1024,
             diskCacheStore: diskCacheStore
@@ -296,6 +296,42 @@ final class ThumbnailCarouselTests: XCTestCase {
         // Then - クラッシュしない
         _ = await task.value
         XCTAssertTrue(true)
+    }
+
+    // MARK: - CancelFlag Tests
+
+    func testCancelFlag_setsFlagOnCancel() {
+        // Given
+        let flag = CancelFlag()
+        XCTAssertFalse(flag.isCancelled, "初期状態では isCancelled == false")
+
+        // When
+        flag.cancel()
+
+        // Then
+        XCTAssertTrue(flag.isCancelled, "cancel() 呼出後は isCancelled == true")
+    }
+
+    func testCancelFlag_isThreadSafe() {
+        // Given
+        let flag = CancelFlag()
+        let expectation = self.expectation(description: "concurrent access")
+        expectation.expectedFulfillmentCount = 100
+
+        let queue = DispatchQueue.global(qos: .userInitiated)
+        for i in 0..<100 {
+            queue.async {
+                if i % 2 == 0 {
+                    flag.cancel()
+                } else {
+                    _ = flag.isCancelled
+                }
+                expectation.fulfill()
+            }
+        }
+
+        wait(for: [expectation], timeout: 2.0)
+        XCTAssertTrue(flag.isCancelled, "少なくとも 1 回 cancel() が呼ばれたので最終状態は true")
     }
 
     // MARK: - Memory Cache Integration Tests

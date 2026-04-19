@@ -229,6 +229,28 @@ final class ImageLoader: Sendable {
         Logger.imageLoader.debug("Cancelled prefetch for \(urls.count, privacy: .public) URLs")
     }
 
+    /// すべてのローディング・プリフェッチタスクをキャンセル
+    /// フォルダ切替・リロード時の全停止用。
+    func cancelAll() {
+        lock.withLock {
+            for (_, task) in state.prefetchTasks { task.cancel() }
+            state.prefetchTasks.removeAll()
+            for (_, task) in state.loadingTasks { task.cancel() }
+            state.loadingTasks.removeAll()
+        }
+        Logger.imageLoader.debug("Cancelled all tasks")
+    }
+
+    #if DEBUG
+    /// テスト専用: 現在保持中のタスク件数を返す。
+    /// cancelAll() / cancelAllExcept() の前後で件数を検証するためのフック。
+    func _debugTaskCounts() -> (loading: Int, prefetch: Int) {
+        lock.withLock {
+            (loading: state.loadingTasks.count, prefetch: state.prefetchTasks.count)
+        }
+    }
+    #endif
+
     /// 指定URL以外のすべてのタスクをキャンセル
     func cancelAllExcept(_ activeURL: URL) {
         lock.withLock {

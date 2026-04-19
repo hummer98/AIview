@@ -4,6 +4,23 @@ import os
 
 private let logger = Logger(subsystem: "com.aiview", category: "ThumbnailCarousel")
 
+/// Task コンテキストと DispatchQueue コンテキストの両方から
+/// 安全に参照できるキャンセルフラグ。
+/// withTaskCancellationHandler の onCancel で `cancel()` を呼び、
+/// DispatchQueue 内部では `isCancelled` を各工程で参照して早期 return する。
+final class CancelFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _cancelled = false
+
+    func cancel() {
+        lock.withLock { _cancelled = true }
+    }
+
+    var isCancelled: Bool {
+        lock.withLock { _cancelled }
+    }
+}
+
 /// サムネイルのロード状態
 enum ThumbnailLoadState {
     case loading
@@ -43,6 +60,11 @@ struct ThumbnailCarousel: View {
     var favorites: [String: Int] = [:]
 
     @State private var thumbnailStates: [URL: ThumbnailLoadState] = [:]
+    // URL 単位のロード Task を保持。`.task(id: url)` が自動 cancel/再起動を
+    // 担うが、onDisappear / imageURLs 切替時の明示 cancel 用に辞書で管理する。
+    @State private var thumbnailTasks: [URL: Task<Void, Never>] = [:]
+    // 世代トークン: imageURLs が切替わるたびに +1 し、古い世代の UI 更新を破棄する。
+    @State private var generation: Int = 0
 
     private static let maxRetryCount = 3
 
@@ -78,8 +100,11 @@ struct ThumbnailCarousel: View {
                         .onTapGesture {
                             onSelect(index)
                         }
-                        .onAppear {
-                            loadThumbnail(for: url)
+                        // `.task(id: url)` は url が変わると前の Task を SwiftUI が
+                        // 自動 cancel して新しい Task を起動する。ForEach の id が
+                        // \.offset のままでも、この修飾子は url 単位で発火する。
+                        .task(id: url) {
+                            await loadThumbnailAsync(for: url)
                         }
                     }
                 }
@@ -92,11 +117,30 @@ struct ThumbnailCarousel: View {
                     proxy.scrollTo(newIndex, anchor: .center)
                 }
             }
+            // imageURLs が変わったタイミングで世代交代 & 残存 Task を全 cancel。
+            // 同一内容のフォルダを再読込してもこの Task は再発火しないため、
+            // ViewModel 側 (reloadCurrentFolder) で imageURLs = [] を挟んでいる。
+            .task(id: imageURLs) {
+                generation &+= 1
+                thumbnailStates.removeAll()
+                for (_, task) in thumbnailTasks { task.cancel() }
+                thumbnailTasks.removeAll()
+            }
+            .onDisappear {
+                // フォルダを閉じる / ウィンドウ close などで View が破棄される際の
+                // Task 孤児化防止。ライフサイクルの最終防衛ライン。
+                for (_, task) in thumbnailTasks { task.cancel() }
+                thumbnailTasks.removeAll()
+            }
         }
     }
 
-    private func loadThumbnail(for url: URL) {
+    /// `.task(id: url)` から呼ばれる非同期ロードのエントリポイント。
+    /// この関数実行時点の世代トークンを固定し、MainActor 更新の直前に比較することで
+    /// フォルダ切替後に遅れて到着する古い世代の完了通知を破棄する。
+    private func loadThumbnailAsync(for url: URL) async {
         let filename = url.lastPathComponent
+        let startGeneration = generation
 
         // 既にロード済みまたはロード中の場合はスキップ
         if let state = thumbnailStates[url] {
@@ -127,19 +171,16 @@ struct ThumbnailCarousel: View {
         logger.info("[\(filename)] start loading")
         thumbnailStates[url] = .loading
 
-        // 非同期でディスクキャッシュとサムネイル生成
-        Task(priority: .background) {
-            await loadThumbnailWithRetry(for: url, size: size, retryCount: 0)
-        }
+        await loadThumbnailWithRetry(for: url, size: size, retryCount: 0, generation: startGeneration)
     }
 
-    private func loadThumbnailWithRetry(for url: URL, size: CGSize, retryCount: Int) async {
+    private func loadThumbnailWithRetry(for url: URL, size: CGSize, retryCount: Int, generation startGeneration: Int) async {
         let filename = url.lastPathComponent
 
         // Taskがキャンセルされているかチェック
         if Task.isCancelled {
             logger.warning("[\(filename)] task cancelled at start (retry: \(retryCount))")
-            await resetLoadingState(for: url)
+            await resetLoadingState(for: url, generation: startGeneration)
             return
         }
 
@@ -147,14 +188,17 @@ struct ThumbnailCarousel: View {
         logger.debug("[\(filename)] checking disk cache (retry: \(retryCount))")
         if let cached = await thumbnailCacheManager.getDiskCachedThumbnail(for: url, size: size) {
             logger.debug("[\(filename)] disk cache hit")
-            await MainActor.run { thumbnailStates[url] = .loaded(cached) }
+            await MainActor.run {
+                guard startGeneration == self.generation else { return }
+                thumbnailStates[url] = .loaded(cached)
+            }
             return
         }
 
         // Taskがキャンセルされているかチェック
         if Task.isCancelled {
             logger.warning("[\(filename)] task cancelled after disk cache check")
-            await resetLoadingState(for: url)
+            await resetLoadingState(for: url, generation: startGeneration)
             return
         }
 
@@ -166,7 +210,7 @@ struct ThumbnailCarousel: View {
 
         if Task.isCancelled {
             logger.warning("[\(filename)] task cancelled after generate (elapsed: \(elapsed, format: .fixed(precision: 2))s)")
-            await resetLoadingState(for: url)
+            await resetLoadingState(for: url, generation: startGeneration)
             return
         }
 
@@ -177,7 +221,10 @@ struct ThumbnailCarousel: View {
             // ディスクキャッシュに保存
             await thumbnailCacheManager.storeThumbnailToDisk(thumbnail, for: url, size: size)
             // UIを更新
-            await MainActor.run { thumbnailStates[url] = .loaded(thumbnail) }
+            await MainActor.run {
+                guard startGeneration == self.generation else { return }
+                thumbnailStates[url] = .loaded(thumbnail)
+            }
             logger.info("[\(filename)] loaded successfully")
         } else {
             // 生成失敗: リトライまたはエラー状態に設定
@@ -188,18 +235,23 @@ struct ThumbnailCarousel: View {
                 let delayMs = 100 * (1 << retryCount)
                 logger.debug("[\(filename)] will retry after \(delayMs)ms")
                 try? await Task.sleep(nanoseconds: UInt64(delayMs * 1_000_000))
-                await loadThumbnailWithRetry(for: url, size: size, retryCount: nextRetryCount)
+                await loadThumbnailWithRetry(for: url, size: size, retryCount: nextRetryCount, generation: startGeneration)
             } else {
                 // 最大リトライ回数に達した: エラー状態に設定
                 logger.error("[\(filename)] max retries reached, marking as failed")
-                await MainActor.run { thumbnailStates[url] = .failed(retryCount: nextRetryCount) }
+                await MainActor.run {
+                    guard startGeneration == self.generation else { return }
+                    thumbnailStates[url] = .failed(retryCount: nextRetryCount)
+                }
             }
         }
     }
 
-    /// キャンセル時に状態をリセット（再度onAppearでロード可能にする）
-    private func resetLoadingState(for url: URL) async {
+    /// キャンセル時に状態をリセット（再度ロード可能にする）
+    /// 世代が切り替わった後の resetLoadingState は新世代の state に干渉させない。
+    private func resetLoadingState(for url: URL, generation startGeneration: Int) async {
         await MainActor.run {
+            guard startGeneration == self.generation else { return }
             // .loading状態の場合のみリセット（.loadedや.failedは保持）
             if case .loading = thumbnailStates[url] {
                 thumbnailStates[url] = nil
@@ -209,31 +261,54 @@ struct ThumbnailCarousel: View {
     }
 
     static func generateThumbnail(for url: URL, size: CGFloat) async -> NSImage? {
-        // 専用DispatchQueueでブロッキングI/Oを実行し、cooperative thread poolを解放
+        // 専用DispatchQueueでブロッキングI/Oを実行し、cooperative thread poolを解放。
+        // withTaskCancellationHandler で CancelFlag を共有し、Task の cancel を
+        // DispatchQueue 内部まで伝搬させる（withCheckedContinuation は cancel 非対応のため）。
+        let flag = CancelFlag()
         let instrumentation = QueueInstrumentation.thumbnailQueueShared
-        return await withCheckedContinuation { (continuation: CheckedContinuation<NSImage?, Never>) in
-            instrumentation.enter()
-            thumbnailQueue.async {
-                defer { instrumentation.leave() }
-                guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-                    continuation.resume(returning: nil)
-                    return
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<NSImage?, Never>) in
+                instrumentation.enter()
+                thumbnailQueue.async {
+                    defer { instrumentation.leave() }
+
+                    if flag.isCancelled {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+
+                    guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+
+                    if flag.isCancelled {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+
+                    let options: [CFString: Any] = [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceThumbnailMaxPixelSize: size * 2, // Retina対応
+                        kCGImageSourceShouldCacheImmediately: true
+                    ]
+
+                    guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+
+                    if flag.isCancelled {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+
+                    let result = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                    continuation.resume(returning: result)
                 }
-
-                let options: [CFString: Any] = [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceThumbnailMaxPixelSize: size * 2, // Retina対応
-                    kCGImageSourceShouldCacheImmediately: true
-                ]
-
-                guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-
-                let result = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                continuation.resume(returning: result)
             }
+        } onCancel: {
+            flag.cancel()
         }
     }
 }

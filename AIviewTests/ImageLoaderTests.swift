@@ -146,6 +146,34 @@ final class ImageLoaderTests: XCTestCase {
         XCTAssertNotNil(result.image)
     }
 
+    func testCancelAll_cancelsAllTasks() async throws {
+        // Given: prefetch で複数タスクを登録
+        let urls = try (0..<5).map { try createTestImage(name: "cancelall\($0).png") }
+        await sut.prefetch(urls: urls, priority: .prefetch, direction: .forward)
+
+        // 登録直後は件数 > 0 のはず（prefetch 内部で Task を登録後、即キャッシュ済み判定で抜ける前提の検証）
+        let before = sut._debugTaskCounts()
+        XCTAssertGreaterThan(
+            before.prefetch + before.loading,
+            0,
+            "cancelAll() 前提条件: prefetch/loading いずれかに active task が 1 件以上あること"
+        )
+
+        // When: 全キャンセル
+        sut.cancelAll()
+
+        // Then: 件数が 0 に戻ること
+        let after = sut._debugTaskCounts()
+        XCTAssertEqual(after.loading, 0, "cancelAll() 後は loadingTasks が 0 件")
+        XCTAssertEqual(after.prefetch, 0, "cancelAll() 後は prefetchTasks が 0 件")
+
+        // 続く loadImage が正常動作する（cancelAll() が内部状態を壊さない）ことも補助検証
+        for url in urls {
+            let result = try await sut.loadImage(from: url, priority: .display, targetSize: nil)
+            XCTAssertNotNil(result.image)
+        }
+    }
+
     // MARK: - Helper Methods
 
     private func createTestImage(name: String, size: NSSize = NSSize(width: 100, height: 100)) throws -> URL {
