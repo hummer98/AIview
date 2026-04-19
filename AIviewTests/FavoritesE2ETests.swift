@@ -466,6 +466,9 @@ final class FavoritesE2ETests: XCTestCase {
         XCTAssertEqual(viewModel.filteredCount, 4, "レベル4以上の画像は4枚")
 
         // ナビゲーションで全てのフィルタ対象画像を巡回できる
+        // task-002 fix 以降、フィルタ適用時はアンカー画像の位置を維持するため、
+        // 先頭から巡回するには明示的に index 0 にジャンプする
+        await viewModel.jumpToIndex(0)
         var visitedNames: [String] = []
         visitedNames.append(viewModel.currentImageURL?.lastPathComponent ?? "")
 
@@ -633,6 +636,314 @@ final class FavoritesE2ETests: XCTestCase {
         XCTAssertTrue(viewModel.isFiltering)
         XCTAssertTrue(viewModel.isFilterEmpty, "フィルタ結果が空")
         XCTAssertEqual(viewModel.filteredCount, 0)
+    }
+
+    // MARK: - E2E Tests: currentIndex Anchor Restoration (Bug Fix - task-002)
+
+    /// T1: フィルタON時、現在画像がお気に入り対象なら位置を維持
+    /// Requirements: Bug fix task-002
+    func testE2E_FilterOnWithSubdirectories_CurrentImageIsFavorite_PreservesImage() async throws {
+        // Given - test_image_02 と test_image_04 がレベル5
+        try createFavoritesFile(at: testFolderURL, favorites: [
+            "test_image_02.png": 5,
+            "test_image_04.png": 5
+        ])
+
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // test_image_04 を表示（フィルタ後の先頭ではない）
+        await viewModel.jumpToIndex(3)
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_04.png")
+
+        // When - サブディレクトリ付きフィルタ適用
+        await viewModel.setFilterLevelWithSubdirectories(5)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // Then - 現在画像が維持される（フィルタ後先頭の test_image_02 ではない）
+        XCTAssertTrue(viewModel.isFiltering, "フィルタリング中であること")
+        XCTAssertTrue(viewModel.isSubdirectoryMode, "サブディレクトリモードが有効")
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_04.png",
+                       "現在画像がお気に入り対象なので維持される（先頭の test_image_02 にジャンプしない）")
+        XCTAssertEqual(viewModel.currentIndex, 1, "フィルタ後リスト内の test_image_04 の index")
+    }
+
+    /// T2: フィルタON時、現在画像が対象外なら先頭に移動
+    /// Requirements: Bug fix task-002
+    func testE2E_FilterOnWithSubdirectories_CurrentImageIsNotFavorite_JumpsToFirst() async throws {
+        // Given - test_image_03 のみレベル5
+        try createFavoritesFile(at: testFolderURL, favorites: ["test_image_03.png": 5])
+
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // 現在画像は test_image_01 (index 0)
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_01.png")
+
+        // When - フィルタ適用
+        await viewModel.setFilterLevelWithSubdirectories(5)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // Then - 先頭（唯一のお気に入り）に移動
+        XCTAssertEqual(viewModel.currentIndex, 0)
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_03.png",
+                       "現在画像は対象外なのでフィルタリスト先頭へ")
+    }
+
+    /// T3: お気に入り無しでフィルタON
+    /// Requirements: Bug fix task-002
+    func testE2E_FilterOnWithSubdirectories_EmptyFavorites() async throws {
+        // Given - お気に入りなし
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // When - フィルタ適用
+        await viewModel.setFilterLevelWithSubdirectories(5)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // Then - クラッシュせず、空状態が示される
+        XCTAssertTrue(viewModel.isFilterEmpty, "フィルタ結果が空")
+        XCTAssertTrue(viewModel.imageURLs.isEmpty, "imageURLsが空")
+    }
+
+    /// T4: フィルタOFF時、アンカー画像が親に含まれれば位置を復元
+    /// Requirements: Bug fix task-002
+    func testE2E_FilterOffWithSubdirectories_ImageInParent_RestoresIndex() async throws {
+        // Given - test_image_02 のみレベル5
+        try createFavoritesFile(at: testFolderURL, favorites: ["test_image_02.png": 5])
+
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        await viewModel.jumpToIndex(1) // test_image_02
+        await viewModel.setFilterLevelWithSubdirectories(5)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_02.png")
+
+        // When - フィルタ解除
+        await viewModel.clearFilterWithSubdirectories()
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // Then - 親リスト内で test_image_02 の index に復元
+        XCTAssertFalse(viewModel.isFiltering)
+        XCTAssertFalse(viewModel.isSubdirectoryMode)
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_02.png")
+        XCTAssertEqual(viewModel.currentIndex, 1, "親リスト内の test_image_02 の index")
+    }
+
+    /// T5: フィルタOFF時、アンカーがサブフォルダ画像なら 0 にフォールバック
+    /// Requirements: Bug fix task-002
+    func testE2E_FilterOffWithSubdirectories_ImageNotInParent_FallsBackToZero() async throws {
+        // Given - 親とサブにそれぞれレベル5のお気に入り
+        // sub ファイル名を "zz_" で始めて、ソート時に親ファイルより後ろになるようにする
+        // こうすることで subIdx が非0 になり、currentIndex が 0 でない状態で clearFilter が呼ばれる
+        let subFolder = testFolderURL.appendingPathComponent("subfolder")
+        try FileManager.default.createDirectory(at: subFolder, withIntermediateDirectories: true)
+        let pngData = createMinimalPNG()
+        try pngData.write(to: subFolder.appendingPathComponent("zz_sub.png"))
+
+        try createFavoritesFile(at: testFolderURL, favorites: ["test_image_01.png": 5])
+        try createFavoritesFile(at: subFolder, favorites: ["zz_sub.png": 5])
+
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // フィルタ適用
+        await viewModel.setFilterLevelWithSubdirectories(5)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // サブフォルダ画像 (zz_sub) に移動
+        guard let subIdx = viewModel.imageURLs.firstIndex(where: {
+            $0.lastPathComponent == "zz_sub.png"
+        }) else {
+            XCTFail("zz_sub.png が imageURLs に見つからない")
+            return
+        }
+        await viewModel.jumpToIndex(subIdx)
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "zz_sub.png")
+
+        // When - フィルタ解除
+        await viewModel.clearFilterWithSubdirectories()
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // Then - 親リスト先頭へフォールバック
+        XCTAssertEqual(viewModel.currentIndex, 0, "親リスト先頭にフォールバック")
+        XCTAssertNotNil(viewModel.currentImageURL)
+        XCTAssertNotEqual(viewModel.currentImageURL?.lastPathComponent, "zz_sub.png",
+                          "サブフォルダの画像ではない")
+    }
+
+    /// T6: disableSubdirectoryMode時、親画像が含まれていれば位置復元
+    /// Requirements: Bug fix task-002
+    func testE2E_DisableSubdirectoryMode_RestoresCurrentImageInParent() async throws {
+        // Given - サブフォルダを作成
+        let subFolder = testFolderURL.appendingPathComponent("subfolder")
+        try FileManager.default.createDirectory(at: subFolder, withIntermediateDirectories: true)
+        let pngData = createMinimalPNG()
+        try pngData.write(to: subFolder.appendingPathComponent("sub_image.png"))
+
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        await viewModel.enableSubdirectoryMode()
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        // 親画像 test_image_02 に移動
+        guard let bIdx = viewModel.imageURLs.firstIndex(where: {
+            $0.lastPathComponent == "test_image_02.png"
+        }) else {
+            XCTFail("test_image_02.png が imageURLs に見つからない")
+            return
+        }
+        await viewModel.jumpToIndex(bIdx)
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_02.png")
+
+        // When - サブディレクトリモード解除
+        await viewModel.disableSubdirectoryMode()
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        // Then - test_image_02 の位置に復元
+        XCTAssertFalse(viewModel.isSubdirectoryMode)
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_02.png")
+        XCTAssertEqual(viewModel.currentIndex, 1)
+    }
+
+    /// T7: disableSubdirectoryMode時、サブ画像表示中なら 0 にフォールバック
+    /// Requirements: Bug fix task-002
+    func testE2E_DisableSubdirectoryMode_ImageNotInParent_FallsBackToZero() async throws {
+        // Given - サブフォルダを作成（ファイル名を "zz_" で始めて sorted 末尾にする）
+        // enableSubdirectoryMode 後、sub 画像が index=末尾（非0）に来ることを保証
+        let subFolder = testFolderURL.appendingPathComponent("subfolder")
+        try FileManager.default.createDirectory(at: subFolder, withIntermediateDirectories: true)
+        let pngData = createMinimalPNG()
+        try pngData.write(to: subFolder.appendingPathComponent("zz_sub.png"))
+
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        await viewModel.enableSubdirectoryMode()
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        // サブフォルダ画像に移動
+        guard let subIdx = viewModel.imageURLs.firstIndex(where: {
+            $0.lastPathComponent == "zz_sub.png"
+        }) else {
+            XCTFail("zz_sub.png が imageURLs に見つからない")
+            return
+        }
+        await viewModel.jumpToIndex(subIdx)
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "zz_sub.png")
+
+        // When - モード解除
+        await viewModel.disableSubdirectoryMode()
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        // Then - 親リスト先頭へフォールバック
+        XCTAssertFalse(viewModel.isSubdirectoryMode)
+        XCTAssertEqual(viewModel.currentIndex, 0)
+        XCTAssertNotNil(viewModel.currentImageURL)
+        XCTAssertNotEqual(viewModel.currentImageURL?.lastPathComponent, "zz_sub.png")
+    }
+
+    /// T8: 同じレベルのトグル解除でアンカー復元
+    /// Requirements: Bug fix task-002
+    func testE2E_FilterWithSubdirectories_ToggleSameLevel_RestoresOriginalPosition() async throws {
+        // Given - test_image_02 のみレベル5
+        try createFavoritesFile(at: testFolderURL, favorites: ["test_image_02.png": 5])
+
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // test_image_02 を表示
+        await viewModel.jumpToIndex(1)
+
+        // 1回目のフィルタ適用
+        await viewModel.setFilterLevelWithSubdirectories(5)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertTrue(viewModel.isFiltering)
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_02.png")
+
+        // When - 同じレベルで再度呼び出し（トグル解除）
+        await viewModel.setFilterLevelWithSubdirectories(5)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // Then - 解除され、親リストの test_image_02 の位置に復元
+        XCTAssertNil(viewModel.filterLevel)
+        XCTAssertFalse(viewModel.isSubdirectoryMode)
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_02.png")
+        XCTAssertEqual(viewModel.currentIndex, 1)
+    }
+
+    /// T9: 非サブディレクトリ版: 現在インデックスがフィルタ対象なら維持（回帰防止）
+    /// Requirements: Bug fix task-002 (regression guard)
+    func testE2E_FilterLevelNonSubdir_Regression_CurrentIndexPreserved() async throws {
+        // Given
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // 画像3 にレベル5を設定
+        await viewModel.jumpToIndex(2)
+        try await viewModel.setFavoriteLevel(5)
+
+        // When - 同じレベルでフィルタ（index 2 はフィルタ対象）
+        viewModel.setFilterLevel(5)
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        // Then - 現在 index 2 は維持
+        XCTAssertTrue(viewModel.isFiltering)
+        XCTAssertEqual(viewModel.currentIndex, 2, "フィルタ対象の現在位置は維持される")
+    }
+
+    /// T10: 非サブディレクトリ版: 現在画像がフィルタ対象外なら最初の該当画像へジャンプ
+    /// Requirements: Bug fix task-002 (regression guard)
+    func testE2E_FilterLevelNonSubdir_Regression_JumpToFirstWhenNotInFilter() async throws {
+        // Given
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // index 2, 4 にレベル5
+        await viewModel.jumpToIndex(2)
+        try await viewModel.setFavoriteLevel(5)
+        await viewModel.jumpToIndex(4)
+        try await viewModel.setFavoriteLevel(5)
+
+        // index 0 へ移動（非お気に入り）
+        await viewModel.jumpToIndex(0)
+
+        // When
+        viewModel.setFilterLevel(5)
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        // Then - 最初の該当 index（2）へ
+        XCTAssertTrue(viewModel.isFiltering)
+        XCTAssertEqual(viewModel.currentIndex, 2)
+    }
+
+    /// T11: 非サブディレクトリ版: clearFilter() は currentIndex を維持
+    /// Requirements: Bug fix task-002 (regression guard)
+    func testE2E_ClearFilterNonSubdir_PreservesCurrentIndex() async throws {
+        // Given
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        await viewModel.jumpToIndex(2)
+        try await viewModel.setFavoriteLevel(5)
+        await viewModel.jumpToIndex(3)
+        try await viewModel.setFavoriteLevel(5)
+
+        viewModel.setFilterLevel(5)
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        // 現在 index がフィルタ対象であることを確認
+        let beforeIndex = viewModel.currentIndex
+        XCTAssertTrue(viewModel.filteredIndices.contains(beforeIndex))
+
+        // When
+        viewModel.clearFilter()
+
+        // Then - 現在 index は維持（imageURLs は変わらない）
+        XCTAssertFalse(viewModel.isFiltering)
+        XCTAssertEqual(viewModel.currentIndex, beforeIndex)
     }
 
     // MARK: - Helper Methods for Subdirectory Tests

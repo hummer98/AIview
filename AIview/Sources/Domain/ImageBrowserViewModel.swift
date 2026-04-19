@@ -1053,9 +1053,13 @@ final class ImageBrowserViewModel {
     /// サブディレクトリモードを無効化
     /// - 親フォルダ直下の画像のみの表示に復帰
     /// - フィルターをクリア
-    /// Requirements: 5.1, 5.2
+    /// - 現在画像が親リストに含まれていれば index を復元、無ければ 0 にフォールバック
+    /// Requirements: 5.1, 5.2, Bug fix task-002
     func disableSubdirectoryMode() async {
         guard isSubdirectoryMode else { return }
+
+        // アンカー（差し替え前の表示画像 URL）を捕捉
+        let anchorURL = currentImageURL
 
         // フィルターをクリア
         filterLevel = nil
@@ -1076,6 +1080,9 @@ final class ImageBrowserViewModel {
             favorites = await favoritesStore.getAllFavorites()
         }
 
+        // アンカーベースで currentIndex を同期（親に含まれれば復元、無ければ 0）
+        await syncCurrentIndexByAnchor(anchorURL: anchorURL, fallback: 0)
+
         Logger.app.info("Subdirectory mode disabled")
     }
 
@@ -1092,6 +1099,9 @@ final class ImageBrowserViewModel {
             await clearFilterWithSubdirectories()
             return
         }
+
+        // アンカー（差し替え前の表示画像 URL）を捕捉
+        let anchorURL = currentImageURL
 
         // 親フォルダの画像URLを保存（復元用）
         if !isSubdirectoryMode {
@@ -1140,9 +1150,11 @@ final class ImageBrowserViewModel {
 
         Logger.app.info("Filter with subdirectories (optimized): level >= \(level, privacy: .public), \(self.imageURLs.count, privacy: .public) images from favorites.json")
 
-        // フィルタ結果が空でなければ、最初の画像に移動
+        // アンカーベースで currentIndex を同期
+        // - アンカー画像がフィルタ結果に含まれていれば位置を維持
+        // - 含まれていなければ先頭 (0) にフォールバック
         if !imageURLs.isEmpty {
-            await jumpToIndex(0)
+            await syncCurrentIndexByAnchor(anchorURL: anchorURL, fallback: 0)
         }
 
         // フィルタリング用のプリフェッチを更新
@@ -1173,5 +1185,32 @@ final class ImageBrowserViewModel {
             let favoriteLevel = getFavoriteLevel(for: url)
             return favoriteLevel >= level ? index : nil
         }
+    }
+
+    /// imageURLs 差し替え後、アンカー URL を基準に currentIndex を同期する
+    /// - Parameter anchorURL: 差し替え前に表示していた画像 URL（新リストに含まれるなら位置復元）
+    /// - Parameter fallback: 新リストにアンカーが見つからない場合の index（デフォルト 0）
+    /// - Note: jumpToIndex の同一 index ガードを回避するため currentIndex を一旦 -1 に戻してから呼ぶ
+    private func syncCurrentIndexByAnchor(anchorURL: URL?, fallback: Int = 0) async {
+        guard !imageURLs.isEmpty else {
+            currentIndex = 0
+            return
+        }
+
+        var target = fallback
+        if let anchor = anchorURL {
+            // シンボリックリンク解決 (/var vs /private/var) 対応
+            let anchorPath = anchor.resolvingSymlinksInPath().path
+            if let idx = imageURLs.firstIndex(where: {
+                $0.resolvingSymlinksInPath().path == anchorPath
+            }) {
+                target = idx
+            }
+        }
+
+        let clamped = max(0, min(target, imageURLs.count - 1))
+        // jumpToIndex の同一 index ガード回避
+        currentIndex = -1
+        await jumpToIndex(clamped)
     }
 }
