@@ -54,6 +54,11 @@ struct ThumbnailCarousel: View {
         attributes: .concurrent
     )
 
+    /// thumbnailQueue の並列度を計測するインストルメンテーション（アプリ全体で共有）
+    static var thumbnailQueueInstrumentation: QueueInstrumentation {
+        QueueInstrumentation.thumbnailQueueShared
+    }
+
     private let thumbnailSize: CGFloat = 80
     private let spacing: CGFloat = 4
 
@@ -205,8 +210,11 @@ struct ThumbnailCarousel: View {
 
     static func generateThumbnail(for url: URL, size: CGFloat) async -> NSImage? {
         // 専用DispatchQueueでブロッキングI/Oを実行し、cooperative thread poolを解放
-        await withCheckedContinuation { continuation in
+        let instrumentation = QueueInstrumentation.thumbnailQueueShared
+        return await withCheckedContinuation { (continuation: CheckedContinuation<NSImage?, Never>) in
+            instrumentation.enter()
             thumbnailQueue.async {
+                defer { instrumentation.leave() }
                 guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
                     continuation.resume(returning: nil)
                     return

@@ -66,6 +66,17 @@ final class ImageLoader: Sendable {
     private let lock = NSLock()
     private let state = State()
 
+    // MARK: - Metrics (OSAllocatedUnfairLock で保護)
+
+    private struct MetricsState {
+        var prefetchSuccess: UInt64 = 0
+        var prefetchFailure: UInt64 = 0
+        var lockWaitHistogram = LatencyHistogram()
+        var lockWaitOver1msCount: UInt64 = 0
+    }
+
+    private let metricsLock = OSAllocatedUnfairLock(initialState: MetricsState())
+
     /// 巨大画像の最大デコードサイズ
     private let maxImagePixelSize: CGFloat = 8192
 
@@ -132,6 +143,7 @@ final class ImageLoader: Sendable {
         }
         let t3 = CFAbsoluteTimeGetCurrent()
         let lockWaitMs = (t3 - t2) * 1000
+        recordLockWait(lockWaitMs)
         if lockWaitMs > 1.0 {
             Logger.imageLoader.warning("loadImage lock wait: \(String(format: "%.1f", lockWaitMs), privacy: .public)ms for \(url.lastPathComponent, privacy: .public)")
         }
@@ -185,9 +197,17 @@ final class ImageLoader: Sendable {
 
                     do {
                         _ = try await self.loadImage(from: url, priority: priority, targetSize: nil)
+                        self.recordPrefetchSuccess()
                         Logger.imageLoader.debug("Prefetched: \(url.lastPathComponent, privacy: .public)")
                     } catch {
-                        if !(error is ImageLoaderError) || (error as! ImageLoaderError) != .cancelled {
+                        let isCancelled: Bool = {
+                            if let imgError = error as? ImageLoaderError {
+                                return imgError == .cancelled
+                            }
+                            return false
+                        }()
+                        if !isCancelled {
+                            self.recordPrefetchFailure()
                             Logger.imageLoader.warning("Prefetch failed: \(url.lastPathComponent, privacy: .public)")
                         }
                     }
@@ -280,6 +300,42 @@ final class ImageLoader: Sendable {
         Logger.imageLoader.debug("Decoded: \(url.lastPathComponent, privacy: .public) (\(cgImage.width, privacy: .public)x\(cgImage.height, privacy: .public))")
 
         return image
+    }
+}
+
+// MARK: - Metrics
+
+extension ImageLoader {
+    func metricsSnapshot() -> ImageLoaderMetrics {
+        metricsLock.withLock { state in
+            let histogram = state.lockWaitHistogram.snapshot()
+            let lockWait = LockWaitMetricsSnapshot(
+                sampleCount: histogram.count,
+                over1msCount: state.lockWaitOver1msCount,
+                maxWaitMs: histogram.maxMs,
+                histogram: histogram
+            )
+            return ImageLoaderMetrics(
+                prefetchSuccess: state.prefetchSuccess,
+                prefetchFailure: state.prefetchFailure,
+                lockWait: lockWait
+            )
+        }
+    }
+
+    fileprivate func recordLockWait(_ ms: Double) {
+        metricsLock.withLock { state in
+            state.lockWaitHistogram.record(ms)
+            if ms > 1.0 { state.lockWaitOver1msCount &+= 1 }
+        }
+    }
+
+    fileprivate func recordPrefetchSuccess() {
+        metricsLock.withLock { state in state.prefetchSuccess &+= 1 }
+    }
+
+    fileprivate func recordPrefetchFailure() {
+        metricsLock.withLock { state in state.prefetchFailure &+= 1 }
     }
 }
 

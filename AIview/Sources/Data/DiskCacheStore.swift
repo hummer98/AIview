@@ -10,6 +10,13 @@ actor DiskCacheStore {
     private let cacheDirectoryName = ".aiview"
     private let fileManager = FileManager.default
 
+    // MARK: - Metrics (actor-isolated)
+
+    private var readCount: UInt64 = 0
+    private var writeCount: UInt64 = 0
+    private var readHistogram = LatencyHistogram()
+    private var writeHistogram = LatencyHistogram()
+
     init(baseURL: URL? = nil) {
         self.baseURL = baseURL
     }
@@ -35,8 +42,12 @@ actor DiskCacheStore {
             return nil
         }
 
+        let t0 = CFAbsoluteTimeGetCurrent()
         do {
             let data = try Data(contentsOf: cacheURL)
+            let elapsedMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+            readHistogram.record(elapsedMs)
+            readCount &+= 1
             Logger.cacheManager.debug("Disk cache hit: \(cacheURL.lastPathComponent, privacy: .public)")
             return data
         } catch {
@@ -80,13 +91,29 @@ actor DiskCacheStore {
         }
 
         // サムネイルを保存
+        let t0 = CFAbsoluteTimeGetCurrent()
         do {
             try data.write(to: cacheURL, options: .atomic)
+            let elapsedMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+            writeHistogram.record(elapsedMs)
+            writeCount &+= 1
             Logger.cacheManager.debug("Stored thumbnail: \(cacheURL.lastPathComponent, privacy: .public)")
         } catch {
             Logger.cacheManager.error("Failed to store thumbnail: \(error.localizedDescription, privacy: .public)")
             throw error
         }
+    }
+
+    // MARK: - Metrics
+
+    /// ディスク I/O 統計のスナップショット
+    func metricsSnapshot() -> DiskIOMetricsSnapshot {
+        DiskIOMetricsSnapshot(
+            readCount: readCount,
+            writeCount: writeCount,
+            readHistogram: readHistogram.snapshot(),
+            writeHistogram: writeHistogram.snapshot()
+        )
     }
 
     /// 指定フォルダのキャッシュをクリア

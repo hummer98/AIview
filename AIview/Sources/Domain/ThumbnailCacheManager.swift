@@ -36,6 +36,11 @@ final class ThumbnailCacheManager: Sendable {
         var head: CacheNode?
         var tail: CacheNode?
         var currentSizeBytes: Int = 0
+        // Metrics
+        var memoryHits: UInt64 = 0
+        var memoryMisses: UInt64 = 0
+        var diskHits: UInt64 = 0
+        var diskMisses: UInt64 = 0
     }
 
     // MARK: - Properties
@@ -64,10 +69,12 @@ final class ThumbnailCacheManager: Sendable {
         defer { lock.unlock() }
 
         guard let node = state.cache[cacheKey] else {
+            state.memoryMisses &+= 1
             return nil
         }
 
         moveToHead(node)
+        state.memoryHits &+= 1
         return node.image
     }
 
@@ -109,11 +116,25 @@ final class ThumbnailCacheManager: Sendable {
                 if let image = NSImage(data: thumbnailData) {
                     // メモリキャッシュにも追加
                     cacheThumbnail(image, for: url, size: size)
+                    recordDiskHit()
                     return image
                 }
             }
         }
+        recordDiskMiss()
         return nil
+    }
+
+    private func recordDiskHit() {
+        lock.lock()
+        defer { lock.unlock() }
+        state.diskHits &+= 1
+    }
+
+    private func recordDiskMiss() {
+        lock.lock()
+        defer { lock.unlock() }
+        state.diskMisses &+= 1
     }
 
     /// サムネイルをディスクキャッシュに保存
@@ -186,5 +207,17 @@ final class ThumbnailCacheManager: Sendable {
     private func thumbnailCacheKey(for url: URL, size: CGSize) -> URL {
         let sizeString = "\(Int(size.width))x\(Int(size.height))"
         return url.appendingPathExtension("thumb_\(sizeString)")
+    }
+
+    // MARK: - Metrics
+
+    /// メモリ/ディスク両層のヒット統計スナップショット
+    func metricsSnapshot() -> ThumbnailCacheManagerMetrics {
+        lock.lock()
+        defer { lock.unlock() }
+        return ThumbnailCacheManagerMetrics(
+            memory: CacheMetricsSnapshot(hits: state.memoryHits, misses: state.memoryMisses),
+            disk: CacheMetricsSnapshot(hits: state.diskHits, misses: state.diskMisses)
+        )
     }
 }

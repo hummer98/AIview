@@ -145,7 +145,7 @@ final class ImageBrowserViewModel {
 
     // MARK: - Dependencies
 
-    private let imageLoader: ImageLoader
+    let imageLoader: ImageLoader
     private let folderScanner: FolderScanner
     private let metadataExtractor: MetadataExtractor
     private let fileSystemAccess: FileSystemAccess
@@ -153,6 +153,7 @@ final class ImageBrowserViewModel {
     private let favoritesStore: FavoritesStore
     let cacheManager: CacheManager
     let thumbnailCacheManager: ThumbnailCacheManager
+    let diskCacheStore: DiskCacheStore
 
     /// プリフェッチ設定
     private let prefetchBackward = 3
@@ -171,6 +172,7 @@ final class ImageBrowserViewModel {
         thumbnailCacheManager: ThumbnailCacheManager? = nil
     ) {
         let diskCacheStore = DiskCacheStore(baseURL: nil)
+        self.diskCacheStore = diskCacheStore
         let settings = SettingsStore()
         let cache = cacheManager ?? CacheManager(maxSizeBytes: settings.fullImageCacheSizeBytes)
         self.cacheManager = cache

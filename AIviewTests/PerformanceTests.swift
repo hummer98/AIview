@@ -306,6 +306,67 @@ final class PerformanceTests: XCTestCase {
         print("✅ LRU eviction works correctly")
     }
 
+    // MARK: - Metrics Overhead Tests
+
+    /// キャッシュヒット 1 回あたりのオーバーヘッド計測
+    /// Phase 1 完了時点で baseline として記録し、Phase 2 以降で計測コード挿入後に
+    /// 同じテストを走らせて差分が 1μs 以内であることを確認する。
+    /// baseline と after の値は XCTMetric の output / Xcode のメトリクスビューで比較。
+    func testMetricsOverhead_cacheHit_1M_iterations() {
+        let cacheManager = CacheManager(maxSizeBytes: 64 * 1024 * 1024)
+        let url = URL(fileURLWithPath: "/tmp/overhead-probe.jpg")
+        let image = makeSmallTestImage()
+        cacheManager.cacheImage(image, for: url)
+
+        measure(metrics: [XCTClockMetric()]) {
+            for _ in 0..<1_000_000 {
+                _ = cacheManager.getCachedImage(for: url)
+            }
+        }
+    }
+
+    /// ヒット/ミスが混在する条件でのオーバーヘッド計測
+    func testMetricsOverhead_cacheMixed_1M_iterations() {
+        let cacheManager = CacheManager(maxSizeBytes: 64 * 1024 * 1024)
+        let hitURL = URL(fileURLWithPath: "/tmp/overhead-hit.jpg")
+        let missURL = URL(fileURLWithPath: "/tmp/overhead-miss.jpg")
+        cacheManager.cacheImage(makeSmallTestImage(), for: hitURL)
+
+        measure(metrics: [XCTClockMetric()]) {
+            for i in 0..<1_000_000 {
+                if i % 2 == 0 {
+                    _ = cacheManager.getCachedImage(for: hitURL)
+                } else {
+                    _ = cacheManager.getCachedImage(for: missURL)
+                }
+            }
+        }
+    }
+
+    private func makeSmallTestImage() -> NSImage {
+        let size = NSSize(width: 10, height: 10)
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(size.width),
+            pixelsHigh: Int(size.height),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 32
+        )!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.black.setFill()
+        NSRect(origin: .zero, size: size).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        let img = NSImage(size: size)
+        img.addRepresentation(rep)
+        return img
+    }
+
     // MARK: - Helper Methods
 
     /// テスト画像を一括作成（バックグラウンドで高速に作成）

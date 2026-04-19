@@ -32,6 +32,7 @@ struct AIviewApp: App {
 
         Settings {
             SettingsView()
+                .environment(appState)
         }
     }
 
@@ -62,4 +63,5 @@ extension Logger {
     static let metadata = Logger(subsystem: subsystem, category: "Metadata")
     static let fileSystem = Logger(subsystem: subsystem, category: "FileSystem")
     static let slideshow = Logger(subsystem: subsystem, category: "Slideshow")
+    static let metrics = Logger(subsystem: subsystem, category: "Metrics")
 }

@@ -12,6 +12,33 @@ final class AppState {
     /// 最近使ったフォルダから開くURL（nilでない場合、ビューで処理される）
     var openRecentFolderURL: URL?
 
+    // MARK: - Metrics
+
+    /// アプリ全体のメトリクス集約器
+    let metricsCollector = MetricsCollector()
+
+    /// 1Hz サンプリング用 Task（QueueInstrumentation.avgInFlight の母集団を増やす）
+    @ObservationIgnored private var samplingTask: Task<Void, Never>?
+
+    /// メトリクス 1Hz サンプリング開始
+    /// - Note: 起動後に一度だけ呼ぶ。コストは 1秒に1回のロック取得のみ。
+    func startMetricsSampling() {
+        guard samplingTask == nil else { return }
+        let instrumentation = QueueInstrumentation.thumbnailQueueShared
+        samplingTask = Task.detached(priority: .background) {
+            while !Task.isCancelled {
+                instrumentation.sample()
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    /// メトリクス サンプリング停止（主にテスト/shutdown 用）
+    func stopMetricsSampling() {
+        samplingTask?.cancel()
+        samplingTask = nil
+    }
+
     // MARK: - Folder Reload State
 
     /// リロードが要求されているか（Viewで監視し、ViewModelに伝播）

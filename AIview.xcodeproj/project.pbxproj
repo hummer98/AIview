@@ -50,6 +50,10 @@
 		A1000042 /* ImageBrowserViewModelSubdirectoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000042 /* ImageBrowserViewModelSubdirectoryTests.swift */; };
 		A1000043 /* ImageBrowserViewModelReloadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000043 /* ImageBrowserViewModelReloadTests.swift */; };
 		A1000044 /* ReloadIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000044 /* ReloadIntegrationTests.swift */; };
+		A1000045 /* Metrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000045 /* Metrics.swift */; };
+		A1000046 /* MetricsCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000046 /* MetricsCollector.swift */; };
+		A1000047 /* QueueInstrumentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000047 /* QueueInstrumentation.swift */; };
+		A1000048 /* MetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000048 /* MetricsTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -116,6 +120,10 @@
 		A2000042 /* ImageBrowserViewModelSubdirectoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserViewModelSubdirectoryTests.swift; sourceTree = "<group>"; };
 		A2000043 /* ImageBrowserViewModelReloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserViewModelReloadTests.swift; sourceTree = "<group>"; };
 		A2000044 /* ReloadIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReloadIntegrationTests.swift; sourceTree = "<group>"; };
+		A2000045 /* Metrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Metrics.swift; sourceTree = "<group>"; };
+		A2000046 /* MetricsCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsCollector.swift; sourceTree = "<group>"; };
+		A2000047 /* QueueInstrumentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueInstrumentation.swift; sourceTree = "<group>"; };
+		A2000048 /* MetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsTests.swift; sourceTree = "<group>"; };
 		A5000005 /* AIviewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIviewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -208,6 +216,8 @@
 				A2000010 /* MetadataExtractor.swift */,
 				A2000011 /* ImageBrowserViewModel.swift */,
 				A2000035 /* SlideshowTimer.swift */,
+				A2000045 /* Metrics.swift */,
+				A2000046 /* MetricsCollector.swift */,
 			);
 			path = Domain;
 			sourceTree = "<group>";
@@ -224,6 +234,7 @@
 				A2000032 /* FavoriteIndicator.swift */,
 				A2000038 /* ToastOverlay.swift */,
 				A2000039 /* SlideshowSettingsDialog.swift */,
+				A2000047 /* QueueInstrumentation.swift */,
 			);
 			path = Presentation;
 			sourceTree = "<group>";
@@ -246,6 +257,7 @@
 				A2000042 /* ImageBrowserViewModelSubdirectoryTests.swift */,
 				A2000043 /* ImageBrowserViewModelReloadTests.swift */,
 				A2000044 /* ReloadIntegrationTests.swift */,
+				A2000048 /* MetricsTests.swift */,
 			);
 			path = AIviewTests;
 			sourceTree = "<group>";
@@ -408,6 +420,9 @@
 				A1000035 /* SlideshowTimer.swift in Sources */,
 				A1000038 /* ToastOverlay.swift in Sources */,
 				A1000039 /* SlideshowSettingsDialog.swift in Sources */,
+				A1000045 /* Metrics.swift in Sources */,
+				A1000046 /* MetricsCollector.swift in Sources */,
+				A1000047 /* QueueInstrumentation.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -430,6 +445,7 @@
 				A1000042 /* ImageBrowserViewModelSubdirectoryTests.swift in Sources */,
 				A1000043 /* ImageBrowserViewModelReloadTests.swift in Sources */,
 				A1000044 /* ReloadIntegrationTests.swift in Sources */,
+				A1000048 /* MetricsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -94,6 +94,18 @@ struct MainWindowView: View {
     }
 
     private func handleAppear() {
+        // メトリクス: ViewModel の依存を集約器にバインドし、1Hz サンプリングを起動
+        if let appState {
+            appState.metricsCollector.bind(
+                cacheManager: viewModel.cacheManager,
+                thumbnailCacheManager: viewModel.thumbnailCacheManager,
+                diskCacheStore: viewModel.diskCacheStore,
+                imageLoader: viewModel.imageLoader,
+                queueInstrumentation: QueueInstrumentation.thumbnailQueueShared
+            )
+            appState.startMetricsSampling()
+        }
+
         if let folderPath = ProcessInfo.processInfo.environment["AIVIEW_TEST_FOLDER"] {
             let url = URL(fileURLWithPath: folderPath)
             Task {

@@ -1,7 +1,27 @@
 import SwiftUI
 
 /// 設定ウィンドウのビュー
+/// TabView でキャッシュ設定と診断情報の2タブを提供
 struct SettingsView: View {
+    var body: some View {
+        TabView {
+            CacheSettingsTab()
+                .tabItem {
+                    Label("キャッシュ", systemImage: "memorychip")
+                }
+
+            DiagnosticsTab()
+                .tabItem {
+                    Label("診断情報", systemImage: "chart.bar.xaxis")
+                }
+        }
+        .frame(width: 520, height: 480)
+    }
+}
+
+// MARK: - Cache Settings Tab
+
+private struct CacheSettingsTab: View {
     private let settingsStore = SettingsStore()
 
     @State private var fullImageCacheSizeMB: Double
@@ -44,7 +64,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 280)
         .onDisappear {
             saveSettings()
         }
@@ -56,6 +75,88 @@ struct SettingsView: View {
         store.thumbnailCacheSizeMB = Int(thumbnailCacheSizeMB)
     }
 }
+
+// MARK: - Diagnostics Tab
+
+private struct DiagnosticsTab: View {
+    @Environment(AppState.self) private var appState: AppState?
+    @State private var snapshot: MetricsSnapshot?
+    @State private var isLoading = false
+    @State private var copyFeedback: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Button {
+                    Task { await refresh() }
+                } label: {
+                    Label("更新", systemImage: "arrow.clockwise")
+                }
+                .disabled(isLoading)
+
+                Button {
+                    copyJSONToPasteboard()
+                } label: {
+                    Label("JSON をコピー", systemImage: "doc.on.doc")
+                }
+                .disabled(snapshot == nil)
+
+                if let feedback = copyFeedback {
+                    Text(feedback)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+
+            ScrollView {
+                if let snapshot {
+                    Text(snapshot.formattedLogString())
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .padding(8)
+                        .background(Color(nsColor: .textBackgroundColor))
+                        .cornerRadius(6)
+                } else {
+                    Text(isLoading ? "読み込み中..." : "「更新」を押して最新の診断情報を表示")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+        }
+        .padding(16)
+        .task {
+            if snapshot == nil {
+                await refresh()
+            }
+        }
+    }
+
+    private func refresh() async {
+        guard let appState else { return }
+        isLoading = true
+        let new = await appState.metricsCollector.snapshot()
+        snapshot = new
+        isLoading = false
+    }
+
+    private func copyJSONToPasteboard() {
+        guard let snapshot else { return }
+        let json = snapshot.toJSONString()
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(json, forType: .string)
+        copyFeedback = "コピーしました"
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            copyFeedback = nil
+        }
+    }
+}
+
+// MARK: - Cache Slider
 
 /// キャッシュサイズ設定用スライダー
 private struct CacheSlider: View {

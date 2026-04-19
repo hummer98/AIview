@@ -39,6 +39,11 @@ final class CacheManager: Sendable {
         var head: CacheNode? // Most recently used
         var tail: CacheNode? // Least recently used
         var currentSizeBytes: Int = 0
+        // Metrics: hits/misses は lock 内で更新されるため追加コスト 0
+        var memoryHits: UInt64 = 0
+        var memoryMisses: UInt64 = 0
+        var lockWaitHistogram = LatencyHistogram()
+        var lockWaitOver1msCount: UInt64 = 0
     }
 
     // MARK: - Properties
@@ -65,11 +70,14 @@ final class CacheManager: Sendable {
         defer { lock.unlock() }
 
         let lockWaitMs = (t1 - t0) * 1000
+        state.lockWaitHistogram.record(lockWaitMs)
         if lockWaitMs > 1.0 {
+            state.lockWaitOver1msCount &+= 1
             Logger.cacheManager.warning("getCachedImage lock wait: \(String(format: "%.1f", lockWaitMs), privacy: .public)ms for \(url.lastPathComponent, privacy: .public)")
         }
 
         guard let node = state.cache[url] else {
+            state.memoryMisses &+= 1
             return nil
         }
 
@@ -77,6 +85,7 @@ final class CacheManager: Sendable {
         node.accessTime = Date()
         moveToHead(node)
 
+        state.memoryHits &+= 1
         Logger.cacheManager.debug("Cache hit: \(url.lastPathComponent, privacy: .public)")
         return node.image
     }
@@ -91,8 +100,16 @@ final class CacheManager: Sendable {
 
     /// 画像をキャッシュに保存
     func cacheImage(_ image: NSImage, for url: URL) {
+        let t0 = CFAbsoluteTimeGetCurrent()
         lock.lock()
+        let t1 = CFAbsoluteTimeGetCurrent()
         defer { lock.unlock() }
+
+        let lockWaitMs = (t1 - t0) * 1000
+        state.lockWaitHistogram.record(lockWaitMs)
+        if lockWaitMs > 1.0 {
+            state.lockWaitOver1msCount &+= 1
+        }
 
         // 既存のエントリがあれば更新
         if let existingNode = state.cache[url] {
@@ -197,5 +214,22 @@ final class CacheManager: Sendable {
         if node === state.head { return }
         removeNode(node)
         addToHead(node)
+    }
+
+    // MARK: - Metrics
+
+    /// 現在のキャッシュ統計のスナップショットを返す
+    func metricsSnapshot() -> CacheManagerMetrics {
+        lock.lock()
+        defer { lock.unlock() }
+        let histogramSnapshot = state.lockWaitHistogram.snapshot()
+        let lockWait = LockWaitMetricsSnapshot(
+            sampleCount: histogramSnapshot.count,
+            over1msCount: state.lockWaitOver1msCount,
+            maxWaitMs: histogramSnapshot.maxMs,
+            histogram: histogramSnapshot
+        )
+        let cache = CacheMetricsSnapshot(hits: state.memoryHits, misses: state.memoryMisses)
+        return CacheManagerMetrics(cache: cache, lockWait: lockWait)
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 /// アプリケーションのメニューコマンド定義
 /// Requirements: 1.1, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4
@@ -53,6 +54,17 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut("r", modifiers: .command)
             .disabled(!appState.hasCurrentFolder)
+        }
+
+        // 開発メニュー: メトリクスをログに出力
+        CommandMenu("開発") {
+            Button("診断情報をログ出力") {
+                Task { @MainActor in
+                    let snapshot = await appState.metricsCollector.snapshot()
+                    Logger.metrics.info("\(snapshot.formattedLogString(), privacy: .public)")
+                }
+            }
+            .keyboardShortcut("d", modifiers: [.command, .shift])
         }
     }
 }
