@@ -49,6 +49,14 @@ enum ThumbnailLoadState {
     }
 }
 
+/// `resolveLoadState` の戻り値。disk hit で `.loading` を経由しない場合は
+/// `passedThroughLoading == false`、両 miss で caller が `.loading` を設定して
+/// 生成処理に進む場合は true となる。
+struct ResolveResult {
+    let finalState: ThumbnailLoadState
+    let passedThroughLoading: Bool
+}
+
 /// サムネイルカルーセル
 /// NSCollectionViewベースの仮想化スクロール
 /// Requirements: 2.2-2.5, 9.1-9.3
@@ -65,6 +73,10 @@ struct ThumbnailCarousel: View {
     @State private var thumbnailTasks: [URL: Task<Void, Never>] = [:]
     // 世代トークン: imageURLs が切替わるたびに +1 し、古い世代の UI 更新を破棄する。
     @State private var generation: Int = 0
+    // 進行中の load を URL 単位で追跡するデデュプリケーション用ガード。
+    // `.loading` は UI 表示用（ProgressView）、inFlight は処理の多重起動防御用と責務が異なる。
+    // `loadThumbnailAsync` は `@MainActor` 下で同期的に insert/remove するため競合なし。
+    @State private var inFlightURLs: Set<URL> = []
 
     private static let maxRetryCount = 3
 
@@ -125,6 +137,9 @@ struct ThumbnailCarousel: View {
                 thumbnailStates.removeAll()
                 for (_, task) in thumbnailTasks { task.cancel() }
                 thumbnailTasks.removeAll()
+                // 世代交代時に古い URL の inFlight 登録が残存すると新世代の再ロードを
+                // 抑制してしまうため、明示的にクリアする。
+                inFlightURLs.removeAll()
             }
             .onDisappear {
                 // フォルダを閉じる / ウィンドウ close などで View が破棄される際の
@@ -136,73 +151,91 @@ struct ThumbnailCarousel: View {
     }
 
     /// `.task(id: url)` から呼ばれる非同期ロードのエントリポイント。
-    /// この関数実行時点の世代トークンを固定し、MainActor 更新の直前に比較することで
+    /// この関数実行時点の世代トークンを固定し、await 後の state 更新直前に比較することで
     /// フォルダ切替後に遅れて到着する古い世代の完了通知を破棄する。
+    /// `@MainActor` 明示により state アクセスは全て同期。`inFlightURLs` の
+    /// insert/remove も defer で同期実行され競合しない。
+    @MainActor
     private func loadThumbnailAsync(for url: URL) async {
         let filename = url.lastPathComponent
         let startGeneration = generation
 
-        // 既にロード済みまたはロード中の場合はスキップ
+        // 既にロード済み / ロード中 / 失敗済みはスキップ（再度 onAppear で再入しても
+        // 無駄な work をしない）
         if let state = thumbnailStates[url] {
-            if case .loaded = state {
+            switch state {
+            case .loaded:
                 logger.debug("[\(filename)] skip: already loaded")
                 return
-            }
-            if case .loading = state {
+            case .loading:
                 logger.debug("[\(filename)] skip: already loading")
                 return
-            }
-            if case .failed = state {
+            case .failed:
                 logger.debug("[\(filename)] skip: already failed")
                 return
             }
         }
 
+        // inFlight ガード: `.loading` は UI 表示用状態で設定タイミングが disk lookup 後に
+        // 遅延されるため、処理の多重起動を別途防ぐ必要がある。同期 insert + defer remove。
+        if inFlightURLs.contains(url) {
+            logger.debug("[\(filename)] skip: already in flight")
+            return
+        }
+        inFlightURLs.insert(url)
+        defer { inFlightURLs.remove(url) }
+
         let size = CGSize(width: thumbnailSize, height: thumbnailSize)
 
-        // まずメモリキャッシュをチェック（同期的）
-        if let cached = thumbnailCacheManager.getCachedThumbnail(for: url, size: size) {
-            logger.debug("[\(filename)] memory cache hit")
-            thumbnailStates[url] = .loaded(cached)
-            return
+        // memory → disk lookup を resolveLoadState に委譲。disk hit の場合は
+        // `.loading` を経由せず直接 `.loaded` に遷移するのでスピナーがチラつかない。
+        let result = await Self.resolveLoadState(
+            for: url,
+            size: size,
+            manager: thumbnailCacheManager
+        )
+
+        // await 後の世代チェック（@MainActor 下なので直接アクセス可）
+        guard startGeneration == generation else { return }
+
+        switch result.finalState {
+        case .loaded(let image):
+            // memory hit / disk hit — `.loading` を経由せず直接確定
+            logger.debug("[\(filename)] cache hit (passedThroughLoading=\(result.passedThroughLoading))")
+            thumbnailStates[url] = .loaded(image)
+        case .loading:
+            // memory/disk 両 miss — 初めて `.loading` を設定し、生成経路に進む
+            logger.info("[\(filename)] start loading (both caches missed)")
+            thumbnailStates[url] = .loading
+            await generateAndCache(
+                for: url,
+                size: size,
+                retryCount: 0,
+                generation: startGeneration
+            )
+        case .failed:
+            // resolveLoadState は現状 .failed を返さないが、enum の網羅性のため
+            thumbnailStates[url] = result.finalState
         }
-
-        // ローディング状態に設定
-        logger.info("[\(filename)] start loading")
-        thumbnailStates[url] = .loading
-
-        await loadThumbnailWithRetry(for: url, size: size, retryCount: 0, generation: startGeneration)
     }
 
-    private func loadThumbnailWithRetry(for url: URL, size: CGSize, retryCount: Int, generation startGeneration: Int) async {
+    /// キャッシュ miss 後の生成＋保存経路（disk lookup 責務は `resolveLoadState` に移譲済み）。
+    /// リトライは exponential backoff で最大 `maxRetryCount` 回まで行う。
+    @MainActor
+    private func generateAndCache(
+        for url: URL,
+        size: CGSize,
+        retryCount: Int,
+        generation startGeneration: Int
+    ) async {
         let filename = url.lastPathComponent
 
-        // Taskがキャンセルされているかチェック
         if Task.isCancelled {
             logger.warning("[\(filename)] task cancelled at start (retry: \(retryCount))")
-            await resetLoadingState(for: url, generation: startGeneration)
+            resetLoadingState(for: url, generation: startGeneration)
             return
         }
 
-        // ディスクキャッシュをチェック
-        logger.debug("[\(filename)] checking disk cache (retry: \(retryCount))")
-        if let cached = await thumbnailCacheManager.getDiskCachedThumbnail(for: url, size: size) {
-            logger.debug("[\(filename)] disk cache hit")
-            await MainActor.run {
-                guard startGeneration == self.generation else { return }
-                thumbnailStates[url] = .loaded(cached)
-            }
-            return
-        }
-
-        // Taskがキャンセルされているかチェック
-        if Task.isCancelled {
-            logger.warning("[\(filename)] task cancelled after disk cache check")
-            await resetLoadingState(for: url, generation: startGeneration)
-            return
-        }
-
-        // キャッシュミス: サムネイルを生成
         logger.debug("[\(filename)] generating thumbnail (retry: \(retryCount))")
         let startTime = CFAbsoluteTimeGetCurrent()
         let thumbnail = await Self.generateThumbnail(for: url, size: thumbnailSize)
@@ -210,54 +243,60 @@ struct ThumbnailCarousel: View {
 
         if Task.isCancelled {
             logger.warning("[\(filename)] task cancelled after generate (elapsed: \(elapsed, format: .fixed(precision: 2))s)")
-            await resetLoadingState(for: url, generation: startGeneration)
+            resetLoadingState(for: url, generation: startGeneration)
             return
         }
 
         if let thumbnail = thumbnail {
             logger.debug("[\(filename)] generated successfully (elapsed: \(elapsed, format: .fixed(precision: 2))s)")
-            // メモリキャッシュに保存
             thumbnailCacheManager.cacheThumbnail(thumbnail, for: url, size: size)
-            // ディスクキャッシュに保存
             await thumbnailCacheManager.storeThumbnailToDisk(thumbnail, for: url, size: size)
-            // UIを更新
-            await MainActor.run {
-                guard startGeneration == self.generation else { return }
-                thumbnailStates[url] = .loaded(thumbnail)
-            }
+            guard startGeneration == generation else { return }
+            thumbnailStates[url] = .loaded(thumbnail)
             logger.info("[\(filename)] loaded successfully")
         } else {
-            // 生成失敗: リトライまたはエラー状態に設定
             let nextRetryCount = retryCount + 1
             logger.warning("[\(filename)] generate failed (retry: \(retryCount)/\(Self.maxRetryCount), elapsed: \(elapsed, format: .fixed(precision: 2))s)")
             if nextRetryCount < Self.maxRetryCount {
-                // 少し待ってからリトライ（exponential backoff）
                 let delayMs = 100 * (1 << retryCount)
                 logger.debug("[\(filename)] will retry after \(delayMs)ms")
                 try? await Task.sleep(nanoseconds: UInt64(delayMs * 1_000_000))
-                await loadThumbnailWithRetry(for: url, size: size, retryCount: nextRetryCount, generation: startGeneration)
+                await generateAndCache(for: url, size: size, retryCount: nextRetryCount, generation: startGeneration)
             } else {
-                // 最大リトライ回数に達した: エラー状態に設定
                 logger.error("[\(filename)] max retries reached, marking as failed")
-                await MainActor.run {
-                    guard startGeneration == self.generation else { return }
-                    thumbnailStates[url] = .failed(retryCount: nextRetryCount)
-                }
+                guard startGeneration == generation else { return }
+                thumbnailStates[url] = .failed(retryCount: nextRetryCount)
             }
         }
     }
 
-    /// キャンセル時に状態をリセット（再度ロード可能にする）
+    /// キャンセル時に状態をリセット（再度ロード可能にする）。
     /// 世代が切り替わった後の resetLoadingState は新世代の state に干渉させない。
-    private func resetLoadingState(for url: URL, generation startGeneration: Int) async {
-        await MainActor.run {
-            guard startGeneration == self.generation else { return }
-            // .loading状態の場合のみリセット（.loadedや.failedは保持）
-            if case .loading = thumbnailStates[url] {
-                thumbnailStates[url] = nil
-                logger.debug("[\(url.lastPathComponent)] reset loading state for retry")
-            }
+    @MainActor
+    private func resetLoadingState(for url: URL, generation startGeneration: Int) {
+        guard startGeneration == generation else { return }
+        // .loading状態の場合のみリセット（.loadedや.failedは保持）
+        if case .loading = thumbnailStates[url] {
+            thumbnailStates[url] = nil
+            logger.debug("[\(url.lastPathComponent)] reset loading state for retry")
         }
+    }
+
+    /// `loadThumbnailAsync` から呼ばれる純粋 lookup 関数。
+    /// memory → disk の順にキャッシュを確認し、結果と「`.loading` を経由すべきか」を返す。
+    /// disk miss 時のみ caller 側で `.loading` を設定し、実際の生成処理に進む。
+    static func resolveLoadState(
+        for url: URL,
+        size: CGSize,
+        manager: ThumbnailCacheManager
+    ) async -> ResolveResult {
+        if let cached = manager.getCachedThumbnail(for: url, size: size) {
+            return ResolveResult(finalState: .loaded(cached), passedThroughLoading: false)
+        }
+        if let cached = await manager.getDiskCachedThumbnail(for: url, size: size) {
+            return ResolveResult(finalState: .loaded(cached), passedThroughLoading: false)
+        }
+        return ResolveResult(finalState: .loading, passedThroughLoading: true)
     }
 
     static func generateThumbnail(for url: URL, size: CGFloat) async -> NSImage? {

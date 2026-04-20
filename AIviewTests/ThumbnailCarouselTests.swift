@@ -353,6 +353,78 @@ final class ThumbnailCarouselTests: XCTestCase {
         XCTAssertNotNil(cached)
     }
 
+    // MARK: - Disk Cache Rehydration / resolveLoadState Flow Tests
+
+    // [REGRESSION GUARD] — 現行コードで既にパスすべき挙動の固定化。
+    // disk cache が memory cache を再 hydrate することが壊れないようにする。
+    func testDiskCache_rehydrates_memoryCache_onSecondOpen() async throws {
+        let imageURL = try createTestImage(name: "rehydrate.png")
+        let size = CGSize(width: 80, height: 80)
+        guard let thumbnail = await ThumbnailCarousel.generateThumbnail(for: imageURL, size: 80)
+        else {
+            XCTFail("generate failed")
+            return
+        }
+        thumbnailCacheManager.cacheThumbnail(thumbnail, for: imageURL, size: size)
+        await thumbnailCacheManager.storeThumbnailToDisk(thumbnail, for: imageURL, size: size)
+
+        thumbnailCacheManager.clearMemoryCache()
+        XCTAssertNil(thumbnailCacheManager.getCachedThumbnail(for: imageURL, size: size))
+
+        let fromDisk = await thumbnailCacheManager.getDiskCachedThumbnail(for: imageURL, size: size)
+        XCTAssertNotNil(fromDisk, "disk cache should hit after memory clear")
+        XCTAssertNotNil(
+            thumbnailCacheManager.getCachedThumbnail(for: imageURL, size: size),
+            "memory cache should be repopulated by disk hit"
+        )
+    }
+
+    // [RED → GREEN] — Step 1-a スタブは常に (.loading, true) を返すので落ちる。
+    // Step 2 で resolveLoadState を本実装にすると Green になる。
+    func testLoadFlow_memoryMiss_diskHit_skipsLoadingState() async throws {
+        let imageURL = try createTestImage(name: "diskhit_flow.png")
+        let size = CGSize(width: 80, height: 80)
+        guard let thumbnail = await ThumbnailCarousel.generateThumbnail(for: imageURL, size: 80)
+        else {
+            XCTFail("generate failed")
+            return
+        }
+        await thumbnailCacheManager.storeThumbnailToDisk(thumbnail, for: imageURL, size: size)
+        thumbnailCacheManager.clearMemoryCache()
+
+        let result = await ThumbnailCarousel.resolveLoadState(
+            for: imageURL,
+            size: size,
+            manager: thumbnailCacheManager
+        )
+
+        guard case .loaded = result.finalState else {
+            XCTFail("Expected .loaded, got \(result.finalState)")
+            return
+        }
+        XCTAssertFalse(result.passedThroughLoading, "should NOT set .loading when disk hits")
+    }
+
+    // [RED → GREEN] — memory/disk 両 miss 時は .loading + passedThroughLoading = true を要求。
+    func testLoadFlow_memoryMiss_diskMiss_passesLoading() async throws {
+        let imageURL = try createTestImage(name: "fresh_noncached.png")
+        let size = CGSize(width: 80, height: 80)
+        thumbnailCacheManager.clearMemoryCache()
+        // ディスクにも書かない
+
+        let result = await ThumbnailCarousel.resolveLoadState(
+            for: imageURL,
+            size: size,
+            manager: thumbnailCacheManager
+        )
+
+        guard case .loading = result.finalState else {
+            XCTFail("Expected .loading when both caches miss, got \(result.finalState)")
+            return
+        }
+        XCTAssertTrue(result.passedThroughLoading)
+    }
+
     // MARK: - Helper Methods
 
     private func createTestImage(name: String, size: NSSize = NSSize(width: 100, height: 100)) throws -> URL {
