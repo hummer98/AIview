@@ -1,0 +1,17 @@
+// Signing.xcconfig — 署名設定のデフォルト値と Developer.xcconfig のオプトインインクルード
+//
+// このファイルはリポジトリにコミットされる。
+// 開発者個別の DEVELOPMENT_TEAM は Developer.xcconfig（gitignore 済）で上書きする。
+
+// --- 既定値: Developer.xcconfig が存在しない場合の ad-hoc 署名フォールバック ---
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+// --- 共通設定（全 configuration 適用） ---
+ENABLE_HARDENED_RUNTIME = YES
+
+// --- 開発者個別オーバーライド（存在する場合のみインクルード） ---
+// `#include?` は同一ディレクトリ (AIview/Config/) の Developer.xcconfig を探索し、
+// 存在しなければ警告なしでスキップする Xcode 公式記法（Xcode 10+）。
+#include? "Developer.xcconfig"

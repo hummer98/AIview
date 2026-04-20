@@ -1,0 +1,22 @@
+// Developer.xcconfig.sample — 開発者個別の署名設定テンプレート
+//
+// 使い方:
+//   1. このファイルを同じディレクトリに `Developer.xcconfig` という名前でコピーする
+//      cp AIview/Config/Developer.xcconfig.sample AIview/Config/Developer.xcconfig
+//   2. 下記の DEVELOPMENT_TEAM にあなたの Team ID を設定する
+//      Team ID は Apple Developer Portal → Membership ページで確認できる
+//      (https://developer.apple.com/account → Membership details)
+//   3. Developer.xcconfig は .gitignore 済みなのでコミットされない
+//
+// 未設定のまま（Developer.xcconfig を作らない）でも `task build` / `task test` は成功する
+// （Signing.xcconfig の Manual + `-` identity → ad-hoc 署名にフォールバック）。
+// Archive / Notarize 時は Team ID 必須。
+//
+// 注意:
+//   - `ABCD1234EF` はダミー値。置換せずにビルドすると provisioning lookup が失敗する。
+//     動作確認のみの場合は `DEVELOPMENT_TEAM =`（空値）に書き換えるか、ファイル自体を作らない。
+//   - Automatic 署名が必要な場合は下記に `CODE_SIGN_STYLE = Automatic` を手動で追記。
+//     ただし DEVELOPMENT_TEAM が空の状態で Automatic にすると Xcode 15 / macOS 14 では
+//     xcodebuild が Exit 65 で失敗するため、Team ID と必ずセットで設定すること。
+
+DEVELOPMENT_TEAM = ABCD1234EF

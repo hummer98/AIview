@@ -60,3 +60,6 @@ Thumbs.db
 .env.local
 *.pem
 *.key
+
+# Xcode per-developer signing config (do NOT commit)
+AIview/Config/Developer.xcconfig
