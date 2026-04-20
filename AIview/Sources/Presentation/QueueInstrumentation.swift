@@ -66,3 +66,14 @@ extension QueueInstrumentation {
     /// クラス自身は MainActor に縛られないので Sendable closure からアクセス可能。
     static let thumbnailQueueShared = QueueInstrumentation()
 }
+
+#if DEBUG
+extension QueueInstrumentation {
+    /// テスト間での状態分離用フック。本番経路からは呼ばない。
+    func _debugReset() {
+        lock.withLock { state in
+            state = State()
+        }
+    }
+}
+#endif

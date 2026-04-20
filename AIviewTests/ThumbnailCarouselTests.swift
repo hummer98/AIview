@@ -425,6 +425,142 @@ final class ThumbnailCarouselTests: XCTestCase {
         XCTAssertTrue(result.passedThroughLoading)
     }
 
+    // MARK: - Concurrency Cap Tests (Task 005)
+
+    /// OperationQueue の maxConcurrentOperationCount が peakInFlight の上限として機能することを検証。
+    /// QueueInstrumentation.thumbnailQueueShared は singleton なので `_debugReset()` で隔離する。
+    /// 現状 AIviewTests は serial 実行のため parallel testing との競合は考慮外 (plan §5.1 制約)。
+    func testConcurrencyCap_peakInFlight_doesNotExceedLimit() async throws {
+        let limit = ThumbnailCarousel.thumbnailConcurrencyLimit
+        XCTAssertGreaterThanOrEqual(limit, 4, "limit should be at least 4")
+        XCTAssertLessThanOrEqual(limit, 8, "limit should be at most 8")
+
+        let urls = try (0..<(limit * 3)).map { try createTestImage(name: "cap_\($0).png") }
+
+        QueueInstrumentation.thumbnailQueueShared._debugReset()
+
+        await withTaskGroup(of: NSImage?.self) { group in
+            for url in urls {
+                group.addTask {
+                    await ThumbnailCarousel.generateThumbnail(for: url, size: 80, priority: .low)
+                }
+            }
+            for await _ in group {}
+        }
+
+        let snap = QueueInstrumentation.thumbnailQueueShared.snapshot()
+        XCTAssertLessThanOrEqual(
+            snap.peakInFlight, limit,
+            "peakInFlight (\(snap.peakInFlight)) must not exceed maxConcurrentOperationCount (\(limit))"
+        )
+        XCTAssertEqual(
+            snap.totalEnqueued, UInt64(limit * 3),
+            "all enqueued ops should have entered execution"
+        )
+    }
+
+    // MARK: - Priority Mapping Tests (Task 005)
+
+    /// currentIndex ± radius が `.high`、範囲外が `.low` であることを確認する O(1) 純粋関数テスト。
+    func testPriorityMapping_highWithinWindow_lowOutside() {
+        for i in 0..<20 {
+            let p = ThumbnailCarousel.priority(forIndex: i, currentIndex: 10, radius: 5)
+            if (5...15).contains(i) {
+                XCTAssertEqual(p, .high, "index \(i) should be .high")
+            } else {
+                XCTAssertEqual(p, .low, "index \(i) should be .low")
+            }
+        }
+    }
+
+    /// currentIndex が範囲外（フォルダリロード中等）の場合は全件 `.low` に倒す defensive default。
+    func testPriorityMapping_outOfRangeCurrentIndex_allLow() {
+        for i in 0..<10 {
+            XCTAssertEqual(
+                ThumbnailCarousel.priority(forIndex: i, currentIndex: -1, radius: 5),
+                .low,
+                "currentIndex=-1 で index \(i) は .low"
+            )
+            XCTAssertEqual(
+                ThumbnailCarousel.priority(forIndex: i, currentIndex: 999, radius: 5),
+                .low,
+                "currentIndex=999 (範囲外) で index \(i) は .low"
+            )
+        }
+    }
+
+    // MARK: - OperationRegistry Tests (Task 005)
+
+    /// updatePriorities(highPriorityURLs:) が window 内の Operation を .high、
+    /// window 外を .normal に設定することを検証。registry は map 操作と priority 書換えを
+    /// 分離しており、テスト時も isFinished/isCancelled でない Operation のみ更新される。
+    func testDynamicPriorityUpdate_onCurrentIndexChange() {
+        let registry = OperationRegistry()
+        let ops: [Operation] = (0..<15).map { _ in
+            let op = BlockOperation {}
+            op.queuePriority = .normal
+            return op
+        }
+        let urls = (0..<15).map { URL(fileURLWithPath: "/tmp/y\($0).png") }
+        for (u, o) in zip(urls, ops) { registry.register(o, for: u) }
+
+        registry.updatePriorities(highPriorityURLs: Set(urls[5...9]))
+
+        for i in 0..<15 {
+            let expected: Operation.QueuePriority = (5...9).contains(i) ? .high : .normal
+            XCTAssertEqual(
+                ops[i].queuePriority, expected,
+                "index \(i) の queuePriority が期待値と異なる"
+            )
+        }
+    }
+
+    /// 範囲を変えて呼び直すと priority が再更新されることを確認（スクロール移動のシミュレーション）。
+    func testDynamicPriorityUpdate_windowShift_repromotes() {
+        let registry = OperationRegistry()
+        let ops: [BlockOperation] = (0..<15).map { _ in
+            let op = BlockOperation {}
+            op.queuePriority = .normal
+            return op
+        }
+        let urls = (0..<15).map { URL(fileURLWithPath: "/tmp/shift\($0).png") }
+        for (u, o) in zip(urls, ops) { registry.register(o, for: u) }
+
+        registry.updatePriorities(highPriorityURLs: Set(urls[0...4]))
+        for i in 0...4 { XCTAssertEqual(ops[i].queuePriority, .high) }
+        for i in 5..<15 { XCTAssertEqual(ops[i].queuePriority, .normal) }
+
+        // window を後方に移動
+        registry.updatePriorities(highPriorityURLs: Set(urls[10...14]))
+        for i in 0..<10 {
+            XCTAssertEqual(ops[i].queuePriority, .normal, "index \(i) should be demoted to .normal")
+        }
+        for i in 10..<15 {
+            XCTAssertEqual(ops[i].queuePriority, .high, "index \(i) should be promoted to .high")
+        }
+    }
+
+    /// 既に isCancelled の Operation は updatePriorities の対象外（skip 条件）。
+    func testDynamicPriorityUpdate_skipsCancelledOperations() {
+        let registry = OperationRegistry()
+        let ops: [BlockOperation] = (0..<3).map { _ in
+            let op = BlockOperation {}
+            op.queuePriority = .normal
+            return op
+        }
+        let urls = (0..<3).map { URL(fileURLWithPath: "/tmp/skip\($0).png") }
+        for (u, o) in zip(urls, ops) { registry.register(o, for: u) }
+
+        ops[1].cancel()
+        XCTAssertTrue(ops[1].isCancelled)
+
+        registry.updatePriorities(highPriorityURLs: Set(urls))
+
+        XCTAssertEqual(ops[0].queuePriority, .high)
+        XCTAssertEqual(ops[1].queuePriority, .normal, "cancelled op の priority は書換えられない")
+        XCTAssertEqual(ops[2].queuePriority, .high)
+    }
+
     // MARK: - Helper Methods
 
     private func createTestImage(name: String, size: NSSize = NSSize(width: 100, height: 100)) throws -> URL {

@@ -21,6 +21,37 @@ final class CancelFlag: @unchecked Sendable {
     }
 }
 
+/// continuation.resume を最初の呼び出しだけ通すための one-shot フラグ。
+/// BlockOperation 本体 (happy path / early cancel) と completionBlock (本体が一度も
+/// 走らなかった稀少ケースの救済) の両方から resume されうるため、二重 resume を防ぐ。
+final class ResumeGuard: @unchecked Sendable {
+    private let lock = OSAllocatedUnfairLock<Bool>(initialState: false)
+
+    /// 最初の呼び出し時のみ true を返し、以降は false を返す。
+    func consume() -> Bool {
+        lock.withLock { done in
+            if done { return false }
+            done = true
+            return true
+        }
+    }
+}
+
+/// サムネイル生成ジョブの優先度。
+/// 表示中 ± `ThumbnailCarousel.priorityWindowRadius` の範囲は `.high`、それ以外は `.low`。
+enum ThumbnailPriority {
+    case high
+    case low
+
+    var qos: QualityOfService {
+        self == .high ? .userInitiated : .utility
+    }
+
+    var queuePriority: Operation.QueuePriority {
+        self == .high ? .high : .normal
+    }
+}
+
 /// サムネイルのロード状態
 enum ThumbnailLoadState {
     case loading
@@ -57,6 +88,48 @@ struct ResolveResult {
     let passedThroughLoading: Bool
 }
 
+/// URL → Operation の対応表を保持し、enqueue 済みで未完了のサムネイル生成ジョブの
+/// `queuePriority` を動的に書き換える。currentIndex 変化時にウィンドウ内 URL を
+/// `.high`、範囲外を `.normal` に遷移させる。
+/// map 操作は lock 下、queuePriority 書換えは lock 外で行う分割ロック設計。
+final class OperationRegistry: @unchecked Sendable {
+    private let lock = OSAllocatedUnfairLock<[URL: Operation]>(initialState: [:])
+
+    func register(_ op: Operation, for url: URL) {
+        lock.withLock { map in
+            map[url] = op
+        }
+    }
+
+    func remove(for url: URL) {
+        lock.withLock { map in
+            _ = map.removeValue(forKey: url)
+        }
+    }
+
+    /// `highPriorityURLs` に含まれる URL を `.high`、それ以外を `.normal` に設定する。
+    /// 手順: (1) lock 下で map スナップショット取得 → lock 解放 →
+    /// (2) 反復中に `isFinished`/`isCancelled` をスキップ条件とし queuePriority を書換える。
+    /// priority 書換え時の KVO 通知と map 操作の deadlock を回避する意図。
+    func updatePriorities(highPriorityURLs: Set<URL>) {
+        let snapshot: [(URL, Operation)] = lock.withLock { map in
+            Array(map)
+        }
+        for (url, op) in snapshot {
+            if op.isFinished || op.isCancelled { continue }
+            let newPriority: Operation.QueuePriority = highPriorityURLs.contains(url) ? .high : .normal
+            if op.queuePriority != newPriority {
+                op.queuePriority = newPriority
+            }
+        }
+    }
+
+    /// テスト支援用。現在登録中の Operation 数を返す。
+    var count: Int {
+        lock.withLock { map in map.count }
+    }
+}
+
 /// サムネイルカルーセル
 /// NSCollectionViewベースの仮想化スクロール
 /// Requirements: 2.2-2.5, 9.1-9.3
@@ -80,15 +153,38 @@ struct ThumbnailCarousel: View {
 
     private static let maxRetryCount = 3
 
-    /// サムネイル生成用の専用DispatchQueue
-    /// cooperative thread poolをブロックしないよう、ブロッキングI/Oはこのキューで実行
-    private static let thumbnailQueue = DispatchQueue(
-        label: "com.aiview.thumbnailGeneration",
-        qos: .utility,
-        attributes: .concurrent
-    )
+    /// 同時生成上限。`activeProcessorCount` は OS が現時点で有効としているコア数
+    /// (thermal throttle / Low Power Mode を反映) なので `processorCount` より妥当。
+    /// `static let` は初回アクセス時の lazy 評価で以降固定となり、起動中のコア可用数
+    /// 変化には追従しない前提。`[4, 8]` にクランプするのは 2 コア機でも I/O パイプを
+    /// 埋める最低並列数を確保し、かつ MainActor 戻り/SSD 帯域の飽和を避けるため。
+    static let thumbnailConcurrencyLimit: Int = {
+        let cores = ProcessInfo.processInfo.activeProcessorCount
+        return min(max(cores, 4), 8)
+    }()
 
-    /// thumbnailQueue の並列度を計測するインストルメンテーション（アプリ全体で共有）
+    /// サムネイル生成用の専用 OperationQueue。
+    /// `maxConcurrentOperationCount` で上限を制御し、`BlockOperation` 単位で
+    /// `queuePriority` / `qualityOfService` を個別に設定する。
+    static let thumbnailOperationQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = thumbnailConcurrencyLimit
+        queue.qualityOfService = .utility
+        queue.name = "com.aiview.thumbnailGeneration"
+        return queue
+    }()
+
+    /// 同一プロセス内で共有する Operation レジストリ。
+    /// URL は絶対パスベースでアプリ全体一意と仮定（複数ウィンドウで同じフォルダを
+    /// 開く運用は未サポート、Phase 2 で `(windowID, URL)` キー化へ拡張予定）。
+    static let operationRegistry = OperationRegistry()
+
+    /// 現在表示位置からどれだけ離れた位置まで `.high` 優先度で生成するか。
+    /// 80pt サムネ + 4pt 間隔 ≒ 84pt/枚、典型ウィンドウ幅 1000-1400pt で片側 6-8 枚が可視範囲。
+    /// N=5 で可視範囲 + 先読み 1 枚分を `.high` とできる。
+    static let priorityWindowRadius: Int = 5
+
+    /// thumbnailOperationQueue の並列度を計測するインストルメンテーション（アプリ全体で共有）
     static var thumbnailQueueInstrumentation: QueueInstrumentation {
         QueueInstrumentation.thumbnailQueueShared
     }
@@ -116,7 +212,7 @@ struct ThumbnailCarousel: View {
                         // 自動 cancel して新しい Task を起動する。ForEach の id が
                         // \.offset のままでも、この修飾子は url 単位で発火する。
                         .task(id: url) {
-                            await loadThumbnailAsync(for: url)
+                            await loadThumbnailAsync(for: url, indexInFolder: index)
                         }
                     }
                 }
@@ -128,6 +224,11 @@ struct ThumbnailCarousel: View {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     proxy.scrollTo(newIndex, anchor: .center)
                 }
+                // 既に enqueue 済みの未実行ジョブの優先度を新しい window に合わせて更新。
+                // scrollTo (UX) と updatePriorities (性能) は互いに独立なので、読みやすさ
+                // 優先で withAnimation ブロックの外で呼ぶ。
+                let window = highPriorityWindow(for: newIndex)
+                Self.operationRegistry.updatePriorities(highPriorityURLs: window)
             }
             // imageURLs が変わったタイミングで世代交代 & 残存 Task を全 cancel。
             // 同一内容のフォルダを再読込してもこの Task は再発火しないため、
@@ -150,13 +251,35 @@ struct ThumbnailCarousel: View {
         }
     }
 
+    /// currentIndex ± priorityWindowRadius に該当する URL 集合を返す。
+    /// `updatePriorities(highPriorityURLs:)` への入力生成に使う。
+    private func highPriorityWindow(for currentIndex: Int) -> Set<URL> {
+        guard currentIndex >= 0, currentIndex < imageURLs.count else {
+            return []
+        }
+        let lower = max(0, currentIndex - Self.priorityWindowRadius)
+        let upper = min(imageURLs.count - 1, currentIndex + Self.priorityWindowRadius)
+        guard lower <= upper else { return [] }
+        return Set(imageURLs[lower...upper])
+    }
+
+    /// index が currentIndex ± radius の範囲にあれば `.high`、そうでなければ `.low`。
+    /// currentIndex が 0 未満（フォルダ未選択等の過渡状態）は全件 `.low` に倒す。
+    /// O(1) の純粋関数。
+    static func priority(forIndex index: Int, currentIndex: Int, radius: Int) -> ThumbnailPriority {
+        guard currentIndex >= 0 else { return .low }
+        return abs(index - currentIndex) <= radius ? .high : .low
+    }
+
     /// `.task(id: url)` から呼ばれる非同期ロードのエントリポイント。
     /// この関数実行時点の世代トークンを固定し、await 後の state 更新直前に比較することで
     /// フォルダ切替後に遅れて到着する古い世代の完了通知を破棄する。
     /// `@MainActor` 明示により state アクセスは全て同期。`inFlightURLs` の
     /// insert/remove も defer で同期実行され競合しない。
+    /// `indexInFolder` は `ForEach(Array(imageURLs.enumerated()))` から受け取る index で、
+    /// O(1) で priority 判定を行うために必要。
     @MainActor
-    private func loadThumbnailAsync(for url: URL) async {
+    private func loadThumbnailAsync(for url: URL, indexInFolder: Int) async {
         let filename = url.lastPathComponent
         let startGeneration = generation
 
@@ -207,11 +330,17 @@ struct ThumbnailCarousel: View {
             // memory/disk 両 miss — 初めて `.loading` を設定し、生成経路に進む
             logger.info("[\(filename)] start loading (both caches missed)")
             thumbnailStates[url] = .loading
+            let priority = Self.priority(
+                forIndex: indexInFolder,
+                currentIndex: currentIndex,
+                radius: Self.priorityWindowRadius
+            )
             await generateAndCache(
                 for: url,
                 size: size,
                 retryCount: 0,
-                generation: startGeneration
+                generation: startGeneration,
+                priority: priority
             )
         case .failed:
             // resolveLoadState は現状 .failed を返さないが、enum の網羅性のため
@@ -221,12 +350,14 @@ struct ThumbnailCarousel: View {
 
     /// キャッシュ miss 後の生成＋保存経路（disk lookup 責務は `resolveLoadState` に移譲済み）。
     /// リトライは exponential backoff で最大 `maxRetryCount` 回まで行う。
+    /// `priority` は `loadThumbnailAsync` で currentIndex ± radius から算出して伝搬する。
     @MainActor
     private func generateAndCache(
         for url: URL,
         size: CGSize,
         retryCount: Int,
-        generation startGeneration: Int
+        generation startGeneration: Int,
+        priority: ThumbnailPriority
     ) async {
         let filename = url.lastPathComponent
 
@@ -236,9 +367,9 @@ struct ThumbnailCarousel: View {
             return
         }
 
-        logger.debug("[\(filename)] generating thumbnail (retry: \(retryCount))")
+        logger.debug("[\(filename)] generating thumbnail (retry: \(retryCount), priority: \(String(describing: priority)))")
         let startTime = CFAbsoluteTimeGetCurrent()
-        let thumbnail = await Self.generateThumbnail(for: url, size: thumbnailSize)
+        let thumbnail = await Self.generateThumbnail(for: url, size: thumbnailSize, priority: priority)
         let elapsed = CFAbsoluteTimeGetCurrent() - startTime
 
         if Task.isCancelled {
@@ -261,7 +392,13 @@ struct ThumbnailCarousel: View {
                 let delayMs = 100 * (1 << retryCount)
                 logger.debug("[\(filename)] will retry after \(delayMs)ms")
                 try? await Task.sleep(nanoseconds: UInt64(delayMs * 1_000_000))
-                await generateAndCache(for: url, size: size, retryCount: nextRetryCount, generation: startGeneration)
+                await generateAndCache(
+                    for: url,
+                    size: size,
+                    retryCount: nextRetryCount,
+                    generation: startGeneration,
+                    priority: priority
+                )
             } else {
                 logger.error("[\(filename)] max retries reached, marking as failed")
                 guard startGeneration == generation else { return }
@@ -299,56 +436,98 @@ struct ThumbnailCarousel: View {
         return ResolveResult(finalState: .loading, passedThroughLoading: true)
     }
 
-    static func generateThumbnail(for url: URL, size: CGFloat) async -> NSImage? {
-        // 専用DispatchQueueでブロッキングI/Oを実行し、cooperative thread poolを解放。
-        // withTaskCancellationHandler で CancelFlag を共有し、Task の cancel を
-        // DispatchQueue 内部まで伝搬させる（withCheckedContinuation は cancel 非対応のため）。
+    /// 専用 OperationQueue でサムネイル生成を実行する。
+    /// - `priority` のデフォルトは `.low`。既存呼出し元（テスト含む）互換のため省略可。
+    /// - キャンセル経路:
+    ///   C1 SwiftUI `.task(id:)` 再起動/離脱 → `Task.isCancelled`
+    ///   → C2 `withTaskCancellationHandler.onCancel` が `CancelFlag.cancel()` を発火
+    ///   → C3 同時に `operation.cancel()` を呼び、キュー内未実行なら main 実行を skip
+    ///   body は毎 I/O 呼出し前に `op?.isCancelled || cancelFlag.isCancelled` をチェック。
+    /// - continuation resume 契約: 本体が成功時に resume。本体が一度も走らない稀少ケース
+    ///   （addOperation 直後に isCancelled）は completionBlock が救済 resume。`ResumeGuard`
+    ///   が one-shot 化する。
+    static func generateThumbnail(
+        for url: URL,
+        size: CGFloat,
+        priority: ThumbnailPriority = .low
+    ) async -> NSImage? {
         let flag = CancelFlag()
         let instrumentation = QueueInstrumentation.thumbnailQueueShared
+        let registry = operationRegistry
+        let queue = thumbnailOperationQueue
+        let guardFlag = ResumeGuard()
+        let op = BlockOperation()
+        op.queuePriority = priority.queuePriority
+        op.qualityOfService = priority.qos
+
         return await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<NSImage?, Never>) in
-                instrumentation.enter()
-                thumbnailQueue.async {
+                op.addExecutionBlock { [weak op] in
+                    // 実行中ジョブだけを peakInFlight に数える（pre-dequeue cancel は除外）。
+                    instrumentation.enter()
                     defer { instrumentation.leave() }
 
-                    if flag.isCancelled {
-                        continuation.resume(returning: nil)
+                    if op?.isCancelled == true || flag.isCancelled {
+                        if guardFlag.consume() {
+                            continuation.resume(returning: nil)
+                        }
                         return
                     }
 
-                    guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-                        continuation.resume(returning: nil)
-                        return
+                    let result = renderThumbnail(at: url, size: size) {
+                        op?.isCancelled == true || flag.isCancelled
                     }
 
-                    if flag.isCancelled {
-                        continuation.resume(returning: nil)
-                        return
+                    if guardFlag.consume() {
+                        continuation.resume(returning: result)
                     }
-
-                    let options: [CFString: Any] = [
-                        kCGImageSourceCreateThumbnailFromImageAlways: true,
-                        kCGImageSourceThumbnailMaxPixelSize: size * 2, // Retina対応
-                        kCGImageSourceShouldCacheImmediately: true
-                    ]
-
-                    guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
-                        continuation.resume(returning: nil)
-                        return
-                    }
-
-                    if flag.isCancelled {
-                        continuation.resume(returning: nil)
-                        return
-                    }
-
-                    let result = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                    continuation.resume(returning: result)
                 }
+                op.completionBlock = {
+                    registry.remove(for: url)
+                    // fallback: body が一度も走らなかった稀少ケース (addOperation 直後 cancel 等)
+                    if guardFlag.consume() {
+                        continuation.resume(returning: nil)
+                    }
+                }
+
+                registry.register(op, for: url)
+                queue.addOperation(op)
             }
         } onCancel: {
             flag.cancel()
+            op.cancel()
         }
+    }
+
+    /// 実 I/O と CGImage → NSImage の変換。cancellation は `isCancelled` クロージャで問い合わせる。
+    /// CGImageSource 呼出しの前後 3 箇所でチェックし、cancelled なら nil を返す。
+    /// BlockOperation の background thread から呼ばれるため `nonisolated` でなければならない。
+    nonisolated private static func renderThumbnail(
+        at url: URL,
+        size: CGFloat,
+        isCancelled: () -> Bool
+    ) -> NSImage? {
+        if isCancelled() { return nil }
+
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            return nil
+        }
+
+        if isCancelled() { return nil }
+
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: size * 2, // Retina対応
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
+            return nil
+        }
+
+        if isCancelled() { return nil }
+
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 }
 
