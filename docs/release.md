@@ -206,6 +206,84 @@ gh run download --name dist-dryrun-0.3.0
 
 ---
 
+## Homebrew Tap Distribution
+
+AIview は独立した Homebrew tap リポジトリ `hummer98/homebrew-aiview` 経由で Cask 配布される。release が publish されると、本リポの `.github/workflows/update-tap.yml` が自動で tap 側 `Casks/aiview.rb` の `version` と `sha256` を更新する。
+
+ユーザー側のインストールコマンド:
+
+```bash
+brew tap hummer98/aiview
+brew install --cask aiview
+```
+
+### tap リポジトリの初期セットアップ (初回のみ、手動)
+
+1. GitHub 上で `hummer98/homebrew-aiview` リポジトリを作成する (public, MIT license)。
+2. 本リポの `homebrew-aiview/` ディレクトリの中身を tap リポジトリにコピーしてコミット・push する。
+
+   ```bash
+   cd /path/to/homebrew-aiview
+   cp -r /path/to/AIview/homebrew-aiview/. .
+   git add .
+   git commit -m "Initial tap setup"
+   git push
+   ```
+
+3. この時点では `Casks/aiview.rb` の `version` / `sha256` は `{{VERSION}}` / `{{SHA256}}` プレースホルダのまま。次回 release 発行時に `update-tap.yml` が自動で実値に置換する。
+
+> **注意**:
+> - **ブランチ保護で `require signed commits` を有効化しないこと**。`update-tap.yml` は `github-actions[bot]` として非署名 commit を push するため、signed commit 必須の設定下では reject される。必要な場合は GitHub App による署名 push または GPG 署名鍵のセットアップが別途必要 (本タスク対象外)。
+> - **初回 release 発行前にユーザーへインストール手順を案内しないこと**。tap を貼った直後から初回 release で `update-tap.yml` が走るまでの間は、`Casks/aiview.rb` に `{{VERSION}}` プレースホルダが残っており、`brew install --cask aiview` は `invalid value for version` エラーで失敗する。案内の解禁は「初回 release 発行 + `update-tap.yml` 成功」のタイミング以降にする。
+
+### `TAP_PAT` Secret の作成と登録
+
+本リポの `update-tap.yml` が tap リポジトリへ push するために、**tap リポジトリへの write 権限を持つ PAT** を本リポに Secret として登録する。
+
+1. GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → `Generate new token`。
+2. 設定:
+   - Resource owner: `hummer98`
+   - Expiration: 任意 (最大 1 年。失効日をカレンダーに記録する)
+   - Repository access: **Only select repositories** → `hummer98/homebrew-aiview` のみ
+   - Repository permissions:
+     - `Contents`: **Read and write**
+     - `Metadata`: Read-only (必須、自動付与)
+3. 生成されたトークンを `gh secret set` で本リポに登録:
+
+   ```bash
+   gh secret set TAP_PAT --repo hummer98/AIview --body "<token>"
+   ```
+
+Classic PAT を使う場合は `repo` scope (tap が public なら `public_repo` でも可)。Fine-grained を推奨。
+
+> **注意**: `${{ secrets.GITHUB_TOKEN }}` は本リポ内リソースにしか書き込めないため、別リポの tap には利用できない。必ず専用 PAT を用意する。
+
+### 自動更新フロー
+
+1. 本リポに tag `vX.Y.Z` を push。
+2. `.github/workflows/release.yml` の `release` job が archive → notarize → `dist/AIview-X.Y.Z.zip{,.sha256}` を release に添付する。
+3. release が published になると `.github/workflows/update-tap.yml` が自動起動し、`AIview-X.Y.Z.zip.sha256` から sha256 を抽出して tap の `Casks/aiview.rb` を更新・push する。
+4. ユーザーは `brew update && brew upgrade --cask aiview` で新バージョンを取得できる。
+
+> **prerelease の扱い**: `update-tap.yml` は `release: published` イベント全てに反応するため、`vX.Y.Z-rc.1` のような prerelease タグでも tap が自動更新される。一般配布として rc を届けたくない場合は、将来 `aiview@beta` のような別 cask への分離、または workflow 側で `if: github.event.release.prerelease == false` を加える運用への切り替えを検討すること。
+
+### 手動再実行
+
+何らかの理由で自動更新が失敗した場合:
+
+```bash
+gh workflow run update-tap.yml -f tag=v0.3.0 --repo hummer98/AIview
+```
+
+### トラブルシューティング
+
+- **`TAP_PAT` 期限切れ**: 上記手順で再発行し `gh secret set TAP_PAT` で上書き。
+- **sha256 が抽出できない**: release に `AIview-<ver>.zip.sha256` が添付されているか確認 (`gh release view v<ver>`)。欠落している場合は `scripts/notarize.sh` の `emit_sha256` が走っていない疑い。
+- **placeholder が残った状態でエラー**: tap リポジトリの `Casks/aiview.rb` が想定外の形式 (`version "..."` の 1 行が無い等) になっていないか手動確認。
+- **初回 release 前の `brew audit` 失敗**: tap リポジトリに `{{VERSION}}` プレースホルダが残った状態では `brew audit --cask` は SEMVER 不正で通らない。これは正常な挙動。初回 release 発行 + `update-tap.yml` 成功後に再実行すること。
+
+---
+
 ## Troubleshooting
 
 ### `codesign -vv --deep --strict` が失敗する
@@ -250,6 +328,10 @@ Apple CDN のチケット反映に数十秒〜数分かかる場合がある。n
 - [ ] ローカルで `scripts/notarize.sh` を実行し、`dist/AIview-<ver>.{dmg,zip}` が生成され `spctl -a -vvv --type install AIview-<ver>.dmg` が `accepted source=Notarized Developer ID` を返すことを確認
 - [ ] GitHub Secrets (`ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_PRIVATE_KEY` / `DEVELOPER_ID_P12` / `DEVELOPER_ID_P12_PASSWORD` / `KEYCHAIN_PASSWORD` / `DEVELOPMENT_TEAM`) を登録
 - [x] GitHub Actions workflow を新規実装 (`.github/workflows/release.yml`)
+- [ ] tap リポジトリ `hummer98/homebrew-aiview` を作成し、本リポの `homebrew-aiview/` の中身をコピーして初期コミット
+- [ ] `TAP_PAT` (Fine-grained, `hummer98/homebrew-aiview` の Contents: Read and write) を本リポ Secrets に登録
+- [ ] `brew audit --cask <path>` で Cask formula が通ることをローカル検証 (`{{VERSION}}` / `{{SHA256}}` を実値に置換したコピーで)
+- [ ] 初回 release 発行後、`.github/workflows/update-tap.yml` が成功し tap 側に実値がコミットされることを確認
 
 ---
 

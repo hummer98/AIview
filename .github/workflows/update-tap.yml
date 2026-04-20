@@ -1,0 +1,111 @@
+name: Update Homebrew Tap
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.3.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
+jobs:
+  update-tap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag & version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [[ "$EVENT_NAME" == "release" ]]; then
+            TAG="$RELEASE_TAG"
+          else
+            TAG="$INPUT_TAG"
+          fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid tag: $TAG" >&2
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Download SHA256 of release zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download "$TAG" \
+            --repo "$GH_REPO" \
+            --pattern "AIview-${VERSION}.zip.sha256" \
+            --dir "$RUNNER_TEMP" \
+            --clobber
+          SHA256=$(awk '{print $1}' "$RUNNER_TEMP/AIview-${VERSION}.zip.sha256")
+          if [[ ! "$SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "Invalid sha256: $SHA256" >&2
+            exit 1
+          fi
+          echo "SHA256=$SHA256" >> "$GITHUB_ENV"
+
+      - name: Checkout tap repository
+        uses: actions/checkout@v4
+        with:
+          repository: hummer98/homebrew-aiview
+          token: ${{ secrets.TAP_PAT }}
+          path: tap
+
+      - name: Update Cask formula
+        working-directory: tap
+        run: |
+          if [[ ! -f Casks/aiview.rb ]]; then
+            echo "Casks/aiview.rb not found in tap repository" >&2
+            exit 1
+          fi
+          VERSION_LINES=$(grep -c '^[[:space:]]*version[[:space:]]' Casks/aiview.rb || true)
+          SHA256_LINES=$(grep -c '^[[:space:]]*sha256[[:space:]]' Casks/aiview.rb || true)
+          if [[ "$VERSION_LINES" != "1" ]]; then
+            echo "Unexpected number of 'version' lines: $VERSION_LINES" >&2
+            exit 1
+          fi
+          if [[ "$SHA256_LINES" != "1" ]]; then
+            echo "Unexpected number of 'sha256' lines: $SHA256_LINES" >&2
+            exit 1
+          fi
+          sed -i.bak \
+            -e "s|{{VERSION}}|${VERSION}|g" \
+            -e "s|{{SHA256}}|${SHA256}|g" \
+            Casks/aiview.rb
+          sed -i.bak -E \
+            -e "s|^(\s*version\s+)\"[^\"]*\"|\1\"${VERSION}\"|" \
+            -e "s|^(\s*sha256\s+)\"[^\"]*\"|\1\"${SHA256}\"|" \
+            Casks/aiview.rb
+          rm Casks/aiview.rb.bak
+          if grep -q '{{VERSION}}\|{{SHA256}}' Casks/aiview.rb; then
+            echo "Placeholder remains after substitution" >&2
+            exit 1
+          fi
+
+      - name: Commit & push
+        working-directory: tap
+        env:
+          VERSION: ${{ env.VERSION }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/aiview.rb
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "aiview ${VERSION}"
+          git push
