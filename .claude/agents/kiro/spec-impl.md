@@ -4,6 +4,7 @@ description: Execute implementation tasks using Test-Driven Development methodol
 tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, WebSearch, WebFetch
 model: inherit
 color: red
+permissionMode: bypassPermissions
 ---
 
 # spec-tdd-impl Agent
@@ -29,10 +30,29 @@ You will receive task prompts containing:
 
 ### Step 0: Expand File Patterns (Subagent-specific)
 
-Use Glob tool to expand file patterns, then read all files:
-- Glob(`.kiro/steering/*.md`) to get all steering files
-- Read each file from glob results
-- Read other specified file patterns
+Use Glob tool to expand file patterns for spec files:
+- Glob(`.kiro/specs/{feature}/*.md`) to get spec files
+- Read spec files from glob results
+
+### Step 0.5: Load Steering (JIT - Just-In-Time)
+
+**Core Steering（常時読み込み）**:
+- `.kiro/steering/product.md`
+- `.kiro/steering/tech.md`
+- `.kiro/steering/design-principles.md`
+- `.kiro/steering/structure.md`
+
+**Extended Steering（タスク内容に応じて読み込み）**:
+
+1. Read tasks.md to understand task descriptions
+2. Match keywords in task descriptions and load relevant files:
+
+| キーワード | 読み込むファイル |
+|-----------|-----------------|
+| デバッグ, ログ調査, エラー, debug | `debugging.md` |
+| ログ実装, logging, logger | `logging.md` |
+
+3. If no keywords match extended steering: Use core steering only
 
 ### Step 1-3: Core Task (from original instructions)
 
@@ -45,10 +65,13 @@ Execute implementation tasks for feature using Test-Driven Development.
 
 **Read all necessary context**:
 - `.kiro/specs/{feature}/spec.json`, `requirements.md`, `design.md`, `tasks.md`
-- **Entire `.kiro/steering/` directory** for complete project memory
+- Core + Extended steering files (loaded in Step 0.5)
 
 **Validate approvals**:
 - Verify tasks are approved in spec.json (stop if not, see Safety & Fallback)
+
+**Update metadata** (at execution start):
+- Update `updated_at` timestamp in spec.json to mark implementation activity
 
 ### Step 2: Select Tasks
 
@@ -60,8 +83,21 @@ Execute implementation tasks for feature using Test-Driven Development.
 
 For each selected task, follow Kent Beck's TDD cycle:
 
+**0. TASK ANALYSIS (Pre-TDD)**:
+   - Read the full task description including implementation hints
+   - Extract any explicit implementation requirements:
+     - From task description: keywords like "を使用", "use", "via", "call"
+     - From `_Method:` field: function/class/pattern names that MUST be used
+     - From `_Verify:` field: Grep pattern to confirm implementation
+   - These requirements become **test constraints** alongside functional requirements
+   - **Example**:
+     - Task: "executeProjectAgentを使用してエージェント起動"
+     - Extracted constraint: Must use `executeProjectAgent` function
+     - Test should verify: `executeProjectAgent` was called with correct parameters
+
 1. **RED - Write Failing Test**:
    - Write test for the next small piece of functionality
+   - **Include tests for method constraints** extracted in step 0
    - Test should fail (code doesn't exist yet)
    - Use descriptive test names
 

@@ -40,6 +40,16 @@ Thumbs.db
 # Kiro runtime (ephemeral state)
 .kiro/runtime/
 
+# cmux-team runtime state and worktrees
+.team/
+.worktrees/
+
+# Claude Code runtime
+.claude/scheduled_tasks.lock
+
+# Xcode code coverage / profiling artifacts
+*.profraw
+
 # Kiro logs (optional: remove this line if you want to keep logs)
 .kiro/logs/
 .kiro/specs/logs/
