@@ -118,54 +118,76 @@ dist/AIview-0.3.0.dmg.sha256
 
 所要時間の目安: ノータリゼーションの待ちが数分〜十数分。`--wait` が同期的に block するため、完了まで端末はそのまま開いておく。
 
-### CI / GitHub Actions (future)
+### CI / GitHub Actions
 
-GitHub Actions workflow 化は別タスク (Issue #1 Phase 2) で実装予定。想定する大枠のみ記しておく。
+`.github/workflows/release.yml` が自動化を担当する。トリガーは 2 通り:
 
-```yaml
-# .github/workflows/release.yml (抜粋・擬似コード)
-jobs:
-  release:
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
+1. **タグ push (`v*.*.*`)**: `release` ジョブが archive → 署名 → 公証 → staple → `.dmg` / `.zip` / `.sha256` 生成 → GitHub Release を作成する。`v0.3.0-rc.1` のように `-` を含む SEMVER prerelease は GitHub Release 側も pre-release 扱いになる。
+2. **`workflow_dispatch`**: `release-dry-run` ジョブが同一経路で archive〜notarize まで実行し、生成物は `actions/upload-artifact@v4` で `dist-dryrun-<VERSION>` という名前の artifact に保管される（保持期間 7 日）。GitHub Release は作成されず、タグも打たれない。
 
-      - name: Write .p8 from secret
-        env:
-          ASC_PRIVATE_KEY_BASE64: ${{ secrets.ASC_PRIVATE_KEY_BASE64 }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/keys"
-          echo "$ASC_PRIVATE_KEY_BASE64" | base64 -d > "$RUNNER_TEMP/keys/AuthKey.p8"
-          chmod 600 "$RUNNER_TEMP/keys/AuthKey.p8"
-          echo "ASC_PRIVATE_KEY_PATH=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
+Runner は `macos-14`、Xcode は `maxim-lobanov/setup-xcode@v1` で `XCODE_VERSION` 環境変数（現在 `15.4`）に固定している。Xcode を変更するときは workflow の `env.XCODE_VERSION` と本ドキュメントを同時に更新すること。
 
-      - name: Import Developer ID certificate
-        # security import ... (別途実装)
-
-      - name: Archive
-        run: task archive
-
-      - name: Notarize & package
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-        run: ./scripts/notarize.sh --archive build/AIview.xcarchive --version ${{ github.ref_name }}
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-```
-
-必要な GitHub Secrets:
+#### 必要な GitHub Secrets
 
 | Secret | 中身 |
 |--------|------|
-| `ASC_KEY_ID` | API Key ID |
-| `ASC_ISSUER_ID` | Issuer ID |
-| `ASC_PRIVATE_KEY_BASE64` | `.p8` を `base64 -i AuthKey_*.p8` した文字列 |
-| `DEVELOPER_ID_CERT_BASE64` | Developer ID Application `.p12` を `base64` したもの |
-| `DEVELOPER_ID_CERT_PASSWORD` | 上記 `.p12` のパスワード |
+| `ASC_KEY_ID` | App Store Connect API Key ID (例: `ABCD1234EF`) |
+| `ASC_ISSUER_ID` | App Store Connect Issuer ID (UUID) |
+| `ASC_PRIVATE_KEY` | `.p8` を `base64 -i AuthKey_*.p8` した Base64 文字列 |
+| `DEVELOPER_ID_P12` | Developer ID Application `.p12` を `base64 -i` した Base64 文字列 |
+| `DEVELOPER_ID_P12_PASSWORD` | `.p12` エクスポート時に設定したパスワード |
+| `KEYCHAIN_PASSWORD` | CI 内で生成する一時キーチェーン用のパスワード (`openssl rand -base64 24` 等で生成) |
+| `DEVELOPMENT_TEAM` | Apple Developer Team ID (10 文字、例: `ABCD1234EF`) |
+
+#### Secrets 登録手順 (`gh` CLI)
+
+```bash
+gh secret set ASC_KEY_ID --body "ABCD1234EF"
+gh secret set ASC_ISSUER_ID --body "69a6de7f-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+base64 -i ~/.appstoreconnect/private_keys/AuthKey_ABCD1234EF.p8 | gh secret set ASC_PRIVATE_KEY
+base64 -i DeveloperID.p12 | gh secret set DEVELOPER_ID_P12
+gh secret set DEVELOPER_ID_P12_PASSWORD --body "<p12 password>"
+openssl rand -base64 24 | gh secret set KEYCHAIN_PASSWORD
+gh secret set DEVELOPMENT_TEAM --body "ABCD1234EF"
+```
+
+`.p8` / `.p12` は必ず `base64 -i <file> | gh secret set <NAME>` のように stdin パイプで登録する（`pbcopy` → 手動貼り付けは改行混入の事故が起きやすいので使わない）。
+
+#### タグ打ち前チェックリスト
+
+1. `CHANGELOG.md` を更新する。
+2. `CFBundleShortVersionString` / `CFBundleVersion`（`AIview/Info.plist` または xcconfig）を更新する。
+3. ローカルで以下が通ることを確認する。
+   ```bash
+   task archive
+   ./scripts/notarize.sh --archive build/AIview.xcarchive --version <ver>
+   ```
+4. `workflow_dispatch` で dry-run を走らせて成功することを確認する。
+   ```bash
+   gh workflow run release.yml -f dry_run_version=<ver>
+   gh run watch
+   gh run download --name dist-dryrun-<ver>
+   ```
+5. `git tag vX.Y.Z && git push origin vX.Y.Z` でタグを push し、Actions の `release` ジョブが通ることを確認する。
+
+#### Dry-run 手順
+
+```bash
+gh workflow run release.yml -f dry_run_version=0.3.0
+gh run watch
+gh run download --name dist-dryrun-0.3.0
+```
+
+タグを作らずに Secrets / キーチェーン / 署名 / 公証の全経路を検証できる。`dry_run_version` には `0.3.0` や `0.3.0-rc.1` のような SEMVER を渡す（先頭の `v` は不要、workflow 側で SEMVER 形式を検証する）。
+
+#### トラブルシューティング (CI)
+
+- **`notarytool submission status = Invalid`**: `scripts/notarize.sh` が失敗時に `xcrun notarytool log <submission_id>` を自動で stderr にダンプする。Actions ログの `Notarize & package` ステップの末尾に submission id と log 内容が出るので確認する。よくある原因は上記 [Troubleshooting](#troubleshooting) と同じ。
+- **`security import` 失敗**: `.p12` のパスワード誤り、またはファイル形式不一致が多い。ローカルで `security import DeveloperID.p12 -P "<pass>" -v -A -t cert -f pkcs12 -k /tmp/test.keychain-db` が通るか確認した上で、`DEVELOPER_ID_P12_PASSWORD` を再登録する。
+- **`.p12` 期限切れ**: Keychain Access から "Developer ID Application" 証明書＋秘密鍵を新しい `.p12` にエクスポートし、`base64 -i DeveloperID.p12 | gh secret set DEVELOPER_ID_P12` で更新する。パスワードも併せて `gh secret set DEVELOPER_ID_P12_PASSWORD` で差し替える。
+- **`xcodebuild -allowProvisioningUpdates` が profile 自動取得に失敗**: `DEVELOPMENT_TEAM` secret と `Write Developer.xcconfig` ステップの出力が正しいか（`DEVELOPMENT_TEAM = <TEAMID>` が 1 行書かれているか）を確認する。
+- **`security set-key-partition-list` 系で codesign が partition list プロンプトで block**: `-S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD"` を workflow 末尾で再発行すれば回避できる。
+- **Xcode バージョン削除による失敗**: `maxim-lobanov/setup-xcode@v1` が `env.XCODE_VERSION` を見つけられない場合は、当該バージョンが runner から削除されたことを意味する。暫定対応として `macos-latest` へフォールバックするか、新しい `XCODE_VERSION` に更新する。
 
 ---
 
@@ -226,8 +248,8 @@ Apple CDN のチケット反映に数十秒〜数分かかる場合がある。n
 - [ ] App Store Connect API Key 発行 & `.p8` 安全保管
 - [ ] `AIview/Config/Developer.xcconfig` にチーム ID を設定してローカルで `task archive` が通ることを確認
 - [ ] ローカルで `scripts/notarize.sh` を実行し、`dist/AIview-<ver>.{dmg,zip}` が生成され `spctl -a -vvv --type install AIview-<ver>.dmg` が `accepted source=Notarized Developer ID` を返すことを確認
-- [ ] GitHub Secrets (`ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_PRIVATE_KEY_BASE64` / 証明書一式) を登録
-- [ ] GitHub Actions workflow を新規実装 (別タスク)
+- [ ] GitHub Secrets (`ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_PRIVATE_KEY` / `DEVELOPER_ID_P12` / `DEVELOPER_ID_P12_PASSWORD` / `KEYCHAIN_PASSWORD` / `DEVELOPMENT_TEAM`) を登録
+- [x] GitHub Actions workflow を新規実装 (`.github/workflows/release.yml`)
 
 ---
 
