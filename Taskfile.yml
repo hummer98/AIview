@@ -109,6 +109,11 @@ tasks:
     cmds:
       - swiftformat --lint AIview AIviewTests AIviewUITests
 
+  lint:sh:
+    desc: Lint shell scripts with ShellCheck
+    cmds:
+      - shellcheck scripts/*.sh
+
   archive:
     desc: Create release archive
     cmds:
