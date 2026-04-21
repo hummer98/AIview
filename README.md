@@ -68,9 +68,35 @@ A high-performance image viewer for macOS, optimized for browsing large image co
 ## Requirements
 
 - macOS 14.0 (Sonoma) or later
-- Xcode 15.0 or later (for building)
+- Xcode 15.0 or later (only required when building from source)
 
 ## Installation
+
+### Homebrew (Recommended)
+
+```bash
+brew tap hummer98/aiview
+brew install --cask aiview
+```
+
+The binary is signed with a Developer ID certificate and notarized by Apple, so macOS Gatekeeper will not show a warning on first launch.
+
+**Requirements**:
+- macOS 14.0 (Sonoma) or later
+- Apple Silicon or Intel Mac (universal binary; current builds are tested primarily on Apple Silicon)
+
+To upgrade:
+
+```bash
+brew update
+brew upgrade --cask aiview
+```
+
+To uninstall (with `--zap` to also remove preferences and caches):
+
+```bash
+brew uninstall --zap --cask aiview
+```
 
 ### From Source
 
@@ -124,6 +150,20 @@ your-image-folder/
     ├── favorites.json    # Favorite ratings
     └── thumbnails/       # Cached thumbnails
 ```
+
+## Distribution
+
+AIview is distributed via [Homebrew Cask](https://github.com/hummer98/homebrew-aiview). Releases are fully automated:
+
+1. A maintainer pushes a `vX.Y.Z` tag to this repository.
+2. [`.github/workflows/release.yml`](.github/workflows/release.yml) builds, signs (Developer ID), notarizes, and attaches `.dmg` / `.zip` / `.sha256` to a GitHub Release.
+3. [`.github/workflows/update-tap.yml`](.github/workflows/update-tap.yml) updates the Cask formula in [`hummer98/homebrew-aiview`](https://github.com/hummer98/homebrew-aiview) automatically.
+
+For the one-time setup required to enable this pipeline (Apple Developer Program, App Store Connect API Key, GitHub Secrets, etc.), see [`docs/signing-setup.md`](docs/signing-setup.md).
+
+For day-to-day release procedure, see [`docs/release.md`](docs/release.md).
+
+Tracking issue: [#1 - Distribution automation](https://github.com/hummer98/AIview/issues/1).
 
 ## License
 

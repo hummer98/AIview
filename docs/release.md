@@ -4,6 +4,8 @@ AIview を配布用にビルド・署名・ノータリゼーション (notarize
 
 `scripts/notarize.sh` が処理の中心。本ドキュメントはその事前準備と実行例をまとめる。
 
+> **初回セットアップが未了の場合は、まず [`signing-setup.md`](signing-setup.md) を参照して Apple Developer Program / API Key / GitHub Secrets を整備してください。** 本ドキュメントは、それらが揃っている前提で「リリースごとに実行する手順」を扱います。
+
 ---
 
 ## Prerequisites

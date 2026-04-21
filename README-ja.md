@@ -68,9 +68,35 @@ macOS向けの高性能画像ビューア。大量の画像コレクション（
 ## 動作要件
 
 - macOS 14.0（Sonoma）以降
-- Xcode 15.0以降（ビルド時）
+- Xcode 15.0 以降（ソースからビルドする場合のみ必須）
 
 ## インストール
+
+### Homebrew（推奨）
+
+```bash
+brew tap hummer98/aiview
+brew install --cask aiview
+```
+
+バイナリは Developer ID 証明書で署名され Apple の公証 (Notarization) を取得済みのため、初回起動時に Gatekeeper の警告は表示されません。
+
+**動作要件**:
+- macOS 14.0（Sonoma）以降
+- Apple Silicon または Intel Mac（universal binary。現状の検証は Apple Silicon を中心に行っています）
+
+アップデート:
+
+```bash
+brew update
+brew upgrade --cask aiview
+```
+
+アンインストール（設定・キャッシュも完全削除する場合は `--zap`）:
+
+```bash
+brew uninstall --zap --cask aiview
+```
 
 ### ソースからビルド
 
@@ -124,6 +150,20 @@ your-image-folder/
     ├── favorites.json    # お気に入り評価
     └── thumbnails/       # キャッシュされたサムネイル
 ```
+
+## 配布
+
+AIview は [Homebrew Cask](https://github.com/hummer98/homebrew-aiview) 経由で配布されます。リリースは完全に自動化されています:
+
+1. メンテナーが `vX.Y.Z` タグをこのリポジトリに push
+2. [`.github/workflows/release.yml`](.github/workflows/release.yml) が archive → Developer ID 署名 → 公証 → `.dmg` / `.zip` / `.sha256` を GitHub Release に添付
+3. [`.github/workflows/update-tap.yml`](.github/workflows/update-tap.yml) が [`hummer98/homebrew-aiview`](https://github.com/hummer98/homebrew-aiview) の Cask formula を自動更新
+
+このパイプラインを有効化するための初回セットアップ（Apple Developer Program、App Store Connect API Key、GitHub Secrets など）は [`docs/signing-setup.md`](docs/signing-setup.md) を参照してください。
+
+日常的なリリース手順は [`docs/release.md`](docs/release.md) を参照してください。
+
+トラッキング Issue: [#1 - Distribution automation](https://github.com/hummer98/AIview/issues/1)
 
 ## ライセンス
 
