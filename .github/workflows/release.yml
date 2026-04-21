@@ -23,12 +23,12 @@ defaults:
     shell: bash -euo pipefail {0}
 
 env:
-  XCODE_VERSION: '15.4'
+  XCODE_VERSION: '26.3'
 
 jobs:
   release:
     if: github.event_name == 'push'
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -131,7 +131,7 @@ jobs:
 
   release-dry-run:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
