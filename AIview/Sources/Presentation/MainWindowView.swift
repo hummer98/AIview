@@ -2,6 +2,7 @@ import SwiftUI
 
 /// メインウィンドウビュー
 /// Requirements: 1.1, 1.5, 3.1-3.6, 6.1-6.5
+@MainActor
 struct MainWindowView: View {
     @Environment(AppState.self) private var appState: AppState?
     @State private var viewModel = ImageBrowserViewModel()
@@ -306,7 +307,6 @@ struct MainWindowView: View {
     }
 
     /// スライドショー中のキー処理
-    @MainActor
     private func handleSlideshowKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
         switch keyPress.key {
         case .space:
@@ -377,7 +377,6 @@ struct MainWindowView: View {
 
     /// リロードリクエストを処理
     /// Requirements: 1.1, 2.3
-    @MainActor
     private func handleReloadRequest() {
         guard appState?.shouldReloadFolder == true else { return }
         Task {
@@ -388,7 +387,6 @@ struct MainWindowView: View {
 
     // MARK: - Folder Selection
 
-    @MainActor
     private func handleFolderSelection(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
