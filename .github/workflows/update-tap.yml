@@ -61,7 +61,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: hummer98/homebrew-aiview
-          token: ${{ secrets.TAP_PAT }}
+          ssh-key: ${{ secrets.TAP_SSH_KEY }}
           path: tap
 
       - name: Update Cask formula
