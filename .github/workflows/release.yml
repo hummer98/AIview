@@ -86,7 +86,11 @@ jobs:
         env:
           DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
         run: |
-          echo "DEVELOPMENT_TEAM = $DEVELOPMENT_TEAM" > AIview/Config/Developer.xcconfig
+          cat > AIview/Config/Developer.xcconfig <<EOF
+          DEVELOPMENT_TEAM = $DEVELOPMENT_TEAM
+          CODE_SIGN_IDENTITY = Developer ID Application
+          CODE_SIGN_STYLE = Manual
+          EOF
 
       - name: Archive
         run: |
@@ -189,7 +193,11 @@ jobs:
         env:
           DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
         run: |
-          echo "DEVELOPMENT_TEAM = $DEVELOPMENT_TEAM" > AIview/Config/Developer.xcconfig
+          cat > AIview/Config/Developer.xcconfig <<EOF
+          DEVELOPMENT_TEAM = $DEVELOPMENT_TEAM
+          CODE_SIGN_IDENTITY = Developer ID Application
+          CODE_SIGN_STYLE = Manual
+          EOF
 
       - name: Archive
         run: |

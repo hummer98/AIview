@@ -190,7 +190,7 @@ submit_notarization() {
 
   if [[ "$status" != "Accepted" ]]; then
     if [[ -n "$SUBMISSION_ID" ]]; then
-      printf '--- notarytool log for submission %s ---\n' "$SUBMISSION_ID" >&2
+      log "notarytool log for submission ${SUBMISSION_ID}:"
       xcrun notarytool log "$SUBMISSION_ID" \
         --key "$ASC_PRIVATE_KEY_PATH" \
         --key-id "$ASC_KEY_ID" \
