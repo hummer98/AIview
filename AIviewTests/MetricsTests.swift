@@ -177,7 +177,7 @@ final class MetricsTests: XCTestCase {
     // MARK: - ThumbnailCacheManager hits/misses
 
     func testThumbnailCacheManager_memoryHits_recorded() {
-        let store = DiskCacheStore(baseURL: FileManager.default.temporaryDirectory)
+        let store = DiskCacheStore()
         let sut = ThumbnailCacheManager(maxSizeBytes: 1024 * 1024, diskCacheStore: store)
         let url = URL(fileURLWithPath: "/tmp/thumb.jpg")
         let size = CGSize(width: 80, height: 80)
@@ -197,15 +197,14 @@ final class MetricsTests: XCTestCase {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let store = DiskCacheStore(baseURL: tempDir)
+        let store = DiskCacheStore()
         let data = Data(repeating: 0xAB, count: 1024)
         let url = tempDir.appendingPathComponent("source.jpg")
         try data.write(to: url)
-        let size = CGSize(width: 80, height: 80)
-        let modDate = Date()
+        let modDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
 
-        try await store.storeThumbnail(data, originalURL: url, thumbnailSize: size, modificationDate: modDate)
-        _ = await store.getThumbnail(originalURL: url, thumbnailSize: size, modificationDate: modDate)
+        try await store.storeThumbnail(data, originalURL: url, modificationDate: modDate)
+        _ = await store.getThumbnail(originalURL: url, modificationDate: modDate)
 
         let snapshot = await store.metricsSnapshot()
         XCTAssertEqual(snapshot.readCount, 1)
@@ -234,7 +233,7 @@ final class MetricsTests: XCTestCase {
         cacheManager.cacheImage(makeTestImage(), for: url)
         _ = cacheManager.getCachedImage(for: url)
 
-        let diskStore = DiskCacheStore(baseURL: FileManager.default.temporaryDirectory)
+        let diskStore = DiskCacheStore()
         let thumbManager = ThumbnailCacheManager(maxSizeBytes: 1024 * 1024, diskCacheStore: diskStore)
         let loader = ImageLoader(cacheManager: cacheManager)
         let queue = QueueInstrumentation()

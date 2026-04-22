@@ -33,14 +33,14 @@ final class MetricsCollector {
         let loader = imageLoader?.metricsSnapshot()
         let queue = queueInstrumentation?.snapshot() ?? .empty
         let diskIO: DiskIOMetricsSnapshot
-        let diskState: DiskCacheStateSnapshot
         if let store = diskCacheStore {
             diskIO = await store.metricsSnapshot()
-            diskState = await store.stateSnapshot()
         } else {
             diskIO = .empty
-            diskState = .empty
         }
+        // per-folder 版では中央集約ストアが消え、maxBytes / totalBytes / entryCount の
+        // グローバル値を持たないため常に .empty を返す。
+        let diskState: DiskCacheStateSnapshot = .empty
 
         return MetricsSnapshot(
             fullImageMemory: cacheMgr?.cache ?? .empty,

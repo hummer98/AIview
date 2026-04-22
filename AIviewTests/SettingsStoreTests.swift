@@ -1,11 +1,11 @@
 import XCTest
 @testable import AIview
 
-/// SettingsStore.diskCacheSizeMB の仕様テスト (Phase E-1)
+/// SettingsStore のスモークテスト
 ///
-/// - default = 512 MB
-/// - 範囲外の値を書き込むと 32–8192 にクランプされる
-/// - 0 / 負値 (未設定扱い) はデフォルト値を返す
+/// task 019 で `diskCacheSizeMB` 系は削除された (per-folder `.aiview/` 方式では
+/// 中央集約キャッシュサイズが存在しないため)。残る設定項目の default / clamp / persist
+/// を最小限カバーする。
 final class SettingsStoreTests: XCTestCase {
 
     private var suiteName: String!
@@ -26,60 +26,55 @@ final class SettingsStoreTests: XCTestCase {
         }
     }
 
-    func test_diskCacheSizeMB_defaultValue_is512() {
+    // MARK: - Defaults
+
+    func test_fullImageCacheSizeMB_defaultValue() {
         let store = SettingsStore(defaults: defaults)
-        XCTAssertEqual(store.diskCacheSizeMB, SettingsStore.defaultDiskCacheSizeMB)
-        XCTAssertEqual(store.diskCacheSizeMB, 512)
+        XCTAssertEqual(store.fullImageCacheSizeMB, SettingsStore.defaultFullImageCacheSizeMB)
     }
 
-    func test_diskCacheSizeBytes_matchesMB() {
+    func test_thumbnailCacheSizeMB_defaultValue() {
         let store = SettingsStore(defaults: defaults)
-        XCTAssertEqual(store.diskCacheSizeBytes, store.diskCacheSizeMB * 1024 * 1024)
+        XCTAssertEqual(store.thumbnailCacheSizeMB, SettingsStore.defaultThumbnailCacheSizeMB)
     }
 
-    func test_diskCacheSizeMB_clampsBelowMinimum() {
+    func test_slideshowIntervalSeconds_defaultValue() {
         let store = SettingsStore(defaults: defaults)
-        store.diskCacheSizeMB = 4
-        XCTAssertEqual(store.diskCacheSizeMB, SettingsStore.minDiskCacheSizeMB)
-        XCTAssertEqual(store.diskCacheSizeMB, 32)
+        XCTAssertEqual(store.slideshowIntervalSeconds, SettingsStore.defaultSlideshowIntervalSeconds)
     }
 
-    func test_diskCacheSizeMB_clampsAboveMaximum() {
+    // MARK: - Bytes conversion
+
+    func test_fullImageCacheSizeBytes_matchesMB() {
         let store = SettingsStore(defaults: defaults)
-        store.diskCacheSizeMB = 99999
-        XCTAssertEqual(store.diskCacheSizeMB, SettingsStore.maxDiskCacheSizeMB)
-        XCTAssertEqual(store.diskCacheSizeMB, 8192)
+        XCTAssertEqual(store.fullImageCacheSizeBytes, store.fullImageCacheSizeMB * 1024 * 1024)
     }
 
-    func test_diskCacheSizeMB_validValueIsKept() {
+    func test_thumbnailCacheSizeBytes_matchesMB() {
         let store = SettingsStore(defaults: defaults)
-        store.diskCacheSizeMB = 1024
-        XCTAssertEqual(store.diskCacheSizeMB, 1024)
+        XCTAssertEqual(store.thumbnailCacheSizeBytes, store.thumbnailCacheSizeMB * 1024 * 1024)
     }
 
-    func test_diskCacheSizeMB_rawZero_returnsDefault() {
-        defaults.set(0, forKey: "diskCacheSizeMB")
+    // MARK: - Slideshow interval clamping
+
+    func test_slideshowIntervalSeconds_clampsBelowMinimum() {
         let store = SettingsStore(defaults: defaults)
-        XCTAssertEqual(store.diskCacheSizeMB, SettingsStore.defaultDiskCacheSizeMB)
+        store.slideshowIntervalSeconds = 0
+        XCTAssertEqual(store.slideshowIntervalSeconds, 1)
     }
 
-    func test_diskCacheSizeMB_rawNegative_returnsDefault() {
-        defaults.set(-1, forKey: "diskCacheSizeMB")
+    func test_slideshowIntervalSeconds_clampsAboveMaximum() {
         let store = SettingsStore(defaults: defaults)
-        XCTAssertEqual(store.diskCacheSizeMB, SettingsStore.defaultDiskCacheSizeMB)
+        store.slideshowIntervalSeconds = 999
+        XCTAssertEqual(store.slideshowIntervalSeconds, 60)
     }
 
-    func test_diskCacheSizeMB_persists() {
+    func test_slideshowIntervalSeconds_persists() {
         let store1 = SettingsStore(defaults: defaults)
-        store1.diskCacheSizeMB = 256
-        XCTAssertEqual(store1.diskCacheSizeMB, 256)
+        store1.slideshowIntervalSeconds = 10
+        XCTAssertEqual(store1.slideshowIntervalSeconds, 10)
 
         let store2 = SettingsStore(defaults: defaults)
-        XCTAssertEqual(store2.diskCacheSizeMB, 256)
-    }
-
-    func test_limitsAreSane() {
-        XCTAssertLessThan(SettingsStore.minDiskCacheSizeMB, SettingsStore.defaultDiskCacheSizeMB)
-        XCTAssertLessThan(SettingsStore.defaultDiskCacheSizeMB, SettingsStore.maxDiskCacheSizeMB)
+        XCTAssertEqual(store2.slideshowIntervalSeconds, 10)
     }
 }

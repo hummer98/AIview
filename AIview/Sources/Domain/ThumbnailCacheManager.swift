@@ -110,7 +110,6 @@ final class ThumbnailCacheManager: Sendable {
            let modDate = attributes[.modificationDate] as? Date {
             if let thumbnailData = await diskCacheStore.getThumbnail(
                 originalURL: url,
-                thumbnailSize: size,
                 modificationDate: modDate
             ) {
                 if let image = NSImage(data: thumbnailData) {
@@ -147,7 +146,6 @@ final class ThumbnailCacheManager: Sendable {
                 try? await diskCacheStore.storeThumbnail(
                     jpegData,
                     originalURL: url,
-                    thumbnailSize: size,
                     modificationDate: modDate
                 )
             }

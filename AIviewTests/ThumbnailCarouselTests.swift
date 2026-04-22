@@ -16,7 +16,7 @@ final class ThumbnailCarouselTests: XCTestCase {
             .appendingPathComponent("AIviewThumbnailTests_\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
 
-        diskCacheStore = DiskCacheStore(baseURL: tempDirectory)
+        diskCacheStore = DiskCacheStore()
         thumbnailCacheManager = ThumbnailCacheManager(
             maxSizeBytes: 10 * 1024 * 1024,
             diskCacheStore: diskCacheStore

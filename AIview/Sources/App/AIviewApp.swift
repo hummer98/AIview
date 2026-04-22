@@ -7,11 +7,16 @@ import os
 @main
 struct AIviewApp: App {
     @State private var appState = AppState()
-    @State private var lifecycleMonitor: DiskCacheLifecycleMonitor?
-    @Environment(\.scenePhase) private var scenePhase
 
     private var isUITestMode: Bool {
         ProcessInfo.processInfo.environment["AIVIEW_UI_TEST_MODE"] == "1"
+    }
+
+    /// 旧中央キャッシュディレクトリの削除を一度だけ実行するガード。
+    /// `WindowGroup.onAppear` は複数ウィンドウで複数回呼ばれうるが、
+    /// `static let` で遅延評価される Task はプロセス内で一度しか spawn されない。
+    private static let purgeLegacyTask: Task<Void, Never> = Task.detached(priority: .background) {
+        await AIviewApp.purgeLegacyCentralCache()
     }
 
     var body: some Scene {
@@ -22,11 +27,8 @@ struct AIviewApp: App {
                     // 起動時に履歴を読み込み
                     appState.refreshRecentFolders()
 
-                    if lifecycleMonitor == nil {
-                        lifecycleMonitor = DiskCacheLifecycleMonitor { [appState] in
-                            await appState.flushDiskCache()
-                        }
-                    }
+                    // 旧中央ディスクキャッシュを削除 (task 019: per-folder 方式へ移行)
+                    _ = AIviewApp.purgeLegacyTask
 
                     if isUITestMode {
                         // UIテスト時はウィンドウを画面中央に配置
@@ -35,9 +37,6 @@ struct AIviewApp: App {
                 }
         }
         .windowToolbarStyle(.unified(showsTitle: true))
-        .onChange(of: scenePhase) { _, newPhase in
-            lifecycleMonitor?.handleScenePhase(newPhase)
-        }
         .commands {
             AppCommands(appState: appState)
         }
@@ -60,6 +59,34 @@ struct AIviewApp: App {
                     window.setFrameOrigin(NSPoint(x: x, y: y))
                 }
             }
+        }
+    }
+
+    /// 旧中央ディスクキャッシュ `~/Library/Application Support/AIview/DiskCache/` を削除
+    ///
+    /// task 019 で per-folder `.aiview/` 方式に回帰したため、旧形式のディレクトリは
+    /// 次回起動時に一度だけまとめて回収する。失敗 (ENOENT, 権限、競合) は全て warning で握りつぶす。
+    private static func purgeLegacyCentralCache() async {
+        let fm = FileManager.default
+        guard let appSupport = try? fm.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: false
+        ) else { return }
+
+        let legacyRoot = appSupport.appendingPathComponent("AIview/DiskCache", isDirectory: true)
+        guard fm.fileExists(atPath: legacyRoot.path) else { return }
+
+        do {
+            try fm.removeItem(at: legacyRoot)
+            Logger.app.info(
+                "Removed legacy central disk cache: \(legacyRoot.path, privacy: .public)"
+            )
+        } catch {
+            Logger.app.warning(
+                "Failed to remove legacy central disk cache: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 }
