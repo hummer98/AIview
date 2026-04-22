@@ -93,6 +93,8 @@ jobs:
           EOF
 
       - name: Archive
+        # MARKETING_VERSION / CURRENT_PROJECT_VERSION are injected from the git tag
+        # so the shipped .app Info.plist matches the release. Do not rely on pbxproj.
         run: |
           xcodebuild \
             -project AIview.xcodeproj \
@@ -100,6 +102,8 @@ jobs:
             -configuration Release \
             -archivePath build/AIview.xcarchive \
             -allowProvisioningUpdates \
+            MARKETING_VERSION="${VERSION}" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
             archive
 
       - name: Notarize & package
@@ -200,6 +204,8 @@ jobs:
           EOF
 
       - name: Archive
+        # MARKETING_VERSION / CURRENT_PROJECT_VERSION are injected from the git tag
+        # so the shipped .app Info.plist matches the release. Do not rely on pbxproj.
         run: |
           xcodebuild \
             -project AIview.xcodeproj \
@@ -207,6 +213,8 @@ jobs:
             -configuration Release \
             -archivePath build/AIview.xcarchive \
             -allowProvisioningUpdates \
+            MARKETING_VERSION="${VERSION}" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
             archive
 
       - name: Notarize & package
