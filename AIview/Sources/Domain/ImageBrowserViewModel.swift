@@ -2,6 +2,12 @@ import AppKit
 import Foundation
 import os
 
+/// 兄弟フォルダ移動の方向
+enum SiblingFolderDirection {
+    case previous
+    case next
+}
+
 /// 画像ブラウザのUI状態管理ViewModel
 /// Requirements: All UI-related requirements
 @MainActor
@@ -283,6 +289,67 @@ final class ImageBrowserViewModel {
     /// 最近使ったフォルダ一覧を取得
     func getRecentFolders() -> [URL] {
         recentFoldersStore.getRecentFolders()
+    }
+
+    // MARK: - Sibling Folder Navigation
+
+    /// 現在フォルダの兄弟フォルダへ移動する
+    /// - 兄弟は同一親直下のディレクトリ、`localizedStandardCompare` でソート、`.skipsHiddenFiles`
+    /// - 端ではラップせず NSSound.beep() を鳴らして現状維持
+    /// - 成功時は openFolder(_:) を呼び、通常のフォルダ open と同じ経路に乗る
+    func moveToSiblingFolder(direction: SiblingFolderDirection) async {
+        guard let currentURL = currentFolderURL else {
+            NSSound.beep()
+            return
+        }
+
+        let parent = currentURL.deletingLastPathComponent()
+        let siblings = siblingDirectoryURLs(of: parent)
+
+        // 自分の index を探す（シンボリックリンク解決で比較）
+        let currentPath = currentURL.resolvingSymlinksInPath().path
+        guard let index = siblings.firstIndex(where: {
+            $0.resolvingSymlinksInPath().path == currentPath
+        }) else {
+            NSSound.beep()
+            return
+        }
+
+        let targetIndex: Int
+        switch direction {
+        case .previous:
+            targetIndex = index - 1
+        case .next:
+            targetIndex = index + 1
+        }
+
+        guard targetIndex >= 0, targetIndex < siblings.count else {
+            NSSound.beep()
+            return
+        }
+
+        await openFolder(siblings[targetIndex])
+    }
+
+    /// 指定された親ディレクトリ直下のサブディレクトリ URL を名前順（localizedStandardCompare）で返す
+    /// - 隠しフォルダは除外、ファイルは除外、読み取り失敗時は空配列
+    private func siblingDirectoryURLs(of parent: URL) -> [URL] {
+        let fileManager = FileManager.default
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: parent,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        let directories = contents.filter { url in
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+
+        return directories.sorted {
+            $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+        }
     }
 
     // MARK: - Navigation

@@ -54,6 +54,20 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut("r", modifiers: .command)
             .disabled(!appState.hasCurrentFolder)
+
+            Divider()
+
+            Button("前のフォルダ") {
+                appState.requestSiblingFolder(.previous)
+            }
+            .keyboardShortcut(.upArrow, modifiers: .command)
+            .disabled(!appState.hasCurrentFolder)
+
+            Button("次のフォルダ") {
+                appState.requestSiblingFolder(.next)
+            }
+            .keyboardShortcut(.downArrow, modifiers: .command)
+            .disabled(!appState.hasCurrentFolder)
         }
 
         // 開発メニュー: メトリクスをログに出力

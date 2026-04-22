@@ -27,6 +27,9 @@ struct MainWindowView: View {
             .onChange(of: appState?.shouldReloadFolder) {
                 handleReloadRequest()
             }
+            .onChange(of: appState?.siblingFolderRequest) { _, newValue in
+                handleSiblingFolderRequest(newValue)
+            }
             .onChange(of: viewModel.currentFolderURL) {
                 appState?.hasCurrentFolder = (viewModel.currentFolderURL != nil)
             }
@@ -382,6 +385,19 @@ struct MainWindowView: View {
         Task {
             _ = await viewModel.reloadCurrentFolder()
             appState?.clearReloadRequest()
+        }
+    }
+
+    // MARK: - Sibling Folder Handling
+
+    /// 兄弟フォルダ移動リクエストを処理
+    /// Task 018
+    private func handleSiblingFolderRequest(_ direction: SiblingFolderDirection?) {
+        guard let direction else { return }
+        Task {
+            await viewModel.moveToSiblingFolder(direction: direction)
+            appState?.refreshRecentFolders()
+            appState?.clearSiblingFolderRequest()
         }
     }
 

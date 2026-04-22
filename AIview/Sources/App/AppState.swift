@@ -76,6 +76,22 @@ final class AppState {
         shouldReloadFolder = false
     }
 
+    // MARK: - Sibling Folder Navigation
+
+    /// 兄弟フォルダ移動のリクエスト（nil なら未要求）
+    /// Task 018
+    private(set) var siblingFolderRequest: SiblingFolderDirection?
+
+    /// 兄弟フォルダ移動をトリガー
+    func requestSiblingFolder(_ direction: SiblingFolderDirection) {
+        siblingFolderRequest = direction
+    }
+
+    /// 兄弟フォルダ移動リクエストをクリア
+    func clearSiblingFolderRequest() {
+        siblingFolderRequest = nil
+    }
+
     /// 最近使ったフォルダストア
     private let recentFoldersStore = RecentFoldersStore()
 

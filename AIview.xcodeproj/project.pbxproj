@@ -63,6 +63,7 @@
 		A1000055 /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000055 /* SettingsStoreTests.swift */; };
 		A1000056 /* DiskCacheLifecycleMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000056 /* DiskCacheLifecycleMonitorTests.swift */; };
 		A1000057 /* ThumbnailCarouselTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000057 /* ThumbnailCarouselTests.swift */; };
+		A1000058 /* ImageBrowserViewModelSiblingFolderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -142,6 +143,7 @@
 		A2000055 /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		A2000056 /* DiskCacheLifecycleMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCacheLifecycleMonitorTests.swift; sourceTree = "<group>"; };
 		A2000057 /* ThumbnailCarouselTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCarouselTests.swift; sourceTree = "<group>"; };
+		A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserViewModelSiblingFolderTests.swift; sourceTree = "<group>"; };
 		A5000005 /* AIviewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIviewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2000080 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		A2000081 /* Developer.xcconfig.sample */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Developer.xcconfig.sample; sourceTree = "<group>"; };
@@ -297,6 +299,7 @@
 				A2000055 /* SettingsStoreTests.swift */,
 				A2000056 /* DiskCacheLifecycleMonitorTests.swift */,
 				A2000057 /* ThumbnailCarouselTests.swift */,
+				A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */,
 			);
 			path = AIviewTests;
 			sourceTree = "<group>";
@@ -494,6 +497,7 @@
 				A1000055 /* SettingsStoreTests.swift in Sources */,
 				A1000056 /* DiskCacheLifecycleMonitorTests.swift in Sources */,
 				A1000057 /* ThumbnailCarouselTests.swift in Sources */,
+				A1000058 /* ImageBrowserViewModelSiblingFolderTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
