@@ -43,7 +43,7 @@ The project uses `go-task` (defined in `Taskfile.yml`) and `xcodebuild`.
 | `task test` | Run all unit and UI tests. |
 | `task lint` | Run SwiftLint. |
 | `task format` | Format code using SwiftFormat. |
-| `task log` | Stream app logs (`com.aiview.app`). |
+| `task log` | Stream app logs (`com.ridgeroot.AIview`). |
 | `task log:image` | Stream ImageLoader specific logs. |
 
 ### Prerequisites

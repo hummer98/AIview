@@ -18,5 +18,10 @@ cask "aiview" do
     "~/Library/Preferences/com.aiview.app.plist",
     "~/Library/Saved Application State/com.aiview.app.savedState",
     "~/Library/WebKit/com.aiview.app",
+    "~/Library/Caches/com.ridgeroot.AIview",
+    "~/Library/HTTPStorages/com.ridgeroot.AIview",
+    "~/Library/Preferences/com.ridgeroot.AIview.plist",
+    "~/Library/Saved Application State/com.ridgeroot.AIview.savedState",
+    "~/Library/WebKit/com.ridgeroot.AIview",
   ]
 end

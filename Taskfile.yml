@@ -122,22 +122,22 @@ tasks:
   log:
     desc: Stream all app logs (Ctrl+C to stop)
     cmds:
-      - log stream --predicate 'subsystem == "com.aiview.app"' --level debug --style compact
+      - log stream --predicate 'subsystem == "com.ridgeroot.AIview"' --level debug --style compact
 
   log:error:
     desc: Stream error logs only
     cmds:
-      - log stream --predicate 'subsystem == "com.aiview.app"' --level error --style compact
+      - log stream --predicate 'subsystem == "com.ridgeroot.AIview"' --level error --style compact
 
   log:image:
     desc: Stream ImageLoader logs
     cmds:
-      - log stream --predicate 'subsystem == "com.aiview.app" AND category == "ImageLoader"' --level debug --style compact
+      - log stream --predicate 'subsystem == "com.ridgeroot.AIview" AND category == "ImageLoader"' --level debug --style compact
 
   log:cache:
     desc: Stream CacheManager logs
     cmds:
-      - log stream --predicate 'subsystem == "com.aiview.app" AND category == "CacheManager"' --level debug --style compact
+      - log stream --predicate 'subsystem == "com.ridgeroot.AIview" AND category == "CacheManager"' --level debug --style compact
 
   doctor:
     desc: Check if all required tools are installed

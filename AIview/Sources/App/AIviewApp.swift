@@ -93,7 +93,7 @@ struct AIviewApp: App {
 
 /// ロギング用のLogger
 extension Logger {
-    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.aiview"
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.ridgeroot.AIview"
 
     static let app = Logger(subsystem: subsystem, category: "App")
     static let imageLoader = Logger(subsystem: subsystem, category: "ImageLoader")

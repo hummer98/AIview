@@ -251,5 +251,5 @@ actor FavoritesStore {
 
 extension Logger {
     /// お気に入り機能用ログカテゴリ
-    static let favorites = Logger(subsystem: Bundle.main.bundleIdentifier ?? "AIview", category: "favorites")
+    static let favorites = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.ridgeroot.AIview", category: "favorites")
 }

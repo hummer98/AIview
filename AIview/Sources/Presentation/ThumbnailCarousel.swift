@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import os
 
-private let logger = Logger(subsystem: "com.aiview", category: "ThumbnailCarousel")
+private let logger = Logger(subsystem: "com.ridgeroot.AIview", category: "ThumbnailCarousel")
 
 /// Task コンテキストと DispatchQueue コンテキストの両方から
 /// 安全に参照できるキャンセルフラグ。
@@ -170,7 +170,7 @@ struct ThumbnailCarousel: View {
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = thumbnailConcurrencyLimit
         queue.qualityOfService = .utility
-        queue.name = "com.aiview.thumbnailGeneration"
+        queue.name = "com.ridgeroot.AIview.thumbnailGeneration"
         return queue
     }()
 
