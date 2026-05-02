@@ -6,7 +6,7 @@ import XCTest
 /// 設計原則 (`CLAUDE.md` > 設計思想 > サムネイルキャッシュの保存先):
 /// - キャッシュは各フォルダ直下の `.aiview/` サブフォルダに保存
 /// - ファイル名は `<original>.jpg`
-/// - mtime 等値比較で hit/miss 判定
+/// - mtime 比較 (1 秒許容差) で hit/miss 判定 (SMB/NTFS の 100 ns 丸めを吸収)
 /// - サイズは 80×80 固定 (複数サイズなし)
 /// - hash / identity / shard / LRU / index plist は持たない
 final class DiskCacheStoreTests: XCTestCase {
@@ -61,7 +61,7 @@ final class DiskCacheStoreTests: XCTestCase {
         XCTAssertEqual(got, payload)
     }
 
-    // MARK: - Case 2: mtime mismatch returns miss and deletes stale file
+    // MARK: - Case 2: mtime mismatch (≥ tolerance) returns miss and deletes stale file
 
     func test_get_staleMtime_returnsNilAndRemovesFile() async throws {
         let store = DiskCacheStore()
@@ -73,6 +73,7 @@ final class DiskCacheStoreTests: XCTestCase {
         let cacheURL = cachePath(for: url)
         XCTAssertTrue(fm.fileExists(atPath: cacheURL.path))
 
+        // 100 秒差 — 1 秒許容差を大きく超えるので必ず stale 判定
         let different = mod.addingTimeInterval(100)
         let got = await store.getThumbnail(originalURL: url, modificationDate: different)
         XCTAssertNil(got)
@@ -240,5 +241,70 @@ final class DiskCacheStoreTests: XCTestCase {
         let cacheURL = cachePath(for: url)
         let cacheMtime = try cacheURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
         XCTAssertEqual(cacheMtime, mod, "cache file mtime must be pre-stamped to source mtime")
+    }
+
+    // MARK: - mtime tolerance tests (SMB/NTFS 100 ns rounding fix)
+
+    /// SMB/NTFS マウントは mtime を 100 ns 単位に丸めるため、
+    /// APFS の ns 精度との比較で 100 ns 程度の差が出ることがある。
+    func test_get_mtimeOff100Nanoseconds_returnsHit() async throws {
+        let store = DiskCacheStore()
+        let (url, mod) = try writeSource(named: "tol_100ns.jpg")
+        let payload = Data(repeating: 0x10, count: 64)
+
+        try await store.storeThumbnail(payload, originalURL: url, modificationDate: mod)
+
+        let drifted = mod.addingTimeInterval(100e-9) // 100 ns
+        let got = await store.getThumbnail(originalURL: url, modificationDate: drifted)
+        XCTAssertEqual(got, payload, "100 ns drift must be absorbed by 1s tolerance")
+    }
+
+    /// `Date(Double)` の浮動小数点誤差は ms オーダーで現れることがある。
+    func test_get_mtimeOff1Millisecond_returnsHit() async throws {
+        let store = DiskCacheStore()
+        let (url, mod) = try writeSource(named: "tol_1ms.jpg")
+        let payload = Data(repeating: 0x20, count: 64)
+
+        try await store.storeThumbnail(payload, originalURL: url, modificationDate: mod)
+
+        let drifted = mod.addingTimeInterval(0.001) // 1 ms
+        let got = await store.getThumbnail(originalURL: url, modificationDate: drifted)
+        XCTAssertEqual(got, payload, "1 ms drift must be absorbed by 1s tolerance")
+    }
+
+    /// 1 秒許容差の境界手前 (0.5 秒差) — hit。
+    func test_get_mtimeOffHalfSecond_returnsHit() async throws {
+        let store = DiskCacheStore()
+        let (url, mod) = try writeSource(named: "tol_500ms.jpg")
+        let payload = Data(repeating: 0x30, count: 64)
+
+        try await store.storeThumbnail(payload, originalURL: url, modificationDate: mod)
+
+        let drifted = mod.addingTimeInterval(0.5)
+        let got = await store.getThumbnail(originalURL: url, modificationDate: drifted)
+        XCTAssertEqual(got, payload, "0.5 s drift must be absorbed by 1s tolerance")
+
+        // 反対方向 (-0.5 s) も同様に hit
+        let driftedBack = mod.addingTimeInterval(-0.5)
+        let got2 = await store.getThumbnail(originalURL: url, modificationDate: driftedBack)
+        XCTAssertEqual(got2, payload, "-0.5 s drift must be absorbed by 1s tolerance")
+    }
+
+    /// 1 秒許容差の境界外 (1.5 秒差) — miss + stale 削除。
+    func test_get_mtimeOff1500ms_returnsMiss() async throws {
+        let store = DiskCacheStore()
+        let (url, mod) = try writeSource(named: "tol_1500ms.jpg")
+        let payload = Data(repeating: 0x40, count: 64)
+
+        try await store.storeThumbnail(payload, originalURL: url, modificationDate: mod)
+
+        let cacheURL = cachePath(for: url)
+        XCTAssertTrue(fm.fileExists(atPath: cacheURL.path))
+
+        let drifted = mod.addingTimeInterval(1.5)
+        let got = await store.getThumbnail(originalURL: url, modificationDate: drifted)
+        XCTAssertNil(got, "1.5 s drift must exceed 1s tolerance and miss")
+        XCTAssertFalse(fm.fileExists(atPath: cacheURL.path),
+                       "stale cache file must be removed when outside tolerance")
     }
 }

@@ -6,7 +6,7 @@ import os
 /// 設計原則 (`CLAUDE.md` > 設計思想 > サムネイルキャッシュの保存先):
 /// - キャッシュは各フォルダ直下の `.aiview/` サブフォルダに保存
 /// - ファイル名は元ファイル名 + `.jpg` (例: `sunset.heic` → `.aiview/sunset.heic.jpg`)
-/// - mtime 等値比較で hit/miss 判定 (書き込み時に `setAttributes` で pre-stamp)
+/// - mtime 比較 (1 秒許容差) で hit/miss 判定 (書き込み時に `setResourceValues` で pre-stamp)
 /// - サイズは 80×80 固定 (thumbnailSize パラメータなし)
 /// - hash / identity key / シャーディング / 全体 LRU / index plist は持たない
 ///
@@ -19,6 +19,15 @@ import os
 ///   stale を返す。これは設計上の既知・意図的な挙動 (content hash を持たないため)。
 /// - 画像ファイルだけ削除された場合、`.aiview/<name>.jpg` は孤児として残り続ける。
 ///   全体 LRU を廃した以上これは受容する (フォルダごと削除された時のみ消える)。
+///
+/// mtime 比較の許容差 (1 秒):
+/// - SMB/NTFS マウントは mtime を 100 ns 単位に丸めるため、APFS の ns 精度と
+///   厳密一致比較すると毎回 stale 判定されてしまう。1 秒許容差でこの丸めも
+///   `Date(Double)` の浮動小数点精度誤差も完全に吸収する。
+/// - 同一秒内に「ファイル更新 → キャッシュ生成 → さらに更新」が起きる現実的可能性は
+///   ほぼなく、`cp -p` 等の mtime-preserving copy で stale を見逃す既知の妥協と整合的。
+/// - 書き込み側 (`storeThumbnail`) は引き続き ns 精度で `setResourceValues` を行う。
+///   APFS で精度を落としても意味がないため、許容差は比較側でのみ吸収する。
 actor DiskCacheStore {
 
     private let fileManager = FileManager.default
@@ -35,8 +44,9 @@ actor DiskCacheStore {
     // MARK: - Public API
 
     /// サムネイルをディスクから取得する。
-    /// - 判定: キャッシュファイルの mtime が元ファイルの `modificationDate` と完全一致するときのみ hit。
-    ///   不一致なら stale とみなしキャッシュファイルを削除して nil を返す (best effort)。
+    /// - 判定: キャッシュファイルの mtime と元ファイルの `modificationDate` の差が
+    ///   1 秒未満のときのみ hit (SMB/NTFS の 100 ns 丸めを吸収するため)。
+    ///   それ以外は stale とみなしキャッシュファイルを削除して nil を返す (best effort)。
     func getThumbnail(originalURL: URL, modificationDate: Date) async -> Data? {
         let cacheURL = cacheFileURL(for: originalURL)
         guard fileManager.fileExists(atPath: cacheURL.path) else { return nil }
@@ -51,7 +61,9 @@ actor DiskCacheStore {
             return nil
         }
 
-        guard let cacheMtime, cacheMtime == modificationDate else {
+        let tolerance: TimeInterval = 1.0
+        guard let cacheMtime,
+              abs(cacheMtime.timeIntervalSince(modificationDate)) < tolerance else {
             try? fileManager.removeItem(at: cacheURL)
             return nil
         }
