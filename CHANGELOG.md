@@ -2,6 +2,25 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [0.4.1] - 2026-05-03
+
+### Fixed
+
+- Thumbnail disk cache no longer regenerates every visit on SMB / NTFS mounts (e.g., Windows shares, NAS) (T021)
+  - Cache mtime equality check failed by ~100 ns due to Windows-side mtime rounding, marking every cached thumbnail as stale and forcing full regeneration on each folder open
+  - Comparison now allows a 1-second tolerance, well within the meaningful precision of file modification timestamps
+
+### Changed
+
+- Application Bundle ID renamed from `com.aiview.*` to `com.ridgeroot.AIview` (T020)
+  - Existing installations are treated as a separate app by macOS — favorites / accessibility permissions / login items will need to be re-granted on first launch
+
+### Developer
+
+- Added [`docs/spec/`](docs/spec/) (00-overview through 05-distribution) as source-of-truth implementation docs
+- Removed kiro SDD workflow from `.kiro/`
+- Added `/sync-docs` slash command for keeping docs aligned with implementation
+
 ## [0.4.0] - 2026-04-24
 
 ### Added
