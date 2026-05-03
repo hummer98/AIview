@@ -138,12 +138,19 @@ hdiutil create -volname "AIview" -srcfolder "build/Build/Products/Release/AIview
 gh release upload vX.Y.Z "build/AIview-X.Y.Z.dmg"
 ```
 
-### 11. Applicationsフォルダへデプロイ（ローカル開発用）
+### 11. ローカルの AIview を Homebrew でアップグレード
+
+タグ push をトリガーとして GitHub Actions の `update-tap.yml` が `hummer98/homebrew-aiview` を更新するので、それが反映され次第ローカルマシンの AIview を新バージョンに上げる：
 
 ```bash
-rm -rf "/Applications/AIview.app"
-cp -R "build/Build/Products/Release/AIview.app" /Applications/
+# tap の更新を取り込む
+brew update
+
+# AIview を最新版にアップグレード
+brew upgrade --cask aiview
 ```
+
+**注意**: tap の更新は GitHub Actions 経由で行われるため、タグ push 後 1〜2 分の遅延がある。`brew upgrade` で `Already up-to-date` と出る場合は少し待ってから再実行する。`gh run list --workflow=update-tap.yml --limit 1` で完了を確認できる。
 
 ### 12. 完了報告
 
