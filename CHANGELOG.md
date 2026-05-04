@@ -2,6 +2,22 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Thumbnail carousel no longer flickers during folder scan progress
+  - `imageURLs` was used as both data source and identity signal for SwiftUI `.task(id:)`. Each scan progress batch (every 50 images) caused a full `thumbnailStates.removeAll()` + state reset, manifesting as repeated placeholder flashes during scanning
+  - Introduced a separate `folderID: UUID` published from `ImageBrowserViewModel` as the dedicated identity signal. State reset now happens only on true folder identity changes (open / reload / subdirectory toggle / filter change), not on incremental scan progress
+
+### Changed
+
+- `docs/spec/00-overview.md` and `01-architecture.md` now explicitly document the "folder contents are static" assumption: AIview is an archive viewer and does not implement live tracking (FSEvents / mid-view re-scan)
+
+### Developer
+
+- Removed dead code: `ThumbnailCarousel.thumbnailTasks` dictionary was never written to, with associated no-op cancellation loops
+
 ## [0.4.1] - 2026-05-03
 
 ### Fixed

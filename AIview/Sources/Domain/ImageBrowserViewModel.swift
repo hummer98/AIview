@@ -17,6 +17,10 @@ final class ImageBrowserViewModel {
 
     private(set) var currentFolderURL: URL?
     private(set) var imageURLs: [URL] = []
+    /// フォルダの identity 信号。openFolder / reload / サブディレクトリモード切替 / フィルタ切替で更新する。
+    /// View 側 (ThumbnailCarousel) はこれを `.task(id:)` の id として使い、フォルダ切替時のみ
+    /// thumbnailStates をリセットする。scan progress 中の imageURLs 増分では更新しない。
+    private(set) var folderID: UUID = UUID()
     private(set) var currentIndex: Int = 0
     private(set) var currentImage: NSImage?
     private(set) var isLoading: Bool = false
@@ -206,6 +210,7 @@ final class ImageBrowserViewModel {
 
         // 状態をリセット
         currentFolderURL = url
+        folderID = UUID()
         imageURLs = []
         currentIndex = 0
         currentImage = nil
@@ -990,9 +995,10 @@ final class ImageBrowserViewModel {
         await folderScanner.cancelCurrentScan()
         imageLoader.cancelAll()
 
-        // ThumbnailCarousel の .task(id: imageURLs) を強制的に再発火させ、
-        // サムネイルの世代交代 (cancel → 再生成) を確実に trigger するため、
-        // スキャン再開前に空配列へリセット (同一内容フォルダのリロード対応)
+        // ThumbnailCarousel の .task(id: folderID) を再発火させ、サムネイルの世代交代を
+        // 確実に trigger するため folderID を更新。imageURLs = [] は hasImages を false にして
+        // カルーセルを一時非表示にする視覚的役割（identity 信号は folderID が担当）。
+        folderID = UUID()
         imageURLs = []
 
         // スキャン開始フラグを設定
@@ -1104,6 +1110,8 @@ final class ImageBrowserViewModel {
         do {
             let result = try await folderScanner.scanWithSubdirectories(folderURL: folderURL)
 
+            // 表示対象集合が変わるので folderID を更新（サムネイル状態をリセット）
+            folderID = UUID()
             // 結果を状態に反映（既にMainActor上なので直接更新可能）
             subdirectoryURLs = result.subdirectoryURLs
             imageURLs = result.imageURLs
@@ -1139,6 +1147,8 @@ final class ImageBrowserViewModel {
         filterLevel = nil
         filteredIndices = []
 
+        // 表示対象集合が親フォルダだけに戻るので folderID を更新
+        folderID = UUID()
         // 親フォルダの画像を復元
         imageURLs = parentFolderImageURLs
 
@@ -1212,6 +1222,8 @@ final class ImageBrowserViewModel {
             $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
         }
 
+        // 表示対象集合がフィルタ後のお気に入りファイルだけに変わるので folderID を更新
+        folderID = UUID()
         // 画像リストを設定（お気に入りファイルのみ）
         imageURLs = sortedURLs
 

@@ -41,3 +41,4 @@ JPEG (.jpg/.jpeg)、PNG (.png)、HEIC (.heic)、WebP (.webp)、GIF (.gif)
 2. **データと一緒にキャッシュを置く** — `.aiview/` をフォルダ直下に作る（中央集約しない）。詳細は [`04-thumbnail-cache.md`](04-thumbnail-cache.md)
 3. **書き込めない場合のフォールバックは作らない** — read-only メディアでは都度生成
 4. **ユーザーフォルダに `.aiview/` が残るのを許容** — 高速化を優先
+5. **フォルダ内容は静的前提** — AIview はアーカイブ閲覧ツール。閲覧中に外部からファイルが追加・変更されることへの自動追従（FSEvents 監視・mid-view re-scan）は意図的に持たない。再 scan は `⌘R` の明示要求のみ。これにより並行性モデルを単純に保ち、defensive な状態リセットを最小化する。詳細は [`01-architecture.md`](01-architecture.md) の「並行性モデル」を参照

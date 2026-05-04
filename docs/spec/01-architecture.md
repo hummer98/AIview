@@ -89,6 +89,22 @@ ImageBrowserViewModel.next() / previous()
 
 ## 並行性モデル
 
+### 上位仮定: フォルダ内容は静的
+
+AIview はアーカイブ閲覧ツールで、**閲覧セッション中にフォルダ内容が外部から変動することを想定しない**:
+
+- FSEvents 監視や mtime ポーリングなど、ライブ追従の仕組みは持たない
+- `⌘R` (`reloadCurrentFolder`) でユーザーが明示要求したときのみ再 scan
+- `mtime-preserving copy` で内容が変わるケースは stale を返す既知の挙動として受容（[`04-thumbnail-cache.md`](04-thumbnail-cache.md) 参照）
+
+この仮定により:
+
+- 一度 scan した URL の identity は閲覧中ずっと安定（メモリ・ディスク両キャッシュの再利用が前提）
+- フォルダ切替の identity 信号は「フォルダ URL」または明示的な scan 世代で表現すべきで、`imageURLs` 配列の変動を identity 信号として使うのは適切でない
+- defensive な状態リセット（`thumbnailStates.removeAll()` を scan 進捗ごとに呼ぶなど）はこの仮定下では過剰。フォルダ切替時のみリセットするのが正
+
+### 並行性プリミティブ
+
 - `FolderScanner`, `MetadataExtractor`, `DiskCacheStore`, `FavoritesStore` は **actor**
 - `ImageLoader`, `CacheManager`, `ThumbnailCacheManager` は **`Sendable` final class** で `NSLock` 保護
 - `SlideshowTimer` は **`@MainActor`**

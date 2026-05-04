@@ -140,6 +140,7 @@ struct MainWindowView: View {
             if viewModel.hasImages {
                 ThumbnailCarousel(
                     imageURLs: viewModel.imageURLs,
+                    folderID: viewModel.folderID,
                     currentIndex: viewModel.currentIndex,
                     onSelect: { index in
                         Task {

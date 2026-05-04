@@ -135,15 +135,16 @@ final class OperationRegistry: @unchecked Sendable {
 /// Requirements: 2.2-2.5, 9.1-9.3
 struct ThumbnailCarousel: View {
     let imageURLs: [URL]
+    /// フォルダの identity 信号。ViewModel が openFolder / reload / サブディレクトリ切替 /
+    /// フィルタ切替で更新する。これが変わったときだけ thumbnailStates をリセットする。
+    /// scan 中の imageURLs 増分では更新しないため、scan 中の thumbnail flicker が発生しない。
+    let folderID: UUID
     let currentIndex: Int
     let onSelect: (Int) -> Void
     let thumbnailCacheManager: ThumbnailCacheManager
     var favorites: [String: Int] = [:]
 
     @State private var thumbnailStates: [URL: ThumbnailLoadState] = [:]
-    // URL 単位のロード Task を保持。`.task(id: url)` が自動 cancel/再起動を
-    // 担うが、onDisappear / imageURLs 切替時の明示 cancel 用に辞書で管理する。
-    @State private var thumbnailTasks: [URL: Task<Void, Never>] = [:]
     // 世代トークン: imageURLs が切替わるたびに +1 し、古い世代の UI 更新を破棄する。
     @State private var generation: Int = 0
     // 進行中の load を URL 単位で追跡するデデュプリケーション用ガード。
@@ -230,23 +231,20 @@ struct ThumbnailCarousel: View {
                 let window = highPriorityWindow(for: newIndex)
                 Self.operationRegistry.updatePriorities(highPriorityURLs: window)
             }
-            // imageURLs が変わったタイミングで世代交代 & 残存 Task を全 cancel。
-            // 同一内容のフォルダを再読込してもこの Task は再発火しないため、
-            // ViewModel 側 (reloadCurrentFolder) で imageURLs = [] を挟んでいる。
-            .task(id: imageURLs) {
+            // folderID が変わったタイミングで世代交代。
+            // ViewModel が openFolder / reload / サブディレクトリ切替 / フィルタ切替で folderID を
+            // 更新する。同一内容のフォルダを再読込してもこの Task を再発火させたいときは、
+            // ViewModel が folderID = UUID() を明示的に呼ぶ (reloadCurrentFolder)。
+            // scan progress 中の imageURLs 増分では folderID は更新しないため、scan 中に
+            // thumbnailStates が flush される問題は発生しない（[`docs/spec/01-architecture.md`]
+            // の「フォルダ内容は静的前提」設計）。
+            // セル個別の `.task(id: url)` は SwiftUI が view disappear 時に自動 cancel する。
+            .task(id: folderID) {
                 generation &+= 1
                 thumbnailStates.removeAll()
-                for (_, task) in thumbnailTasks { task.cancel() }
-                thumbnailTasks.removeAll()
                 // 世代交代時に古い URL の inFlight 登録が残存すると新世代の再ロードを
                 // 抑制してしまうため、明示的にクリアする。
                 inFlightURLs.removeAll()
-            }
-            .onDisappear {
-                // フォルダを閉じる / ウィンドウ close などで View が破棄される際の
-                // Task 孤児化防止。ライフサイクルの最終防衛ライン。
-                for (_, task) in thumbnailTasks { task.cancel() }
-                thumbnailTasks.removeAll()
             }
         }
     }

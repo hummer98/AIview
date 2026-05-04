@@ -268,4 +268,38 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
         // Then
         XCTAssertTrue(result, "フォルダ選択時はtrueを返すべき")
     }
+
+    // MARK: - folderID identity contract
+
+    /// openFolder ごとに folderID が変わることを検証。
+    /// ThumbnailCarousel の `.task(id: folderID)` で thumbnailStates を確実に
+    /// リセットするための identity 信号として使われる。
+    func testFolderID_changesOnEachOpenFolder() async throws {
+        _ = try createTestImage(named: "001.png", in: tempDirectory)
+
+        await sut.openFolder(tempDirectory)
+        try await Task.sleep(for: .milliseconds(200))
+        let firstID = sut.folderID
+
+        await sut.openFolder(tempDirectory)
+        try await Task.sleep(for: .milliseconds(200))
+        let secondID = sut.folderID
+
+        XCTAssertNotEqual(firstID, secondID, "同じフォルダを再オープンしても folderID は変わるべき")
+    }
+
+    /// reloadCurrentFolder で folderID が変わることを検証。
+    func testFolderID_changesOnReload() async throws {
+        _ = try createTestImage(named: "001.png", in: tempDirectory)
+
+        await sut.openFolder(tempDirectory)
+        try await Task.sleep(for: .milliseconds(200))
+        let beforeReload = sut.folderID
+
+        _ = await sut.reloadCurrentFolder()
+        try await Task.sleep(for: .milliseconds(200))
+        let afterReload = sut.folderID
+
+        XCTAssertNotEqual(beforeReload, afterReload, "reload で folderID は変わるべき")
+    }
 }
