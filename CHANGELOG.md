@@ -2,7 +2,7 @@
 
 All notable changes to AIview will be documented in this file.
 
-## [Unreleased]
+## [0.4.2] - 2026-05-04
 
 ### Fixed
 
