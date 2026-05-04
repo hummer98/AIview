@@ -1,8 +1,14 @@
 name: Update Homebrew Tap
 
 on:
-  release:
-    types: [published]
+  # Release ワークフロー（署名・公証 + アセット upload を担当）が成功完了した直後に発火する。
+  # 過去 `release: published` を使っていたが、/release コマンドの手動 `gh release create` が
+  # 空リリースを作って即時にイベント発火 → アセット未着で失敗するレースが発生していた。
+  # workflow_run なら release.yml の softprops/action-gh-release@v2 がアセット upload まで
+  # 完了した後にだけ走るので、この race は構造的に発生しない。
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -19,16 +25,22 @@ defaults:
 
 jobs:
   update-tap:
+    # workflow_run は失敗・cancel でも発火するので、success のときだけ走らせる。
+    # 手動 dispatch は常に許可。
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Resolve tag & version
         env:
           EVENT_NAME: ${{ github.event_name }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
           INPUT_TAG: ${{ github.event.inputs.tag }}
+          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
-          if [[ "$EVENT_NAME" == "release" ]]; then
-            TAG="$RELEASE_TAG"
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            # release.yml が tag push (`v*.*.*`) で起動したときの head_branch は tag 名 (`v0.4.2` 等)
+            TAG="$WORKFLOW_RUN_HEAD_BRANCH"
           else
             TAG="$INPUT_TAG"
           fi

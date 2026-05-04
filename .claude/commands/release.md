@@ -116,41 +116,33 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-### 9. GitHubリリース作成
+### 9. リリースワークフローの完了待ち
 
-リリースノートをCHANGELOGから抽出し、GitHubリリースを作成：
+タグ push をトリガに `release.yml` (GitHub Actions) が起動し、署名・公証・dmg/zip 生成・GitHub Release 作成・アセットアップロードを **すべて自動で行う**。`release.yml` の成功完了後に `update-tap.yml` が自動連鎖して Homebrew tap を更新する。
 
 ```bash
-gh release create vX.Y.Z \
-  --title "AIview vX.Y.Z" \
-  --notes "[CHANGELOGから抽出したリリースノート]"
+# release ワークフローの完了を待つ（5〜10 分かかる）
+gh run watch $(gh run list --workflow=release.yml --branch vX.Y.Z --limit 1 --json databaseId --jq '.[0].databaseId')
 ```
 
-### 10. dmgファイルの作成と添付（オプション）
+**重要**: `gh release create` を手動で呼ばないこと。`release.yml` が `softprops/action-gh-release@v2` でリリース作成とアセットアップロードを一体で行うので、手動作成は重複かつ `update-tap.yml` のレース原因になる。
 
-dmgファイルを作成してリリースに添付する場合：
+### 10. ローカルの AIview を Homebrew でアップグレード
 
-```bash
-# アプリをdmgにパッケージング
-hdiutil create -volname "AIview" -srcfolder "build/Build/Products/Release/AIview.app" -ov -format UDZO "build/AIview-X.Y.Z.dmg"
-
-# GitHubリリースに添付
-gh release upload vX.Y.Z "build/AIview-X.Y.Z.dmg"
-```
-
-### 11. ローカルの AIview を Homebrew でアップグレード
-
-タグ push をトリガーとして GitHub Actions の `update-tap.yml` が `hummer98/homebrew-aiview` を更新するので、それが反映され次第ローカルマシンの AIview を新バージョンに上げる：
+`update-tap.yml` が `hummer98/homebrew-aiview` を更新したのを確認後、ローカルマシンの AIview を新バージョンに上げる：
 
 ```bash
-# tap の更新を取り込む
+# tap の更新ワークフロー完了確認
+gh run list --workflow=update-tap.yml --limit 1
+
+# tap の更新を取り込み
 brew update
 
 # AIview を最新版にアップグレード
 brew upgrade --cask aiview
 ```
 
-**注意**: tap の更新は GitHub Actions 経由で行われるため、タグ push 後 1〜2 分の遅延がある。`brew upgrade` で `Already up-to-date` と出る場合は少し待ってから再実行する。`gh run list --workflow=update-tap.yml --limit 1` で完了を確認できる。
+**注意**: `release.yml` 完了後に `update-tap.yml` が自動連鎖するので、両方が完了するまで合計 5〜12 分程度かかる。
 
 ### 12. 完了報告
 
