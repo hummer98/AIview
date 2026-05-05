@@ -60,6 +60,7 @@
 		A1000055 /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000055 /* SettingsStoreTests.swift */; };
 		A1000057 /* ThumbnailCarouselTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000057 /* ThumbnailCarouselTests.swift */; };
 		A1000058 /* ImageBrowserViewModelSiblingFolderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */; };
+		A1000059 /* IsolatedRecentFoldersStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000059 /* IsolatedRecentFoldersStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -136,6 +137,7 @@
 		A2000055 /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		A2000057 /* ThumbnailCarouselTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCarouselTests.swift; sourceTree = "<group>"; };
 		A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserViewModelSiblingFolderTests.swift; sourceTree = "<group>"; };
+		A2000059 /* IsolatedRecentFoldersStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IsolatedRecentFoldersStore.swift; sourceTree = "<group>"; };
 		A5000005 /* AIviewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIviewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2000080 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		A2000081 /* Developer.xcconfig.sample */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Developer.xcconfig.sample; sourceTree = "<group>"; };
@@ -267,6 +269,7 @@
 		A7000008 /* AIviewTests */ = {
 			isa = PBXGroup;
 			children = (
+				A7000011 /* Support */,
 				A2000017 /* FileSystemAccessTests.swift */,
 				A2000018 /* RecentFoldersStoreTests.swift */,
 				A2000019 /* FolderScannerTests.swift */,
@@ -290,6 +293,14 @@
 				A2000050 /* ThumbnailWarmerTests.swift */,
 			);
 			path = AIviewTests;
+			sourceTree = "<group>";
+		};
+		A7000011 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				A2000059 /* IsolatedRecentFoldersStore.swift */,
+			);
+			path = Support;
 			sourceTree = "<group>";
 		};
 		A7000009 /* Products */ = {
@@ -482,6 +493,7 @@
 				A1000057 /* ThumbnailCarouselTests.swift in Sources */,
 				A1000058 /* ImageBrowserViewModelSiblingFolderTests.swift in Sources */,
 				A1000050 /* ThumbnailWarmerTests.swift in Sources */,
+				A1000059 /* IsolatedRecentFoldersStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

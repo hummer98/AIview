@@ -7,14 +7,18 @@ import XCTest
 @MainActor
 final class ImageBrowserViewModelSlideshowTests: XCTestCase {
     var sut: ImageBrowserViewModel!
+    var recentStoreHelper: IsolatedRecentFoldersStore!
 
     override func setUpWithError() throws {
-        sut = ImageBrowserViewModel()
+        recentStoreHelper = IsolatedRecentFoldersStore(label: "SlideshowTests")
+        sut = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
     }
 
     override func tearDownWithError() throws {
         sut.stopSlideshow()
         sut = nil
+        recentStoreHelper?.cleanup()
+        recentStoreHelper = nil
     }
 
     // MARK: - Initial State Tests

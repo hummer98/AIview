@@ -9,9 +9,11 @@ final class ReloadIntegrationTests: XCTestCase {
     var viewModel: ImageBrowserViewModel!
     var appState: AppState!
     var tempDirectory: URL!
+    var recentStoreHelper: IsolatedRecentFoldersStore!
 
     override func setUpWithError() throws {
-        viewModel = ImageBrowserViewModel()
+        recentStoreHelper = IsolatedRecentFoldersStore(label: "ReloadIntegrationTests")
+        viewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
         appState = AppState()
 
         // テスト用一時ディレクトリを作成
@@ -29,6 +31,9 @@ final class ReloadIntegrationTests: XCTestCase {
             try? FileManager.default.removeItem(at: tempDir)
         }
         tempDirectory = nil
+
+        recentStoreHelper?.cleanup()
+        recentStoreHelper = nil
     }
 
     // MARK: - Helper Methods

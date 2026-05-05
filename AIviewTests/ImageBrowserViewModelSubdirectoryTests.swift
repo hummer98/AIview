@@ -8,9 +8,11 @@ import XCTest
 final class ImageBrowserViewModelSubdirectoryTests: XCTestCase {
     var sut: ImageBrowserViewModel!
     var tempDirectory: URL!
+    var recentStoreHelper: IsolatedRecentFoldersStore!
 
     override func setUpWithError() throws {
-        sut = ImageBrowserViewModel()
+        recentStoreHelper = IsolatedRecentFoldersStore(label: "SubdirectoryTests")
+        sut = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
         tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ImageBrowserViewModelSubdirectoryTests_\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -20,6 +22,8 @@ final class ImageBrowserViewModelSubdirectoryTests: XCTestCase {
         sut.stopSlideshow()
         try? FileManager.default.removeItem(at: tempDirectory)
         sut = nil
+        recentStoreHelper?.cleanup()
+        recentStoreHelper = nil
     }
 
     // MARK: - Initial State Tests

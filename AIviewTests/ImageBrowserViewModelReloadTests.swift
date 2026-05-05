@@ -8,9 +8,11 @@ import XCTest
 final class ImageBrowserViewModelReloadTests: XCTestCase {
     var sut: ImageBrowserViewModel!
     var tempDirectory: URL!
+    var recentStoreHelper: IsolatedRecentFoldersStore!
 
     override func setUpWithError() throws {
-        sut = ImageBrowserViewModel()
+        recentStoreHelper = IsolatedRecentFoldersStore(label: "ReloadTests")
+        sut = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
 
         // テスト用一時ディレクトリを作成
         tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -26,6 +28,9 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
             try? FileManager.default.removeItem(at: tempDir)
         }
         tempDirectory = nil
+
+        recentStoreHelper?.cleanup()
+        recentStoreHelper = nil
     }
 
     // MARK: - Helper Methods

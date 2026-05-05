@@ -8,8 +8,11 @@ import XCTest
 final class FavoritesE2ETests: XCTestCase {
     var testFolderURL: URL!
     var viewModel: ImageBrowserViewModel!
+    var recentStoreHelper: IsolatedRecentFoldersStore!
 
     override func setUp() async throws {
+        recentStoreHelper = IsolatedRecentFoldersStore(label: "FavoritesE2ETests")
+
         // テスト用一時フォルダを作成
         testFolderURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("FavoritesE2ETests_\(UUID().uuidString)")
@@ -23,7 +26,7 @@ final class FavoritesE2ETests: XCTestCase {
             try pngData.write(to: fileURL)
         }
 
-        viewModel = ImageBrowserViewModel()
+        viewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
     }
 
     override func tearDown() async throws {
@@ -31,6 +34,8 @@ final class FavoritesE2ETests: XCTestCase {
             try? FileManager.default.removeItem(at: testFolderURL)
         }
         viewModel = nil
+        recentStoreHelper?.cleanup()
+        recentStoreHelper = nil
     }
 
     // MARK: - Helper Methods
@@ -122,7 +127,7 @@ final class FavoritesE2ETests: XCTestCase {
         XCTAssertEqual(viewModel.currentFavoriteLevel, 0)
 
         // 新しいViewModelで再読み込み
-        let newViewModel = ImageBrowserViewModel()
+        let newViewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
         await newViewModel.openFolder(testFolderURL)
         try await Task.sleep(nanoseconds: 500_000_000)
 
@@ -155,7 +160,7 @@ final class FavoritesE2ETests: XCTestCase {
         XCTAssertEqual(viewModel.currentFavoriteLevel, 0)
 
         // 再読み込み後も解除されていること
-        let newViewModel = ImageBrowserViewModel()
+        let newViewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
         await newViewModel.openFolder(testFolderURL)
         try await Task.sleep(nanoseconds: 500_000_000)
 
