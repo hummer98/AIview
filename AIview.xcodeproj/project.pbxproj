@@ -61,6 +61,8 @@
 		A1000057 /* ThumbnailCarouselTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000057 /* ThumbnailCarouselTests.swift */; };
 		A1000058 /* ImageBrowserViewModelSiblingFolderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */; };
 		A1000059 /* IsolatedRecentFoldersStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000059 /* IsolatedRecentFoldersStore.swift */; };
+		A1000060 /* BeepPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000060 /* BeepPlayer.swift */; };
+		A1000061 /* NoopBeepPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000061 /* NoopBeepPlayer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -138,6 +140,8 @@
 		A2000057 /* ThumbnailCarouselTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCarouselTests.swift; sourceTree = "<group>"; };
 		A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserViewModelSiblingFolderTests.swift; sourceTree = "<group>"; };
 		A2000059 /* IsolatedRecentFoldersStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IsolatedRecentFoldersStore.swift; sourceTree = "<group>"; };
+		A2000060 /* BeepPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeepPlayer.swift; sourceTree = "<group>"; };
+		A2000061 /* NoopBeepPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoopBeepPlayer.swift; sourceTree = "<group>"; };
 		A5000005 /* AIviewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIviewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2000080 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		A2000081 /* Developer.xcconfig.sample */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Developer.xcconfig.sample; sourceTree = "<group>"; };
@@ -246,6 +250,7 @@
 				A2000046 /* MetricsCollector.swift */,
 				A2000047 /* QueueInstrumentation.swift */,
 				A2000049 /* ThumbnailGenerator.swift */,
+				A2000060 /* BeepPlayer.swift */,
 			);
 			path = Domain;
 			sourceTree = "<group>";
@@ -299,6 +304,7 @@
 			isa = PBXGroup;
 			children = (
 				A2000059 /* IsolatedRecentFoldersStore.swift */,
+				A2000061 /* NoopBeepPlayer.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -465,6 +471,7 @@
 				A1000046 /* MetricsCollector.swift in Sources */,
 				A1000047 /* QueueInstrumentation.swift in Sources */,
 				A1000049 /* ThumbnailGenerator.swift in Sources */,
+				A1000060 /* BeepPlayer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -494,6 +501,7 @@
 				A1000058 /* ImageBrowserViewModelSiblingFolderTests.swift in Sources */,
 				A1000050 /* ThumbnailWarmerTests.swift in Sources */,
 				A1000059 /* IsolatedRecentFoldersStore.swift in Sources */,
+				A1000061 /* NoopBeepPlayer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

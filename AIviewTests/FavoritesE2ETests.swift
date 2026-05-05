@@ -26,7 +26,7 @@ final class FavoritesE2ETests: XCTestCase {
             try pngData.write(to: fileURL)
         }
 
-        viewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
+        viewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
     }
 
     override func tearDown() async throws {
@@ -127,7 +127,7 @@ final class FavoritesE2ETests: XCTestCase {
         XCTAssertEqual(viewModel.currentFavoriteLevel, 0)
 
         // 新しいViewModelで再読み込み
-        let newViewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
+        let newViewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
         await newViewModel.openFolder(testFolderURL)
         try await Task.sleep(nanoseconds: 500_000_000)
 
@@ -160,7 +160,7 @@ final class FavoritesE2ETests: XCTestCase {
         XCTAssertEqual(viewModel.currentFavoriteLevel, 0)
 
         // 再読み込み後も解除されていること
-        let newViewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
+        let newViewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
         await newViewModel.openFolder(testFolderURL)
         try await Task.sleep(nanoseconds: 500_000_000)
 

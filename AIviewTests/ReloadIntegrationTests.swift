@@ -13,7 +13,7 @@ final class ReloadIntegrationTests: XCTestCase {
 
     override func setUpWithError() throws {
         recentStoreHelper = IsolatedRecentFoldersStore(label: "ReloadIntegrationTests")
-        viewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
+        viewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
         appState = AppState()
 
         // テスト用一時ディレクトリを作成

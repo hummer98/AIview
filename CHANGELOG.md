@@ -2,6 +2,15 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [Unreleased]
+
+### Developer
+
+- `BeepPlayer` プロトコルを `Domain` 層に追加（本番は `SystemBeepPlayer`、テストは `NoopBeepPlayer`）
+  - `ImageBrowserViewModel.moveToSiblingFolder` 内 3 箇所の `NSSound.beep()` を DI 経由に差し替え
+  - `xcodebuild test` 実行中に実機 Mac から beep 音が鳴らなくなる（`AIviewTests/Support/NoopBeepPlayer.swift` を 6 テストファイル 8 箇所で注入）
+  - 本番側の挙動は変わらず（default 引数で `SystemBeepPlayer` がフォールバック）
+
 ## [0.4.3] - 2026-05-05
 
 ### Added

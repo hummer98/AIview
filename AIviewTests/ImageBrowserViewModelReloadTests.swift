@@ -12,7 +12,7 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
 
     override func setUpWithError() throws {
         recentStoreHelper = IsolatedRecentFoldersStore(label: "ReloadTests")
-        sut = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
+        sut = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
 
         // テスト用一時ディレクトリを作成
         tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

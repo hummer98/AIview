@@ -11,7 +11,7 @@ final class ImageBrowserViewModelSlideshowTests: XCTestCase {
 
     override func setUpWithError() throws {
         recentStoreHelper = IsolatedRecentFoldersStore(label: "SlideshowTests")
-        sut = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
+        sut = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
     }
 
     override func tearDownWithError() throws {

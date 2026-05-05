@@ -11,7 +11,7 @@ final class ImageBrowserViewModelSiblingFolderTests: XCTestCase {
 
     override func setUpWithError() throws {
         recentStoreHelper = IsolatedRecentFoldersStore(label: "SiblingFolderTests")
-        sut = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store)
+        sut = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
 
         tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)

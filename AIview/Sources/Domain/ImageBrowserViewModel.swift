@@ -164,6 +164,7 @@ final class ImageBrowserViewModel {
     let cacheManager: CacheManager
     let thumbnailCacheManager: ThumbnailCacheManager
     let diskCacheStore: DiskCacheStore
+    private let beepPlayer: BeepPlayer
 
     /// プリフェッチ設定
     private let prefetchBackward = 3
@@ -188,7 +189,8 @@ final class ImageBrowserViewModel {
         recentFoldersStore: RecentFoldersStore? = nil,
         favoritesStore: FavoritesStore? = nil,
         cacheManager: CacheManager? = nil,
-        thumbnailCacheManager: ThumbnailCacheManager? = nil
+        thumbnailCacheManager: ThumbnailCacheManager? = nil,
+        beepPlayer: BeepPlayer? = nil
     ) {
         let settings = SettingsStore()
         let diskCacheStore = DiskCacheStore()
@@ -205,6 +207,7 @@ final class ImageBrowserViewModel {
         self.fileSystemAccess = fileSystemAccess ?? FileSystemAccess()
         self.recentFoldersStore = recentFoldersStore ?? RecentFoldersStore()
         self.favoritesStore = favoritesStore ?? FavoritesStore()
+        self.beepPlayer = beepPlayer ?? SystemBeepPlayer()
     }
 
     // MARK: - Folder Operations
@@ -297,11 +300,11 @@ final class ImageBrowserViewModel {
 
     /// 現在フォルダの兄弟フォルダへ移動する
     /// - 兄弟は同一親直下のディレクトリ、`localizedStandardCompare` でソート、`.skipsHiddenFiles`
-    /// - 端ではラップせず NSSound.beep() を鳴らして現状維持
+    /// - 端ではラップせず beepPlayer.beep() を鳴らして現状維持
     /// - 成功時は openFolder(_:) を呼び、通常のフォルダ open と同じ経路に乗る
     func moveToSiblingFolder(direction: SiblingFolderDirection) async {
         guard let currentURL = currentFolderURL else {
-            NSSound.beep()
+            beepPlayer.beep()
             return
         }
 
@@ -313,7 +316,7 @@ final class ImageBrowserViewModel {
         guard let index = siblings.firstIndex(where: {
             $0.resolvingSymlinksInPath().path == currentPath
         }) else {
-            NSSound.beep()
+            beepPlayer.beep()
             return
         }
 
@@ -326,7 +329,7 @@ final class ImageBrowserViewModel {
         }
 
         guard targetIndex >= 0, targetIndex < siblings.count else {
-            NSSound.beep()
+            beepPlayer.beep()
             return
         }
 
