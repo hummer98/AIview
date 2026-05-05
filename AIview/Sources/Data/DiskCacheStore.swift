@@ -84,6 +84,29 @@ actor DiskCacheStore {
         }
     }
 
+    /// 「`.aiview/<name>.jpg` が `modificationDate` に整合した状態で存在するか」だけを
+    /// 確認する軽量チェック。Data は読まない（SMB 越しの I/O コストを避ける）。
+    /// background warmer (`ThumbnailCacheManager.warmFolderDiskCache`) のスキップ判定で使う。
+    /// - Returns: 存在し、かつ mtime 差が 1 秒未満の場合 `true`
+    /// - Note: stale 検出時もこのメソッドはファイルを削除しない（読みが目的でないため、
+    ///   `getThumbnail` のように積極的に掃除する責務を持たせない）。stale なら次回
+    ///   `getThumbnail` 経由で削除される。
+    func hasValidThumbnail(originalURL: URL, modificationDate: Date) -> Bool {
+        let cacheURL = cacheFileURL(for: originalURL)
+        guard fileManager.fileExists(atPath: cacheURL.path) else { return false }
+
+        let cacheMtime: Date?
+        do {
+            cacheMtime = try cacheURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        } catch {
+            return false
+        }
+
+        let tolerance: TimeInterval = 1.0
+        guard let cacheMtime else { return false }
+        return abs(cacheMtime.timeIntervalSince(modificationDate)) < tolerance
+    }
+
     /// サムネイルをディスクに保存する。
     /// - 保存先: `originalURL` と同じフォルダの `.aiview/<lastPathComponent>.jpg`
     /// - 書き込み後に `setAttributes` で mtime を `modificationDate` にそろえる。

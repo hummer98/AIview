@@ -2,6 +2,34 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Background thumbnail warmer: 全件のディスクキャッシュを scan 完了直後に少しずつ充填する
+  - `ImageBrowserViewModel` の scan onComplete / reload / サブディレクトリ切替 / フィルタ切替で `.background` 優先度の Task を起動
+  - `currentIndex` を中心に外側拡散順 (前 1 → 後 1 → 前 2 → 後 2 ...) で巡回
+  - 各 URL について memory hit / disk hit ならスキップ、両 miss なら `.background` で生成 → disk のみ書込（memory には promote しない）
+  - 可視セルが投入する `.high` 優先度ジョブが常に先に dequeue されるため foreground I/O と競合しない
+  - フォルダ全件を順に閲覧する archive ユースケースで「スクロール先で placeholder を見る」確率を下げる
+  - folderID 切替で warmer は cancel される
+
+### Changed
+
+- `ThumbnailGenerator` を `Domain` 層に新設し、`OperationQueue` ベースの並行制御・優先度管理・`OperationRegistry` を集約
+  - 旧来 `ThumbnailCarousel` (Presentation 層) に置かれていた静的メンバを移動
+  - これにより Domain 層の background warmer から共通インフラを直接利用できるようになり、レイヤ違反（Domain → Presentation）を解消
+  - `ThumbnailCarousel.generateThumbnail(for:size:priority:)` は後方互換シムとして残置（既存テスト用）
+- `QueueInstrumentation` を `Presentation` から `Domain` 層へ移動（generation/cache 計測の自然な所属先）
+- `ThumbnailPriority` に `.background` ケース追加（QoS `.background` / queue priority `.veryLow`）
+
+### Developer
+
+- `DiskCacheStore.hasValidThumbnail(originalURL:modificationDate:)` を追加（Data を読まない existence + mtime チェック、warmer のスキップ判定で使用）
+- `ThumbnailCacheManager.warmFolderDiskCache(urls:startIndex:size:generator:)` を追加
+- `ThumbnailCacheManager.outwardOffsets(count:startIndex:)` を追加（中心からの外側拡散 index 列生成、純粋関数）
+- `ThumbnailWarmerTests` を追加（順序・cancel・disk-only 書込みを verify、9 件）
+
 ## [0.4.2] - 2026-05-04
 
 ### Fixed

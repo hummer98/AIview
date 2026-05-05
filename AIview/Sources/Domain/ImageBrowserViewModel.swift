@@ -169,6 +169,15 @@ final class ImageBrowserViewModel {
     private let prefetchBackward = 3
     private let prefetchForward = 12
 
+    /// バックグラウンドサムネイル warmer の Task。
+    /// scan onComplete で起動し、folderID 切替（openFolder/reload/サブディレクトリ切替/フィルタ）で
+    /// `cancel()` する。`.background` 優先度なので foreground I/O とは競合しない。
+    private var thumbnailWarmingTask: Task<Void, Never>?
+
+    /// サムネイルカルーセルの表示サイズ（ThumbnailCarousel 内の `thumbnailSize` と一致）。
+    /// warmer に渡すサイズはこの値で固定。
+    private let thumbnailDisplaySize = CGSize(width: 80, height: 80)
+
     // MARK: - Initialization
 
     init(
@@ -207,6 +216,7 @@ final class ImageBrowserViewModel {
         // 旧フォルダの処理をキャンセル
         await folderScanner.cancelCurrentScan()
         imageLoader.cancelAll()
+        cancelThumbnailWarming()
 
         // 状態をリセット
         currentFolderURL = url
@@ -503,6 +513,37 @@ final class ImageBrowserViewModel {
 
         // 先読みを開始（同期的にタスク作成、UIをブロックしない）
         updatePrefetch(direction: .forward)
+
+        // バックグラウンドサムネイル warmer 起動（archive 閲覧前提でフォルダ全件を順に見ることを想定）
+        startThumbnailWarming()
+    }
+
+    /// バックグラウンドサムネイル warmer を起動する。
+    /// 既存 Task があれば cancel してから新規起動。currentIndex を中心に外側拡散順で
+    /// 全件を `.background` 優先度で disk キャッシュ充填する。
+    private func startThumbnailWarming() {
+        cancelThumbnailWarming()
+        let urls = imageURLs
+        let startIndex = currentIndex
+        let size = thumbnailDisplaySize
+        let manager = thumbnailCacheManager
+        thumbnailWarmingTask = Task(priority: .background) { [weak self] in
+            await manager.warmFolderDiskCache(
+                urls: urls,
+                startIndex: startIndex,
+                size: size,
+                generator: ThumbnailGenerator.shared
+            )
+            await MainActor.run { [weak self] in
+                self?.thumbnailWarmingTask = nil
+            }
+        }
+    }
+
+    /// 進行中の warmer Task をキャンセルする。folderID 切替時に呼ぶ。
+    private func cancelThumbnailWarming() {
+        thumbnailWarmingTask?.cancel()
+        thumbnailWarmingTask = nil
     }
 
     private func loadCurrentImage(startTime: CFAbsoluteTime? = nil) async {
@@ -994,6 +1035,7 @@ final class ImageBrowserViewModel {
         // 既存のスキャンをキャンセル
         await folderScanner.cancelCurrentScan()
         imageLoader.cancelAll()
+        cancelThumbnailWarming()
 
         // ThumbnailCarousel の .task(id: folderID) を再発火させ、サムネイルの世代交代を
         // 確実に trigger するため folderID を更新。imageURLs = [] は hasImages を false にして
@@ -1055,6 +1097,9 @@ final class ImageBrowserViewModel {
                 updatePrefetch(direction: .forward)
             }
 
+            // バックグラウンドサムネイル warmer 起動
+            startThumbnailWarming()
+
             Logger.app.info("Reload complete: \(self.imageURLs.count, privacy: .public) images")
             return true
 
@@ -1110,7 +1155,8 @@ final class ImageBrowserViewModel {
         do {
             let result = try await folderScanner.scanWithSubdirectories(folderURL: folderURL)
 
-            // 表示対象集合が変わるので folderID を更新（サムネイル状態をリセット）
+            // 表示対象集合が変わるので folderID を更新（サムネイル状態をリセット）+ warmer 入れ替え
+            cancelThumbnailWarming()
             folderID = UUID()
             // 結果を状態に反映（既にMainActor上なので直接更新可能）
             subdirectoryURLs = result.subdirectoryURLs
@@ -1128,6 +1174,9 @@ final class ImageBrowserViewModel {
 
         // モードを有効化
         isSubdirectoryMode = true
+
+        // 表示集合が変わったので warmer を起動
+        startThumbnailWarming()
 
         Logger.app.info("Subdirectory mode enabled: \(self.subdirectoryURLs.count, privacy: .public) subdirectories")
     }
@@ -1147,7 +1196,8 @@ final class ImageBrowserViewModel {
         filterLevel = nil
         filteredIndices = []
 
-        // 表示対象集合が親フォルダだけに戻るので folderID を更新
+        // 表示対象集合が親フォルダだけに戻るので folderID を更新 + warmer 入れ替え
+        cancelThumbnailWarming()
         folderID = UUID()
         // 親フォルダの画像を復元
         imageURLs = parentFolderImageURLs
@@ -1166,6 +1216,9 @@ final class ImageBrowserViewModel {
 
         // アンカーベースで currentIndex を同期（親に含まれれば復元、無ければ 0）
         await syncCurrentIndexByAnchor(anchorURL: anchorURL, fallback: 0)
+
+        // 表示集合が変わったので warmer を起動
+        startThumbnailWarming()
 
         Logger.app.info("Subdirectory mode disabled")
     }
@@ -1222,7 +1275,8 @@ final class ImageBrowserViewModel {
             $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
         }
 
-        // 表示対象集合がフィルタ後のお気に入りファイルだけに変わるので folderID を更新
+        // 表示対象集合がフィルタ後のお気に入りファイルだけに変わるので folderID を更新 + warmer 入れ替え
+        cancelThumbnailWarming()
         folderID = UUID()
         // 画像リストを設定（お気に入りファイルのみ）
         imageURLs = sortedURLs
@@ -1245,6 +1299,9 @@ final class ImageBrowserViewModel {
 
         // フィルタリング用のプリフェッチを更新
         updateFilteredPrefetch()
+
+        // 表示集合が変わったので warmer を起動
+        startThumbnailWarming()
     }
 
     /// フィルター解除時にサブディレクトリモードも無効化

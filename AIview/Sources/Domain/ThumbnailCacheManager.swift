@@ -152,6 +152,85 @@ final class ThumbnailCacheManager: Sendable {
         }
     }
 
+    /// バックグラウンドでフォルダ全件のディスクキャッシュを充填する。
+    /// アーカイブ閲覧（基本的にフォルダ全件を順に見る）ユースケースで、ユーザが
+    /// スクロール先で placeholder を見る確率を下げる目的。
+    ///
+    /// 動作:
+    /// - `startIndex` を中心に外側拡散（前 1 → 後 1 → 前 2 → 後 2 ...）の順で URL を巡回
+    /// - 各 URL について
+    ///   - メモリ hit → skip（visible 範囲で取得済みの可能性）
+    ///   - disk 上に valid な `.aiview/<name>.jpg` 存在 → skip（Data は読まない）
+    ///   - 両 miss → `.background` 優先度で生成 → disk のみ書込（メモリには載せない）
+    /// - 1 件ごとに `Task.isCancelled` をチェック + `Task.yield()` で foreground を割り込ませる
+    ///
+    /// 設計の要点:
+    /// - 並列度: 既存の `ThumbnailGenerator.shared` の OperationQueue を共有。可視セルが
+    ///   投入する `.high` ジョブが常に先に dequeue されるので foreground を妨げない
+    /// - メモリ非汚染: `getDiskCachedThumbnail` ではなく軽量 `hasValidThumbnail` を使い、
+    ///   生成成功時も `cacheThumbnail` を呼ばない。可視セルが demand-load で promote する
+    /// - キャンセル: ViewModel が folderID 切替時に Task.cancel() で停止
+    func warmFolderDiskCache(
+        urls: [URL],
+        startIndex: Int,
+        size: CGSize,
+        generator: ThumbnailGenerator
+    ) async {
+        guard !urls.isEmpty else { return }
+        let clampedStart = max(0, min(startIndex, urls.count - 1))
+
+        for offset in Self.outwardOffsets(count: urls.count, startIndex: clampedStart) {
+            if Task.isCancelled { return }
+            let url = urls[offset]
+
+            // Skip 1: メモリ hit（visible 範囲で取得済みの可能性）
+            if getCachedThumbnail(for: url, size: size) != nil { continue }
+
+            // Skip 2: disk 上に valid な `.aiview/<name>.jpg` がある
+            //（mtime 取得失敗時は valid 判定不可なので生成パスに進む）
+            if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+               let modDate = attributes[.modificationDate] as? Date,
+               await diskCacheStore.hasValidThumbnail(originalURL: url, modificationDate: modDate) {
+                continue
+            }
+
+            // 両 miss → 生成
+            guard let thumbnail = await generator.generate(for: url, size: size.width, priority: .background) else {
+                // 生成失敗（壊れた画像、cancel 等）はスキップして次へ
+                if Task.isCancelled { return }
+                await Task.yield()
+                continue
+            }
+
+            if Task.isCancelled { return }
+
+            // disk のみ書込（memory cache には積まない: visible cell が demand-load で promote する）
+            await storeThumbnailToDisk(thumbnail, for: url, size: size)
+
+            // foreground (`.high` op) を割り込ませる機会を提供
+            await Task.yield()
+        }
+    }
+
+    /// `startIndex` を中心に外側へ拡散する index 列を生成する。
+    /// 例: count=10, start=4 → [4, 5, 3, 6, 2, 7, 1, 8, 0, 9]
+    /// 端に達した側はスキップして反対側に集中する。
+    static func outwardOffsets(count: Int, startIndex: Int) -> [Int] {
+        guard count > 0 else { return [] }
+        var result: [Int] = []
+        result.reserveCapacity(count)
+        result.append(startIndex)
+        var step = 1
+        while result.count < count {
+            let forward = startIndex + step
+            let backward = startIndex - step
+            if forward < count { result.append(forward) }
+            if backward >= 0 { result.append(backward) }
+            step += 1
+        }
+        return result
+    }
+
     /// メモリキャッシュをクリア
     func clearMemoryCache() {
         lock.lock()

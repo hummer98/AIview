@@ -53,7 +53,9 @@
 		A1000045 /* Metrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000045 /* Metrics.swift */; };
 		A1000046 /* MetricsCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000046 /* MetricsCollector.swift */; };
 		A1000047 /* QueueInstrumentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000047 /* QueueInstrumentation.swift */; };
+		A1000049 /* ThumbnailGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000049 /* ThumbnailGenerator.swift */; };
 		A1000048 /* MetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000048 /* MetricsTests.swift */; };
+		A1000050 /* ThumbnailWarmerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000050 /* ThumbnailWarmerTests.swift */; };
 		A1000054 /* DiskCacheStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000054 /* DiskCacheStoreTests.swift */; };
 		A1000055 /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000055 /* SettingsStoreTests.swift */; };
 		A1000057 /* ThumbnailCarouselTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000057 /* ThumbnailCarouselTests.swift */; };
@@ -127,7 +129,9 @@
 		A2000045 /* Metrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Metrics.swift; sourceTree = "<group>"; };
 		A2000046 /* MetricsCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsCollector.swift; sourceTree = "<group>"; };
 		A2000047 /* QueueInstrumentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueInstrumentation.swift; sourceTree = "<group>"; };
+		A2000049 /* ThumbnailGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailGenerator.swift; sourceTree = "<group>"; };
 		A2000048 /* MetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsTests.swift; sourceTree = "<group>"; };
+		A2000050 /* ThumbnailWarmerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailWarmerTests.swift; sourceTree = "<group>"; };
 		A2000054 /* DiskCacheStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCacheStoreTests.swift; sourceTree = "<group>"; };
 		A2000055 /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		A2000057 /* ThumbnailCarouselTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCarouselTests.swift; sourceTree = "<group>"; };
@@ -238,6 +242,8 @@
 				A2000035 /* SlideshowTimer.swift */,
 				A2000045 /* Metrics.swift */,
 				A2000046 /* MetricsCollector.swift */,
+				A2000047 /* QueueInstrumentation.swift */,
+				A2000049 /* ThumbnailGenerator.swift */,
 			);
 			path = Domain;
 			sourceTree = "<group>";
@@ -254,7 +260,6 @@
 				A2000032 /* FavoriteIndicator.swift */,
 				A2000038 /* ToastOverlay.swift */,
 				A2000039 /* SlideshowSettingsDialog.swift */,
-				A2000047 /* QueueInstrumentation.swift */,
 			);
 			path = Presentation;
 			sourceTree = "<group>";
@@ -282,6 +287,7 @@
 				A2000055 /* SettingsStoreTests.swift */,
 				A2000057 /* ThumbnailCarouselTests.swift */,
 				A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */,
+				A2000050 /* ThumbnailWarmerTests.swift */,
 			);
 			path = AIviewTests;
 			sourceTree = "<group>";
@@ -447,6 +453,7 @@
 				A1000045 /* Metrics.swift in Sources */,
 				A1000046 /* MetricsCollector.swift in Sources */,
 				A1000047 /* QueueInstrumentation.swift in Sources */,
+				A1000049 /* ThumbnailGenerator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -474,6 +481,7 @@
 				A1000055 /* SettingsStoreTests.swift in Sources */,
 				A1000057 /* ThumbnailCarouselTests.swift in Sources */,
 				A1000058 /* ImageBrowserViewModelSiblingFolderTests.swift in Sources */,
+				A1000050 /* ThumbnailWarmerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
