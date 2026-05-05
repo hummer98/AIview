@@ -403,7 +403,7 @@ final class ImageBrowserViewModel {
         let startTime = CFAbsoluteTimeGetCurrent()
         
         // 新しいタスクを開始（UI更新をブロックしない）
-        currentImageTask = Task {
+        currentImageTask = Task(priority: .userInitiated) {
             // 他のすべての読み込み・プリフェッチをキャンセル
             imageLoader.cancelAllExcept(url)
             

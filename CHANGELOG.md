@@ -4,6 +4,10 @@ All notable changes to AIview will be documented in this file.
 
 ## [Unreleased]
 
+### Performance
+
+- メイン画像読み込みとサムネイル生成の QoS を分離（`.high` サムネイルを `.utility` に格下げ、`jumpToIndex` の `Task` に `.userInitiated` を明示）。矢印キー連打時にメイン画像表示が CPU 競合で遅延しにくくなる
+
 ### Developer
 
 - `BeepPlayer` プロトコルを `Domain` 層に追加（本番は `SystemBeepPlayer`、テストは `NoopBeepPlayer`）

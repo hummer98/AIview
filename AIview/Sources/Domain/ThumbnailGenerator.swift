@@ -12,7 +12,7 @@ enum ThumbnailPriority {
 
     var qos: QualityOfService {
         switch self {
-        case .high: return .userInitiated
+        case .high: return .utility
         case .low: return .utility
         case .background: return .background
         }
