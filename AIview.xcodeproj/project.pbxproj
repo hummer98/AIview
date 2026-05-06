@@ -66,6 +66,8 @@
 		A1000062 /* ThumbnailPriorityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000062 /* ThumbnailPriorityTests.swift */; };
 		A1000063 /* ImageLoaderContentionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000063 /* ImageLoaderContentionTests.swift */; };
 		A1000064 /* DummyImageGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000064 /* DummyImageGenerator.swift */; };
+		A1000065 /* ThumbnailActivityIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000065 /* ThumbnailActivityIndicator.swift */; };
+		A1000066 /* ThumbnailActivityStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000066 /* ThumbnailActivityStateTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -148,6 +150,8 @@
 		A2000062 /* ThumbnailPriorityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailPriorityTests.swift; sourceTree = "<group>"; };
 		A2000063 /* ImageLoaderContentionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageLoaderContentionTests.swift; sourceTree = "<group>"; };
 		A2000064 /* DummyImageGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DummyImageGenerator.swift; sourceTree = "<group>"; };
+		A2000065 /* ThumbnailActivityIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailActivityIndicator.swift; sourceTree = "<group>"; };
+		A2000066 /* ThumbnailActivityStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailActivityStateTests.swift; sourceTree = "<group>"; };
 		A5000005 /* AIviewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIviewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2000080 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		A2000081 /* Developer.xcconfig.sample */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Developer.xcconfig.sample; sourceTree = "<group>"; };
@@ -273,6 +277,7 @@
 				A2000032 /* FavoriteIndicator.swift */,
 				A2000038 /* ToastOverlay.swift */,
 				A2000039 /* SlideshowSettingsDialog.swift */,
+				A2000065 /* ThumbnailActivityIndicator.swift */,
 			);
 			path = Presentation;
 			sourceTree = "<group>";
@@ -304,6 +309,7 @@
 				A2000050 /* ThumbnailWarmerTests.swift */,
 				A2000062 /* ThumbnailPriorityTests.swift */,
 				A2000063 /* ImageLoaderContentionTests.swift */,
+				A2000066 /* ThumbnailActivityStateTests.swift */,
 			);
 			path = AIviewTests;
 			sourceTree = "<group>";
@@ -481,6 +487,7 @@
 				A1000047 /* QueueInstrumentation.swift in Sources */,
 				A1000049 /* ThumbnailGenerator.swift in Sources */,
 				A1000060 /* BeepPlayer.swift in Sources */,
+				A1000065 /* ThumbnailActivityIndicator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -514,6 +521,7 @@
 				A1000062 /* ThumbnailPriorityTests.swift in Sources */,
 				A1000063 /* ImageLoaderContentionTests.swift in Sources */,
 				A1000064 /* DummyImageGenerator.swift in Sources */,
+				A1000066 /* ThumbnailActivityStateTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

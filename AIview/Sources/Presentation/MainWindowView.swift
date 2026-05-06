@@ -96,6 +96,11 @@ struct MainWindowView: View {
                 }
             }
         }
+        if let collector = appState?.metricsCollector {
+            ToolbarItem(placement: .primaryAction) {
+                ThumbnailActivityIndicator(metricsCollector: collector)
+            }
+        }
         ToolbarItem(placement: .primaryAction) {
             Button {
                 showingFolderPicker = true

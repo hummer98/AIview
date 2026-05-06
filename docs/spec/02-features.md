@@ -114,6 +114,16 @@
 
 ウィンドウ上部に現在画像のフルパスを表示し、コピーボタンでクリップボードへ。`MainWindowView` 内で実装。
 
+## サムネイル生成インジケータ（活動時のみ）
+
+ツールバー右端の「フォルダを開く」ボタン左隣に、サムネイル生成キューの稼働状況をリアルタイム表示する補助インジケータ。`ThumbnailActivityIndicator` (Presentation 層) が `MetricsCollector.snapshot()` を 1Hz で購読し、以下に従って表示する:
+
+- `currentInFlight > 0` のとき `gearshape.2.fill` 回転アイコン + 走行中数を表示
+- アイドル復帰後 1 秒のフェードアウト窓を経て完全非表示（`opacity 0` + `frame width 0`）。フリッカー抑制も兼ねる
+- hover ツールチップ: 走行 N / ピーク P / total T, mem hit X% / disk hit Y%
+
+archive viewer のミニマルさを保つため、活動していないときは toolbar 上に存在しない。キーボードショートカットは持たない。
+
 ## 削除（`d` キー）
 
 `FileSystemAccess.moveToTrash` が `NSWorkspace.shared.recycle` を呼ぶ。Trash 不在のボリューム（NAS 等）ではエラートーストを出して中断する（フォールバック削除はしない）。

@@ -16,6 +16,7 @@ A high-performance image viewer for macOS, optimized for browsing large image co
 - **5-Level Favorites** - Rate images ★1-★5 with persistent per-folder storage
 - **Favorite Filtering** - Filter by rating with automatic subdirectory scanning
 - **Slideshow** - Auto-advance with configurable interval (1-60 seconds)
+- **Thumbnail Activity Indicator** - Toolbar icon visible only while thumbnail generation is in flight
 
 ## Keyboard Shortcuts
 

@@ -4,6 +4,14 @@ All notable changes to AIview will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- ツールバー右端に「サムネイル生成キュー インジケータ」を追加（活動時のみ表示）(T026)
+  - `gearshape.2.fill` 回転アイコン + 走行中サムネイル生成数を 1Hz で更新
+  - `currentInFlight == 0` かつ直近 1 秒以内に変化がないとき完全非表示（`opacity 0` + `frame width 0`）
+  - hover でツールチップ「走行 N / ピーク P / total T, mem hit X% / disk hit Y%」を表示
+  - 既存の `MetricsCollector.snapshot()` を購読するのみで、メトリクス収集側への変更なし
+
 ### Fixed
 
 - ツールバー右端のパスとコピーボタンの間の padding 不足を修正（パス Text とコピーボタンを 1 つの `ToolbarItem` 内 `HStack(spacing: 8)` にまとめ、`truncationMode(.middle)` で省略表示時にも視覚的余白を確保）

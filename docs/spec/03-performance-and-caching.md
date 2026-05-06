@@ -79,3 +79,5 @@
 - **QueueInstrumentation**: avgInFlight、p50/p95 待機時間
 
 `⌘⇧D`（開発メニュー → 診断情報をログ出力）で `Logger.metrics` に整形済み文字列を吐く。
+
+ツールバー右端の `ThumbnailActivityIndicator` も同じ `MetricsCollector.snapshot()` を 1Hz で購読し、`thumbnailQueue.currentInFlight > 0` のときだけ歯車アイコン + 走行数を表示する（活動時のみ表示）。詳細は [`02-features.md`](02-features.md#サムネイル生成インジケータ活動時のみ)。
