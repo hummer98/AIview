@@ -4,6 +4,8 @@ All notable changes to AIview will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-05-07
+
 ### Changed
 
 - ファイルパスとコピーボタンを画像オーバーレイからツールバー右端に移動（画像にかぶらないようヘッダー領域へ配置）
@@ -12,14 +14,16 @@ All notable changes to AIview will be documented in this file.
 
 ### Performance
 
-- メイン画像読み込みとサムネイル生成の QoS を分離（`.high` サムネイルを `.utility` に格下げ、`jumpToIndex` の `Task` に `.userInitiated` を明示）。矢印キー連打時にメイン画像表示が CPU 競合で遅延しにくくなる
+- メイン画像読み込みとサムネイル生成の QoS を分離（`.high` サムネイルを `.utility` に格下げ、`jumpToIndex` の `Task` に `.userInitiated` を明示）。矢印キー連打時にメイン画像表示が CPU 競合で遅延しにくくなる (T024)
 
 ### Developer
 
-- `BeepPlayer` プロトコルを `Domain` 層に追加（本番は `SystemBeepPlayer`、テストは `NoopBeepPlayer`）
+- `BeepPlayer` プロトコルを `Domain` 層に追加（本番は `SystemBeepPlayer`、テストは `NoopBeepPlayer`）(T023)
   - `ImageBrowserViewModel.moveToSiblingFolder` 内 3 箇所の `NSSound.beep()` を DI 経由に差し替え
   - `xcodebuild test` 実行中に実機 Mac から beep 音が鳴らなくなる（`AIviewTests/Support/NoopBeepPlayer.swift` を 6 テストファイル 8 箇所で注入）
   - 本番側の挙動は変わらず（default 引数で `SystemBeepPlayer` がフォールバック）
+- `IsolatedRecentFoldersStore` ヘルパーを導入し、`RecentFoldersStore` 系テストで実機 `UserDefaults` を汚染しない構成へ統一 (T022)
+- T024 検証用テストを追加: `ThumbnailPriorityTests`（QoS 値の static チェック）、`ImageLoaderContentionTests`（latency smoke）、`AIviewTests/Support/DummyImageGenerator.swift`（UITests 版のコピー）
 
 ## [0.4.3] - 2026-05-05
 
