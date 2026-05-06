@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// メインウィンドウビュー
 /// Requirements: 1.1, 1.5, 3.1-3.6, 6.1-6.5
@@ -70,14 +71,45 @@ struct MainWindowView: View {
             Text(viewModel.errorMessage ?? "")
         }
         .toolbar {
+            toolbarContent
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        if let path = viewModel.currentImageURL?.path {
+            ToolbarItem(placement: .primaryAction) {
+                Text(path)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 360)
+                    .help(path)
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showingFolderPicker = true
+                    copyImagePathToClipboard(path)
                 } label: {
-                    Label("フォルダを開く", systemImage: "folder")
+                    Label("パスをコピー", systemImage: "doc.on.doc")
                 }
+                .help("パスをコピー")
             }
         }
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                showingFolderPicker = true
+            } label: {
+                Label("フォルダを開く", systemImage: "folder")
+            }
+        }
+    }
+
+    private func copyImagePathToClipboard(_ path: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(path, forType: .string)
+        viewModel.showToast("パスをコピーしました")
     }
 
     private var errorBinding: Binding<Bool> {
@@ -128,8 +160,7 @@ struct MainWindowView: View {
                 isLoading: viewModel.isLoading,
                 hasImages: viewModel.hasImages,
                 favoriteLevel: viewModel.currentFavoriteLevel,
-                isFilterEmpty: viewModel.isFilterEmpty,
-                currentImagePath: viewModel.currentImageURL?.path
+                isFilterEmpty: viewModel.isFilterEmpty
             )
 
             // ステータスバー

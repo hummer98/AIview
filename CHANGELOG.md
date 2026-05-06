@@ -4,6 +4,12 @@ All notable changes to AIview will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- ファイルパスとコピーボタンを画像オーバーレイからツールバー右端に移動（画像にかぶらないようヘッダー領域へ配置）
+  - パスは中央省略表示・最大幅 360pt、ホバー時にフルパスをツールチップで表示
+  - コピー完了時は既存の `ToastOverlay` で「パスをコピーしました」を 2 秒表示
+
 ### Performance
 
 - メイン画像読み込みとサムネイル生成の QoS を分離（`.high` サムネイルを `.utility` に格下げ、`jumpToIndex` の `Task` に `.userInitiated` を明示）。矢印キー連打時にメイン画像表示が CPU 競合で遅延しにくくなる
