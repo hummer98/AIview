@@ -79,21 +79,21 @@ struct MainWindowView: View {
     private var toolbarContent: some ToolbarContent {
         if let path = viewModel.currentImageURL?.path {
             ToolbarItem(placement: .primaryAction) {
-                Text(path)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: 360)
-                    .help(path)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    copyImagePathToClipboard(path)
-                } label: {
-                    Label("パスをコピー", systemImage: "doc.on.doc")
+                HStack(spacing: 8) {
+                    Text(path)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 360)
+                        .help(path)
+                    Button {
+                        copyImagePathToClipboard(path)
+                    } label: {
+                        Label("パスをコピー", systemImage: "doc.on.doc")
+                    }
+                    .help("パスをコピー")
                 }
-                .help("パスをコピー")
             }
         }
         ToolbarItem(placement: .primaryAction) {

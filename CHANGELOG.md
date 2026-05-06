@@ -4,6 +4,10 @@ All notable changes to AIview will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- ツールバー右端のパスとコピーボタンの間の padding 不足を修正（パス Text とコピーボタンを 1 つの `ToolbarItem` 内 `HStack(spacing: 8)` にまとめ、`truncationMode(.middle)` で省略表示時にも視覚的余白を確保）
+
 ## [0.4.4] - 2026-05-07
 
 ### Changed
