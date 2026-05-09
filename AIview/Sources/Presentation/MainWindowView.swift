@@ -77,15 +77,16 @@ struct MainWindowView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        if let path = viewModel.currentImageURL?.path {
-            ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 8) {
+        ToolbarItem(placement: .primaryAction) {
+            HStack(spacing: 8) {
+                if let path = viewModel.currentImageURL?.path {
                     Text(path)
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .frame(maxWidth: 360)
+                        .padding(.leading, 8)
                         .help(path)
                     Button {
                         copyImagePathToClipboard(path)
@@ -94,18 +95,14 @@ struct MainWindowView: View {
                     }
                     .help("パスをコピー")
                 }
-            }
-        }
-        if let collector = appState?.metricsCollector {
-            ToolbarItem(placement: .primaryAction) {
-                ThumbnailActivityIndicator(metricsCollector: collector)
-            }
-        }
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                showingFolderPicker = true
-            } label: {
-                Label("フォルダを開く", systemImage: "folder")
+                if let collector = appState?.metricsCollector {
+                    ThumbnailActivityIndicator(metricsCollector: collector)
+                }
+                Button {
+                    showingFolderPicker = true
+                } label: {
+                    Label("フォルダを開く", systemImage: "folder")
+                }
             }
         }
     }

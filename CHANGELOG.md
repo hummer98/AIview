@@ -2,6 +2,14 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [0.4.6] - 2026-05-09
+
+### Fixed
+
+- ツールバーのレイアウト崩れを修正
+  - パス Text の左端が pill ボーダーに接していた問題を修正（`.padding(.leading, 8)` を追加）
+  - 3 つに分かれていた `ToolbarItem`（パス＋コピー / サムネイル indicator / フォルダピッカ）を 1 つに統合し、`HStack(spacing: 8)` でボタン間の広すぎる間隔を解消
+
 ## [0.4.5] - 2026-05-08
 
 ### Added
