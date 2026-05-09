@@ -395,20 +395,23 @@ final class ImageBrowserViewModel {
 
         let direction: PrefetchDirection = clampedIndex > currentIndex ? .forward : .backward
         currentIndex = clampedIndex
-        
+
         // 前回の読み込みタスクをキャンセル
         currentImageTask?.cancel()
-        
+
         let url = imageURLs[currentIndex]
         let startTime = CFAbsoluteTimeGetCurrent()
-        
+
+        // cancelAllExcept は Task の外で同期呼び出しする。
+        // Task 内で呼ぶと、キャンセル済み Task の body が後から実行された際に
+        // 古い url で新しい load を誤キャンセルする競合が起きる
+        // （矢印キー連打時に index は進むが画像が変わらなくなる事象の原因）。
+        imageLoader.cancelAllExcept(url)
+
         // 新しいタスクを開始（UI更新をブロックしない）
         currentImageTask = Task(priority: .userInitiated) {
-            // 他のすべての読み込み・プリフェッチをキャンセル
-            imageLoader.cancelAllExcept(url)
-            
             await loadCurrentImage(startTime: startTime)
-            
+
             // タスクがキャンセルされていない場合のみプリフェッチ更新
             if !Task.isCancelled {
                 if isFiltering {

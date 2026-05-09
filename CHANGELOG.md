@@ -2,6 +2,14 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [0.4.8] - 2026-05-09
+
+### Fixed
+
+- 矢印キー連打時に「ページインデックスだけ進んでメイン画像が変わらず、戻らないと復帰しない」事象を修正
+  - `jumpToIndex` 内で `imageLoader.cancelAllExcept(url)` を Task の中で呼んでいたため、キャンセル済み Task の body が遅延実行された際に古い url で新しい load を誤キャンセルする競合が発生していた
+  - `cancelAllExcept` を Task の外で同期呼び出しに変更し、常に最新 url で順序通り適用されるよう修正
+
 ## [0.4.7] - 2026-05-09
 
 ### Fixed
