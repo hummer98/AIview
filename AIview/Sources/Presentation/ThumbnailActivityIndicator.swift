@@ -44,53 +44,35 @@ struct ThumbnailActivityState: Sendable, Equatable {
     }
 }
 
-/// サムネイル生成キューの稼働を示すツールバー用インジケータ。
-/// 1Hz で `MetricsCollector.snapshot()` を取得し、`currentInFlight > 0` のときのみ
-/// 歯車アイコン + 数値を表示する。アイドル復帰後は 1 秒のフェードアウト窓を経て消える。
+/// `ThumbnailActivityIndicator` の polling/state を保持する @Observable モデル。
+/// 親 View は `isVisible` を見て、不可視時はインジケータを HStack から取り除ける
+/// （`.frame(width: 0)` 方式だと HStack の `spacing` が両側に残り、レイアウトが詰まらないため）。
 @MainActor
-struct ThumbnailActivityIndicator: View {
-    let metricsCollector: MetricsCollector
+@Observable
+final class ThumbnailActivityModel {
+    private(set) var state: ThumbnailActivityState = .idle
+    private(set) var now: Date = .distantPast
 
-    @State private var state: ThumbnailActivityState = .idle
-    @State private var now: Date = Date()
-    @State private var rotate: Bool = false
+    var isVisible: Bool { state.shouldDisplay(now: now) }
 
-    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let metricsCollector: MetricsCollector
+    private var pollingTask: Task<Void, Never>?
 
-    var body: some View {
-        let visible = state.shouldDisplay(now: now)
-        return Group {
-            HStack(spacing: 4) {
-                Image(systemName: "gearshape.2.fill")
-                    .rotationEffect(.degrees(rotate ? 360 : 0))
-                    .animation(
-                        visible
-                            ? .linear(duration: 2).repeatForever(autoreverses: false)
-                            : .default,
-                        value: rotate
-                    )
-                Text("\(state.inFlight)")
-                    .font(.system(size: 12, weight: .medium).monospacedDigit())
-            }
-            .foregroundColor(.secondary)
-            .help(state.tooltipText)
-            .accessibilityLabel("サムネイル生成中: \(state.inFlight)件")
-        }
-        .frame(width: visible ? nil : 0)
-        .clipped()
-        .opacity(visible ? 1 : 0)
-        .animation(.easeInOut(duration: 0.2), value: visible)
-        .onAppear {
-            rotate = true
-        }
-        .onReceive(timer) { tick in
-            now = tick
-            Task { @MainActor in
-                let snap = await metricsCollector.snapshot()
+    init(metricsCollector: MetricsCollector) {
+        self.metricsCollector = metricsCollector
+    }
+
+    func start() {
+        guard pollingTask == nil else { return }
+        pollingTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                self.now = Date()
+                let snap = await self.metricsCollector.snapshot()
                 let lastNonZero: Date? = snap.thumbnailQueue.currentInFlight > 0
                     ? Date()
-                    : state.lastNonZeroAt
-                state = ThumbnailActivityState(
+                    : self.state.lastNonZeroAt
+                self.state = ThumbnailActivityState(
                     inFlight: snap.thumbnailQueue.currentInFlight,
                     peak: snap.thumbnailQueue.peakInFlight,
                     totalEnqueued: snap.thumbnailQueue.totalEnqueued,
@@ -98,7 +80,41 @@ struct ThumbnailActivityIndicator: View {
                     diskHitRate: snap.thumbnailDisk.hitRate,
                     lastNonZeroAt: lastNonZero
                 )
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
+        }
+    }
+
+    func stop() {
+        pollingTask?.cancel()
+        pollingTask = nil
+    }
+}
+
+/// サムネイル生成キューの稼働を示すツールバー用インジケータ。
+/// 表示判定は親側で `model.isVisible` により行うため、本 View は常に可視のシンプルなレンダリングのみ担当する。
+@MainActor
+struct ThumbnailActivityIndicator: View {
+    let state: ThumbnailActivityState
+
+    @State private var rotate: Bool = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "gearshape.2.fill")
+                .rotationEffect(.degrees(rotate ? 360 : 0))
+                .animation(
+                    .linear(duration: 2).repeatForever(autoreverses: false),
+                    value: rotate
+                )
+            Text("\(state.inFlight)")
+                .font(.system(size: 12, weight: .medium).monospacedDigit())
+        }
+        .foregroundColor(.secondary)
+        .help(state.tooltipText)
+        .accessibilityLabel("サムネイル生成中: \(state.inFlight)件")
+        .onAppear {
+            rotate = true
         }
     }
 }

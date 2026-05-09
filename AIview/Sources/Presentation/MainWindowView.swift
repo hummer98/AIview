@@ -8,6 +8,7 @@ struct MainWindowView: View {
     @Environment(AppState.self) private var appState: AppState?
     @State private var viewModel = ImageBrowserViewModel()
     @State private var showingFolderPicker = false
+    @State private var thumbnailActivityModel: ThumbnailActivityModel?
 
     var body: some View {
         mainBody
@@ -86,7 +87,7 @@ struct MainWindowView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .frame(maxWidth: 360)
-                        .padding(.leading, 8)
+                        .padding(.leading, 12)
                         .help(path)
                     Button {
                         copyImagePathToClipboard(path)
@@ -95,8 +96,8 @@ struct MainWindowView: View {
                     }
                     .help("パスをコピー")
                 }
-                if let collector = appState?.metricsCollector {
-                    ThumbnailActivityIndicator(metricsCollector: collector)
+                if let model = thumbnailActivityModel, model.isVisible {
+                    ThumbnailActivityIndicator(state: model.state)
                 }
                 Button {
                     showingFolderPicker = true
@@ -142,6 +143,12 @@ struct MainWindowView: View {
                 queueInstrumentation: QueueInstrumentation.thumbnailQueueShared
             )
             appState.startMetricsSampling()
+
+            if thumbnailActivityModel == nil {
+                let model = ThumbnailActivityModel(metricsCollector: appState.metricsCollector)
+                model.start()
+                thumbnailActivityModel = model
+            }
         }
 
         if let folderPath = ProcessInfo.processInfo.environment["AIVIEW_TEST_FOLDER"] {

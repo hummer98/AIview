@@ -2,6 +2,20 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [0.4.7] - 2026-05-09
+
+### Fixed
+
+- ツールバーのレイアウト崩れを再修正
+  - `ThumbnailActivityIndicator` を不可視時 (`.frame(width: 0)`) でも `HStack(spacing: 8)` の左右に 8pt ずつ計 16pt のデッドスペースが残り、コピーボタンとフォルダボタンの間が詰まらなかった問題を修正
+  - polling/state を `@Observable ThumbnailActivityModel` に引き上げ、親 View 側で `if model.isVisible` により不可視時は HStack から完全に除外
+  - パス Text の左 padding を 8pt → 12pt に拡大し、pill ボーダーとの余白をより明確に
+
+### Developer
+
+- `ThumbnailActivityModel`（@Observable）追加: 1Hz polling と `isVisible` 判定を保持。View 側は `state` を受け取るだけのシンプル構造に変更
+- `ThumbnailActivityModel` 用テスト追加（idle 時に `isVisible == false`）
+
 ## [0.4.6] - 2026-05-09
 
 ### Fixed

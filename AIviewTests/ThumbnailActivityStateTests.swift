@@ -103,7 +103,14 @@ final class ThumbnailActivityStateTests: XCTestCase {
     /// （body 評価は SwiftUI 側に任せ、テストでは構築のみ確認）。
     @MainActor
     func testThumbnailActivityIndicator_canBeInstantiated() {
+        _ = ThumbnailActivityIndicator(state: .idle)
+    }
+
+    /// `ThumbnailActivityModel` は MetricsCollector を渡せば構築でき、`isVisible` は idle 時に false。
+    @MainActor
+    func testThumbnailActivityModel_initialIsVisible_isFalse() {
         let collector = MetricsCollector()
-        _ = ThumbnailActivityIndicator(metricsCollector: collector)
+        let model = ThumbnailActivityModel(metricsCollector: collector)
+        XCTAssertFalse(model.isVisible)
     }
 }
