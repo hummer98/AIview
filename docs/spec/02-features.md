@@ -124,6 +124,17 @@
 
 archive viewer のミニマルさを保つため、活動していないときは toolbar 上に存在しない。キーボードショートカットは持たない。
 
+## ウィンドウ状態の復元
+
+複数ウィンドウを開いた状態でアプリを終了すると、次回起動時に各ウィンドウのフォルダ・位置・サイズが自動的に復元される。実装は SwiftUI の標準 state restoration を利用:
+
+- `AIviewAppDelegate.applicationSupportsSecureRestorableState(_:)` が `true` を返すことで、macOS の secure state restoration が有効化される（`@NSApplicationDelegateAdaptor` で `AIviewApp` に注入）
+- ウィンドウフレーム（位置・サイズ）と `WindowGroup` のウィンドウ数は OS が自動で記録・復元する
+- 各ウィンドウが開いていたフォルダパスは `MainWindowView` の `@SceneStorage("currentFolderPath")` で per-scene に永続化し、`viewModel.currentFolderURL` の変化を `onChange` で書き戻す
+- 復元時は `handleAppear` で `storedFolderPath` を読み、`appState.openRecentFolder(_:)` 経由で開く（既存の bookmark 解決ロジックをそのまま利用）
+
+macOS のシステム設定「アプリを終了するとウィンドウを閉じる」がオンの場合は OS 側で復元が抑制される（既定はオフ）。
+
 ## 削除（`d` キー）
 
 `FileSystemAccess.moveToTrash` が `NSWorkspace.shared.recycle` を呼ぶ。Trash 不在のボリューム（NAS 等）ではエラートーストを出して中断する（フォールバック削除はしない）。

@@ -2,10 +2,20 @@ import SwiftUI
 import AppKit
 import os
 
+/// macOS の secure state restoration を有効化するための NSApplicationDelegate。
+/// SwiftUI `WindowGroup` は applicationSupportsSecureRestorableState=true を返したときに
+/// 終了時に開いていたウィンドウ群（数・位置・サイズ）を次回起動時に自動復元する。
+final class AIviewAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+        true
+    }
+}
+
 /// AIview - macOS向け高速画像ビューワーアプリケーション
 /// 大量画像（1000〜2000枚規模）を待ち時間なく確認・選別するためのアプリ
 @main
 struct AIviewApp: App {
+    @NSApplicationDelegateAdaptor(AIviewAppDelegate.self) private var appDelegate
     @State private var appState = AppState()
 
     private var isUITestMode: Bool {

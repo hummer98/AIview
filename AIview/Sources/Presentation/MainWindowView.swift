@@ -10,6 +10,11 @@ struct MainWindowView: View {
     @State private var showingFolderPicker = false
     @State private var thumbnailActivityModel: ThumbnailActivityModel?
 
+    /// 各ウィンドウが開いていたフォルダパス。SwiftUI の Scene 復元時に自動で
+    /// 同じウィンドウへ復元される。Bookmark 解決は `appState.openRecentFolder(_:)`
+    /// 経由で既存ロジックを再利用する。
+    @SceneStorage("currentFolderPath") private var storedFolderPath: String = ""
+
     var body: some View {
         mainBody
     }
@@ -34,6 +39,7 @@ struct MainWindowView: View {
             }
             .onChange(of: viewModel.currentFolderURL) {
                 appState?.hasCurrentFolder = (viewModel.currentFolderURL != nil)
+                storedFolderPath = viewModel.currentFolderURL?.path ?? ""
             }
             .navigationTitle(viewModel.currentFolderURL?.path ?? "AIview")
             .onAppear {
@@ -156,6 +162,14 @@ struct MainWindowView: View {
             Task {
                 await viewModel.openFolder(url)
             }
+            return
+        }
+
+        // Scene 復元: 前回このウィンドウが開いていたフォルダを再オープン。
+        // 既存の bookmark 解決ロジックを使うため appState.openRecentFolder() 経由で渡す。
+        if !storedFolderPath.isEmpty, viewModel.currentFolderURL == nil, let appState {
+            let url = URL(fileURLWithPath: storedFolderPath)
+            appState.openRecentFolder(url)
         }
     }
 

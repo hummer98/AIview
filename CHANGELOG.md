@@ -2,6 +2,22 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [0.5.0] - 2026-05-09
+
+### Added
+
+- ウィンドウ状態の自動復元
+  - 終了時に開いていた複数ウィンドウを、フォルダ・位置・サイズごと次回起動時に復元
+  - macOS の secure state restoration を `AIviewAppDelegate.applicationSupportsSecureRestorableState` で有効化
+  - 各ウィンドウのフォルダパスは `@SceneStorage("currentFolderPath")` で per-scene に永続化
+  - 復元時は既存の `appState.openRecentFolder(_:)` 経由で bookmark 解決を再利用
+  - macOS のシステム設定「アプリを終了するとウィンドウを閉じる」がオンの場合は OS 側で復元が抑制される（既定はオフ）
+
+### Documentation
+
+- `docs/spec/02-features.md` にウィンドウ状態復元のセクションを追加
+- `README.md` / `README-ja.md` の Features 一覧に Window State Restoration を追加
+
 ## [0.4.8] - 2026-05-09
 
 ### Fixed
