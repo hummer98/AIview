@@ -1117,6 +1117,31 @@ final class ImageBrowserViewModel {
         }
     }
 
+    /// 現在フォルダのサムネイルキャッシュ (`.aiview/*.jpg`) を削除し、メモリキャッシュをクリアして
+    /// リロード（＝ディスクキャッシュ再生成）する。
+    /// - mtime のみで hit 判定するディスクキャッシュは、デコードオプション変更などで内容が古くなっても
+    ///   自動失効しないため、向きの修正等を反映させたいときの手動再生成手段として用意する。
+    /// - `favorites.json` は削除対象に含まれない（`DiskCacheStore.removeThumbnails` が元ファイル単位で算出）。
+    /// - Returns: 実行された場合は true、フォルダ未選択で無視された場合は false
+    func clearThumbnailCacheAndReload() async -> Bool {
+        guard currentFolderURL != nil else {
+            Logger.app.debug("Clear thumbnail cache ignored: no folder selected")
+            return false
+        }
+
+        // reloadCurrentFolder() が imageURLs を空にする前に削除対象を確定する
+        let targets = imageURLs
+        let removed = await diskCacheStore.removeThumbnails(for: targets)
+        Logger.app.info("Cleared \(removed, privacy: .public) disk thumbnail(s); regenerating")
+
+        // メモリキャッシュもクリアしないとセッション中は古い画像が残る
+        thumbnailCacheManager.clearMemoryCache()
+        cacheManager.clearMemoryCache()
+
+        // 再スキャン → startThumbnailWarming() がディスクキャッシュを再生成する
+        return await reloadCurrentFolder()
+    }
+
     /// リロード後の位置復元
     /// Requirements: 3.1, 3.2, 3.3
     private func restorePosition(savedImageURL: URL?, savedIndex: Int) {

@@ -64,6 +64,8 @@
 
 `CGImageSourceCreateThumbnailAtIndex` + `kCGImageSourceShouldCacheImmediately` でフルデコードを 1 回で完了。
 
+`kCGImageSourceCreateThumbnailWithTransform: true` を指定し、EXIF Orientation タグを適用した正しい向きでデコードする（フルサイズ表示・サムネイル生成の双方）。これを省くと縦位置撮影の写真が横向きのまま表示される。なお既存のディスクキャッシュ（`.aiview/*.jpg`）はバージョン機構を持たず mtime のみで hit 判定するため、本オプション導入前に生成済みのサムネイルは元ファイルの mtime が変わるまで旧来の向きで残る（受容する既知の挙動）。
+
 ## サムネイル生成の bounded concurrency
 
 `QueueInstrumentation.thumbnailQueueShared` がキュー長と in-flight 数を 1Hz でサンプリング。Window-based priority（表示中のサムネイルを優先）+ 上限付き並列度で UI スレッドの飢餓を防ぐ。

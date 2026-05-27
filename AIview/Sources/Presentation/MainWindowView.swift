@@ -34,6 +34,9 @@ struct MainWindowView: View {
             .onChange(of: appState?.shouldReloadFolder) {
                 handleReloadRequest()
             }
+            .onChange(of: appState?.shouldClearThumbnailCache) {
+                handleClearThumbnailCacheRequest()
+            }
             .onChange(of: appState?.siblingFolderRequest) { _, newValue in
                 handleSiblingFolderRequest(newValue)
             }
@@ -439,6 +442,15 @@ struct MainWindowView: View {
         Task {
             _ = await viewModel.reloadCurrentFolder()
             appState?.clearReloadRequest()
+        }
+    }
+
+    /// サムネイルキャッシュ削除＋再生成リクエストを処理
+    private func handleClearThumbnailCacheRequest() {
+        guard appState?.shouldClearThumbnailCache == true else { return }
+        Task {
+            _ = await viewModel.clearThumbnailCacheAndReload()
+            appState?.clearThumbnailCacheRequest()
         }
     }
 

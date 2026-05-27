@@ -158,6 +158,31 @@ actor DiskCacheStore {
         Logger.cacheManager.debug("Stored thumbnail: \(cacheURL.lastPathComponent, privacy: .public)")
     }
 
+    /// 指定した元ファイル群に対応するサムネイルキャッシュ (`.aiview/<name>.jpg`) を削除する。
+    /// - 対象は元ファイル単位で算出するため、`.aiview/favorites.json` 等のキャッシュ以外の
+    ///   ファイルには一切触れない（ディレクトリ単位削除をしない理由はファイル冒頭の Safety Notes 参照）。
+    /// - 個々の削除失敗は warning ログのみでスキップし、可能な限り削除を続ける (best effort)。
+    /// - Returns: 実際に削除できたファイル数
+    func removeThumbnails(for originalURLs: [URL]) -> Int {
+        var removed = 0
+        for url in originalURLs {
+            let cacheURL = cacheFileURL(for: url)
+            guard fileManager.fileExists(atPath: cacheURL.path) else { continue }
+            do {
+                try fileManager.removeItem(at: cacheURL)
+                removed += 1
+            } catch {
+                Logger.cacheManager.warning(
+                    "Failed to remove disk cache: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+        if removed > 0 {
+            Logger.cacheManager.info("Removed \(removed, privacy: .public) disk cache thumbnail(s)")
+        }
+        return removed
+    }
+
     // MARK: - Metrics
 
     func metricsSnapshot() -> DiskIOMetricsSnapshot {

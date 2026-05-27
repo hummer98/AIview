@@ -230,6 +230,7 @@ final class ThumbnailGenerator: @unchecked Sendable {
 
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true, // EXIF orientation を適用
             kCGImageSourceThumbnailMaxPixelSize: size * 2, // Retina対応
             kCGImageSourceShouldCacheImmediately: true
         ]

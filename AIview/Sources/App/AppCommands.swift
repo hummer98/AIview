@@ -55,6 +55,12 @@ struct AppCommands: Commands {
             .keyboardShortcut("r", modifiers: .command)
             .disabled(!appState.hasCurrentFolder)
 
+            Button("サムネイルキャッシュを削除して再生成") {
+                appState.triggerClearThumbnailCache()
+            }
+            .keyboardShortcut("r", modifiers: [.command, .shift])
+            .disabled(!appState.hasCurrentFolder)
+
             Divider()
 
             Button("前のフォルダ") {

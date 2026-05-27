@@ -61,6 +61,19 @@ final class AppState {
         shouldReloadFolder = false
     }
 
+    /// サムネイルキャッシュの削除＋再生成が要求されているか（Viewで監視し、ViewModelに伝播）
+    private(set) var shouldClearThumbnailCache = false
+
+    /// サムネイルキャッシュの削除＋再生成をトリガー
+    func triggerClearThumbnailCache() {
+        shouldClearThumbnailCache = true
+    }
+
+    /// サムネイルキャッシュ削除リクエストをクリア
+    func clearThumbnailCacheRequest() {
+        shouldClearThumbnailCache = false
+    }
+
     // MARK: - Sibling Folder Navigation
 
     /// 兄弟フォルダ移動のリクエスト（nil なら未要求）

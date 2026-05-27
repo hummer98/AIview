@@ -292,8 +292,11 @@ final class ImageLoader: Sendable {
         }
 
         // デコードオプションを構築
+        // kCGImageSourceCreateThumbnailWithTransform: EXIF orientation を適用して
+        // 縦位置撮影の写真などを正しい向きでデコードする
         var options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true
         ]
 

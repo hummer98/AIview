@@ -2,6 +2,22 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [0.5.1] - 2026-05-27
+
+### Added
+
+- 表示メニューに「サムネイルキャッシュを削除して再生成」（`⌘⇧R`）を追加
+  - 現在フォルダの画像に対応するディスクキャッシュ（`.aiview/<name>.jpg`）を削除し、メモリキャッシュ（フルサイズ・サムネイル）をクリアしてからリロード・再生成する
+  - ディスクキャッシュは mtime のみで hit 判定するため、デコードオプション変更（EXIF Orientation 適用など）のように元ファイルの mtime が変わらない内容変更を反映させる手動手段
+  - 削除対象は元ファイル単位で算出するため `.aiview/favorites.json` には触れず、お気に入りは保持される
+  - スコープは現在フォルダのみ（中央 index を持たない設計上、全フォルダ一括消去は提供しない）
+
+### Fixed
+
+- EXIF Orientation を持つ写真（縦位置撮影など）が横向きのまま表示される事象を修正
+  - `ImageLoader.decodeImage`（フルサイズ表示）と `ThumbnailGenerator.renderThumbnail`（サムネイル）の `CGImageSourceCreateThumbnailAtIndex` オプションに `kCGImageSourceCreateThumbnailWithTransform: true` を追加し、Orientation タグを適用してデコードするよう変更
+  - フルサイズ表示はメモリキャッシュのみのため次回読み込みで即反映。既存のディスクキャッシュ（`.aiview/*.jpg`）は mtime のみで hit 判定するため、修正前に生成済みのサムネイルは元ファイルの mtime が変わるまで旧来の向きで残る（受容する既知の挙動）
+
 ## [0.5.0] - 2026-05-09
 
 ### Added
