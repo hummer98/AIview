@@ -23,6 +23,28 @@ struct MainWindowView: View {
 
     @ViewBuilder
     private var mainBody: some View {
+        // NOTE: モディファイア連鎖を分割している（bodyWithOpenHandlers）。
+        // Release ビルド（whole-module optimization）では .onChange を一本の式に
+        // 多数連結すると Swift 型チェッカーがタイムアウトする（"unable to type-check
+        // this expression in reasonable time"）。Debug ビルドでは通るため、追加時は注意。
+        bodyWithOpenHandlers
+            .onChange(of: appState?.siblingFolderRequest) { _, newValue in
+                handleSiblingFolderRequest(newValue)
+            }
+            .onChange(of: viewModel.currentFolderURL) {
+                appState?.hasCurrentFolder = (viewModel.currentFolderURL != nil)
+                storedFolderPath = viewModel.currentFolderURL?.path ?? ""
+            }
+            .navigationTitle(viewModel.currentFolderURL?.path ?? "AIview")
+            .onAppear {
+                handleAppear()
+            }
+    }
+
+    /// フォルダ / ファイルを開く系の AppState 監視ハンドラ群。
+    /// mainBody から分割して型チェック式の複雑度を下げている（理由は mainBody のコメント参照）。
+    @ViewBuilder
+    private var bodyWithOpenHandlers: some View {
         baseContent
             .onChange(of: appState?.showFolderPicker) { _, newValue in
                 if newValue == true {
@@ -45,17 +67,6 @@ struct MainWindowView: View {
             }
             .onChange(of: appState?.shouldClearThumbnailCache) {
                 handleClearThumbnailCacheRequest()
-            }
-            .onChange(of: appState?.siblingFolderRequest) { _, newValue in
-                handleSiblingFolderRequest(newValue)
-            }
-            .onChange(of: viewModel.currentFolderURL) {
-                appState?.hasCurrentFolder = (viewModel.currentFolderURL != nil)
-                storedFolderPath = viewModel.currentFolderURL?.path ?? ""
-            }
-            .navigationTitle(viewModel.currentFolderURL?.path ?? "AIview")
-            .onAppear {
-                handleAppear()
             }
     }
 
