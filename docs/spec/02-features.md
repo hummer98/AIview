@@ -9,6 +9,7 @@
 | `←` / `→` | 前 / 次の画像 |
 | `⌘↑` / `⌘↓` | 前 / 次の兄弟フォルダへ移動 |
 | `⌘O` | フォルダを開く |
+| `⌘⇧O` | ファイルパスを入力して開く |
 | `⌘R` | 現在のフォルダをリロード |
 | `⌘⇧R` | サムネイルキャッシュを削除して再生成 |
 | `d` | 現在の画像を Trash へ移動 |
@@ -47,6 +48,17 @@
 ### 画像ナビ
 
 `ImageBrowserViewModel.next()` / `previous()` が現在 index を進め、`ImageLoader` に表示優先（P0）でロード依頼を送る。同時に方向を渡してプリフェッチ起動。詳細は [`03-performance-and-caching.md`](03-performance-and-caching.md)。
+
+### ファイルパスを入力して開く（⌘⇧O）
+
+メニュー「ファイル > ファイルパスを入力して開く...」で入力ダイアログを表示し、入力された絶対パスを開く。`AppState.showFilePathInput` を View が監視してダイアログを表示し、`ImageBrowserViewModel.openPath(_:)` に渡す。
+
+- 先頭の `~` はホームディレクトリに展開する。
+- パスがディレクトリならフォルダとして開く（`openFolder`）。
+- パスが画像ファイルなら親フォルダを開き、その画像を選択状態にする（`openFile` → `openFolder(_:initialImageURL:)`。スキャン完了後に `handleScanComplete` で `lastPathComponent` 一致により対象 index へジャンプ）。
+- 存在しないパスは `errorMessage` を設定し、フォルダは開かない。
+
+アプリは非サンドボックス（`com.apple.security.app-sandbox = false`）のため、security-scoped bookmark なしで任意のパスにアクセスできる。
 
 ### 兄弟フォルダ移動（⌘↑↓）
 

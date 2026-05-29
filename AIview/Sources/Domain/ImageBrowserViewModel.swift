@@ -213,7 +213,10 @@ final class ImageBrowserViewModel {
     // MARK: - Folder Operations
 
     /// フォルダを開く
-    func openFolder(_ url: URL) async {
+    /// フォルダを開く。
+    /// - Parameter initialImageURL: 指定すると、スキャン完了後にその画像を選択状態にする
+    ///   （ファイルパス指定で開いた場合など）。nil なら先頭画像から表示する。
+    func openFolder(_ url: URL, initialImageURL: URL? = nil) async {
         Logger.app.info("Opening folder: \(url.path, privacy: .public)")
 
         // 旧フォルダの処理をキャンセル
@@ -223,6 +226,7 @@ final class ImageBrowserViewModel {
 
         // 状態をリセット
         currentFolderURL = url
+        pendingInitialImageURL = initialImageURL
         folderID = UUID()
         imageURLs = []
         currentIndex = 0
@@ -272,6 +276,36 @@ final class ImageBrowserViewModel {
                 self.isScanningFolder = false
             }
         }
+    }
+
+    /// スキャン完了後に選択させたい画像 URL（ファイルパス指定 open 用）。
+    /// `openFolder(_:initialImageURL:)` で設定し、`handleScanComplete` で解決して nil に戻す。
+    private var pendingInitialImageURL: URL?
+
+    /// ユーザーが入力した任意のパスを開く。
+    /// - ディレクトリならフォルダとして開く。
+    /// - 画像ファイルなら親フォルダを開いてその画像を選択状態にする。
+    /// - 存在しない場合は errorMessage を設定する。
+    /// アプリは非サンドボックスのため、security-scoped bookmark なしで任意パスにアクセスできる。
+    func openPath(_ url: URL) async {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+            errorMessage = "パスが見つかりません: \(url.path)"
+            Logger.app.warning("openPath: not found: \(url.path, privacy: .public)")
+            return
+        }
+
+        if isDirectory.boolValue {
+            await openFolder(url)
+        } else {
+            await openFile(url)
+        }
+    }
+
+    /// 画像ファイルのパスを開く（親フォルダを開き、その画像を選択状態にする）。
+    func openFile(_ fileURL: URL) async {
+        let folderURL = fileURL.deletingLastPathComponent()
+        await openFolder(folderURL, initialImageURL: fileURL)
     }
 
     /// 最近使ったフォルダを開く
@@ -504,17 +538,29 @@ final class ImageBrowserViewModel {
     }
 
     private func handleScanComplete(_ urls: [URL]) async {
+        var didJumpToInitialImage = false
         await MainActor.run {
             self.imageURLs = urls.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
             self.isScanningFolder = false
 
-            // 現在のインデックスが有効か確認
-            if let current = self.currentImageURL,
-               let newIndex = self.imageURLs.firstIndex(of: current) {
+            if let target = self.pendingInitialImageURL,
+               let targetIndex = self.imageURLs.firstIndex(where: { $0.lastPathComponent == target.lastPathComponent }) {
+                // ファイルパス指定で開いた場合は該当画像を選択状態にする
+                self.currentIndex = targetIndex
+                didJumpToInitialImage = true
+            } else if let current = self.currentImageURL,
+                      let newIndex = self.imageURLs.firstIndex(of: current) {
+                // 現在のインデックスが有効か確認
                 self.currentIndex = newIndex
             }
+            self.pendingInitialImageURL = nil
 
             Logger.app.info("Scan complete: \(urls.count, privacy: .public) images")
+        }
+
+        // 初期画像へジャンプした場合は先頭画像（handleFirstImage で読込済み）ではなく対象を読み込む
+        if didJumpToInitialImage {
+            await loadCurrentImage()
         }
 
         // 先読みを開始（同期的にタスク作成、UIをブロックしない）

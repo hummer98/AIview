@@ -24,6 +24,11 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut("o", modifiers: .command)
 
+            Button("ファイルパスを入力して開く...") {
+                appState.showFilePathInput = true
+            }
+            .keyboardShortcut("o", modifiers: [.command, .shift])
+
             // 最近使ったフォルダサブメニュー
             Menu("最近使用したフォルダ") {
                 let folders = appState.recentFolders

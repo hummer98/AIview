@@ -9,6 +9,9 @@ final class AppState {
     /// フォルダ選択ダイアログを表示するフラグ
     var showFolderPicker = false
 
+    /// ファイルパス入力ダイアログを表示するフラグ
+    var showFilePathInput = false
+
     /// 最近使ったフォルダから開くURL（nilでない場合、ビューで処理される）
     var openRecentFolderURL: URL?
 

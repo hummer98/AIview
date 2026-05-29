@@ -307,4 +307,46 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
 
         XCTAssertNotEqual(beforeReload, afterReload, "reload で folderID は変わるべき")
     }
+
+    // MARK: - openPath / openFile (ファイルパス入力で開く)
+
+    /// ディレクトリのパスを openPath すると、そのフォルダがフォルダとして開かれる。
+    func testOpenPath_withDirectory_opensFolder() async throws {
+        _ = try createTestImage(named: "001.png", in: tempDirectory)
+        _ = try createTestImage(named: "002.png", in: tempDirectory)
+
+        await sut.openPath(tempDirectory)
+        try await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertEqual(sut.currentFolderURL, tempDirectory, "ディレクトリ指定でそのフォルダが開かれるべき")
+        XCTAssertEqual(sut.imageURLs.count, 2)
+        XCTAssertNil(sut.errorMessage)
+    }
+
+    /// 画像ファイルのパスを openPath すると、親フォルダが開かれ、その画像が選択状態になる。
+    func testOpenPath_withImageFile_opensParentAndSelectsThatImage() async throws {
+        _ = try createTestImage(named: "001.png", in: tempDirectory)
+        let target = try createTestImage(named: "002.png", in: tempDirectory)
+        _ = try createTestImage(named: "003.png", in: tempDirectory)
+
+        await sut.openPath(target)
+        try await Task.sleep(for: .milliseconds(200))
+
+        // deletingLastPathComponent はディレクトリ URL に末尾 / を付けるため path で比較する
+        XCTAssertEqual(sut.currentFolderURL?.path, tempDirectory.path, "ファイルの親フォルダが開かれるべき")
+        XCTAssertEqual(sut.imageURLs.count, 3)
+        XCTAssertEqual(sut.currentImageURL?.lastPathComponent, "002.png",
+                       "指定した画像が選択状態（currentImage）になるべき。先頭ではなく対象を選ぶ")
+    }
+
+    /// 存在しないパスを openPath すると errorMessage が設定され、フォルダは開かれない。
+    func testOpenPath_withNonexistentPath_setsErrorAndDoesNotOpen() async throws {
+        let missing = tempDirectory.appendingPathComponent("does_not_exist.png")
+
+        await sut.openPath(missing)
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertNotNil(sut.errorMessage, "存在しないパスは errorMessage を設定すべき")
+        XCTAssertNil(sut.currentFolderURL, "存在しないパスでフォルダを開いてはいけない")
+    }
 }

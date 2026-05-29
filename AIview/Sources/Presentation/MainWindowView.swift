@@ -8,6 +8,8 @@ struct MainWindowView: View {
     @Environment(AppState.self) private var appState: AppState?
     @State private var viewModel = ImageBrowserViewModel()
     @State private var showingFolderPicker = false
+    @State private var showingFilePathInput = false
+    @State private var filePathInput = ""
     @State private var thumbnailActivityModel: ThumbnailActivityModel?
 
     /// 各ウィンドウが開いていたフォルダパス。SwiftUI の Scene 復元時に自動で
@@ -26,6 +28,13 @@ struct MainWindowView: View {
                 if newValue == true {
                     showingFolderPicker = true
                     appState?.showFolderPicker = false
+                }
+            }
+            .onChange(of: appState?.showFilePathInput) { _, newValue in
+                if newValue == true {
+                    filePathInput = ""
+                    showingFilePathInput = true
+                    appState?.showFilePathInput = false
                 }
             }
             .onChange(of: appState?.openRecentFolderURL) { _, newValue in
@@ -72,6 +81,17 @@ struct MainWindowView: View {
             allowsMultipleSelection: false
         ) { result in
             handleFolderSelection(result)
+        }
+        .alert("ファイルパスを入力して開く", isPresented: $showingFilePathInput) {
+            TextField("/path/to/image.jpg またはフォルダ", text: $filePathInput)
+            Button("開く") {
+                handleFilePathOpen()
+            }
+            Button("キャンセル", role: .cancel) {
+                filePathInput = ""
+            }
+        } message: {
+            Text("画像ファイルまたはフォルダの絶対パスを入力してください（先頭の ~ はホームに展開されます）。")
         }
         .alert("エラー", isPresented: errorBinding) {
             Button("OK") {
@@ -468,6 +488,21 @@ struct MainWindowView: View {
     }
 
     // MARK: - Folder Selection
+
+    /// 入力されたファイルパスを開く。
+    /// `~` 展開のみ行い、存在確認・ディレクトリ判定は ViewModel.openPath が担当する。
+    private func handleFilePathOpen() {
+        let raw = filePathInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        filePathInput = ""
+        guard !raw.isEmpty else { return }
+
+        let expanded = (raw as NSString).expandingTildeInPath
+        let url = URL(fileURLWithPath: expanded)
+        Task {
+            await viewModel.openPath(url)
+            appState?.refreshRecentFolders()
+        }
+    }
 
     private func handleFolderSelection(_ result: Result<[URL], Error>) {
         switch result {
