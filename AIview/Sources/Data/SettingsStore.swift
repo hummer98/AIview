@@ -9,6 +9,7 @@ final class SettingsStore {
         static let fullImageCacheSizeMB = "fullImageCacheSizeMB"
         static let thumbnailCacheSizeMB = "thumbnailCacheSizeMB"
         static let slideshowIntervalSeconds = "slideshowIntervalSeconds"
+        static let restoreLastViewedConfirmEnabled = "restoreLastViewedConfirmEnabled"
     }
 
     // MARK: - Default Values
@@ -21,6 +22,9 @@ final class SettingsStore {
 
     /// デフォルトのスライドショー間隔 (秒)
     static let defaultSlideshowIntervalSeconds: Int = 3
+
+    /// 前回の表示位置の確認ダイアログ既定値（ON）
+    static let defaultRestoreLastViewedConfirmEnabled: Bool = true
 
     // MARK: - Properties
 
@@ -38,6 +42,7 @@ final class SettingsStore {
             Keys.fullImageCacheSizeMB: Self.defaultFullImageCacheSizeMB,
             Keys.thumbnailCacheSizeMB: Self.defaultThumbnailCacheSizeMB,
             Keys.slideshowIntervalSeconds: Self.defaultSlideshowIntervalSeconds,
+            Keys.restoreLastViewedConfirmEnabled: Self.defaultRestoreLastViewedConfirmEnabled,
         ])
     }
 
@@ -79,5 +84,15 @@ final class SettingsStore {
             let clampedValue = max(1, min(60, newValue))
             defaults.set(clampedValue, forKey: Keys.slideshowIntervalSeconds)
         }
+    }
+
+    // MARK: - Restore Last Viewed Settings
+
+    /// フォルダを開いたとき前回の表示位置を確認するダイアログを表示するか（既定 ON）。
+    /// このトグルは確認ダイアログの表示可否のみを制御し、記録（lastViewedImage の書込）は
+    /// この設定に関わらず常時行う（プライバシーモード中を除く）。
+    var restoreLastViewedConfirmEnabled: Bool {
+        get { defaults.bool(forKey: Keys.restoreLastViewedConfirmEnabled) }
+        set { defaults.set(newValue, forKey: Keys.restoreLastViewedConfirmEnabled) }
     }
 }

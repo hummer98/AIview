@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ADR 001 — favorites.json を v2 ラッパー形式へ拡張</title>
+<style>
+  body{font:15px/1.7 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;max-width:840px;margin:32px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:24px;border-bottom:2px solid #ddd;padding-bottom:8px}
+  h2{font-size:18px;margin-top:26px}
+  code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+  pre.code{background:#0f172a;color:#e2e8f0;border-radius:8px;padding:12px 14px;overflow:auto;font-size:12.5px;line-height:1.5}
+  .meta{color:#666;font-size:13px}
+  .mermaid{display:flex;justify-content:center;margin:16px 0;padding:12px;background:#fafbfc;border:1px solid #eee;border-radius:10px}
+  table{border-collapse:collapse;width:100%;margin:12px 0}
+  th,td{border:1px solid #ddd;padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#f7f8fa}
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+<h1>ADR 001 — <code>favorites.json</code> を v2 ラッパー形式へ拡張</h1>
+<p class="meta"><strong>Status</strong>: proposed &nbsp;·&nbsp; <strong>Plan ref</strong>: <code>plan:001</code></p>
+
+<h2>Context</h2>
+<p>フォルダ毎の状態は <code>&lt;folder&gt;/.aiview/favorites.json</code> に保存されており、現在の形式は
+ファイル名→お気に入りレベルの<strong>素の辞書</strong> <code>[String: Int]</code> である。
+今回「最後に表示していた画像」(<code>lastViewedImage</code>) を同じフォルダ単位で永続化したい
+(ユーザー選択: <em>favorites.json を拡張</em>)。素の辞書のままでは追加メタを同居させられない。</p>
+<p>制約: <code>FavoritesStore</code>(actor) は通常モードと統合(サブディレクトリ)モードの両方で
+このファイルを読み書きする。既存の <code>FavoritesE2ETests</code> と、ユーザーの既存
+<code>.aiview/favorites.json</code> 資産を壊さないことが必須。CLAUDE.md の設計思想
+「キャッシュ/状態はデータと同じ場所に置く」に従い、保存先は <code>.aiview/</code> のまま維持する。</p>
+
+<h2>Decision</h2>
+<p><code>favorites.json</code> を<strong>ラッパーオブジェクト形式(v2)</strong>へ拡張する。
+お気に入りは <code>favorites</code> キー配下へ移し、<code>lastViewedImage</code> を同居させる。</p>
+<pre class="code">// v1 (legacy)         // v2 (new)
+{                      {
+  "sunset.heic": 3,      "favorites": { "sunset.heic": 3, "draft.png": 5 },
+  "draft.png": 5         "lastViewedImage": "draft.png"
+}                      }</pre>
+<p><strong>読込は両形式を構造で自動判別</strong>する: まず v2(<code>FavoritesFile</code>)としてデコードを試み、
+失敗したら legacy <code>[String: Int]</code> として読み <code>favorites</code> に充てる(<code>lastViewedImage</code> は nil)。
+<strong>保存は常に v2</strong> で書く ⇒ 旧ファイルは次回保存時に自動マイグレーション。
+新フィールドは optional なので前方/後方どちらの読込も壊れない。</p>
+<pre class="mermaid">
+flowchart LR
+  subgraph Read["読込 loadFile()"]
+    R0[Data] --> R1{decode FavoritesFile?}
+    R1 -- ok --> R2[favorites + lastViewedImage]
+    R1 -- fail --> R3[decode #91;String:Int#93;]
+    R3 --> R4[favorites のみ / lastViewed=nil]
+  end
+  subgraph Write["保存 saveToDisk()"]
+    W1[常に FavoritesFile を encode] --> W2[.aiview/favorites.json #40;atomic#41;]
+  end
+</pre>
+<p>判別の安全性: legacy ファイルにファイル名キー <code>"favorites"</code> があっても、その値は
+<code>Int</code> なので <code>FavoritesFile.favorites: [String:Int]</code> へのデコードは失敗し legacy 経路へ落ちる。誤判定しない。</p>
+
+<h2>Consequences</h2>
+<ul>
+  <li><strong>易</strong>: 状態の追加拡張は <code>FavoritesFile</code> に optional フィールドを足すだけ。</li>
+  <li><strong>易</strong>: ユーザー既存資産は無損失で読め、初回保存で透過的に移行。</li>
+  <li><strong>注意</strong>: 統合モードのフォルダ別保存
+    (<code>saveToDisk(folderURL:favorites:)</code>) は read-modify-write にし、
+    そのフォルダの既存 <code>lastViewedImage</code> を保ったまま書く(お気に入り編集で前回位置を消さない)。</li>
+  <li><strong>受容</strong>: v2 を書いた後に<em>旧バージョンのアプリ</em>で開くと、旧アプリは legacy デコードに失敗し
+    お気に入りを空とみなす可能性がある。個人向けビューアであり前バージョンへの併用は想定しないため許容。</li>
+</ul>
+
+<h2>Alternatives considered</h2>
+<ul>
+  <li><strong>別ファイル <code>.aiview/state.json</code></strong> — クリーンだがユーザーは「favorites.json を拡張」を選択。却下。</li>
+  <li><strong>明示 <code>version</code> フィールドで分岐</strong> — 構造判別で十分かつ legacy には version が無いので、どのみち fallback が要る。冗長なので不採用(将来必要なら追加可)。</li>
+</ul>
+</body>
+</html>

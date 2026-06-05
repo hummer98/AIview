@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Plan 001 — 前回の表示位置を復元（最後に表示していた画像の記録と再開）</title>
+<style>
+  body{font:15px/1.7 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;max-width:920px;margin:32px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:26px;border-bottom:2px solid #ddd;padding-bottom:8px}
+  h2{font-size:19px;margin-top:32px}
+  h3{font-size:16px;margin-top:22px}
+  code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+  pre.code{background:#0f172a;color:#e2e8f0;border-radius:8px;padding:12px 14px;overflow:auto;font-size:12.5px;line-height:1.5}
+  table{border-collapse:collapse;width:100%;margin:12px 0}
+  th,td{border:1px solid #ddd;padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#f7f8fa}
+  .meta{color:#666;font-size:13px}
+  blockquote{border-left:3px solid #cbd5e1;margin:12px 0;padding:4px 14px;color:#555;background:#f8fafc}
+  .mermaid{display:flex;justify-content:center;margin:18px 0;padding:14px;background:#fafbfc;border:1px solid #eee;border-radius:10px}
+  .ac{background:#f0fdf4}
+  .ng{color:#b91c1c}
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+<h1>Plan 001 — 前回の表示位置を復元</h1>
+<p class="meta"><strong>Status</strong>: approved（design-review B1/B2/B3 + S1–S4 反映済み） &nbsp;·&nbsp; <strong>Plan ref</strong>: <code>plan:001</code>
+  &nbsp;·&nbsp; <strong>ADR</strong>: <code>docs/adr/001-favorites-file-schema-v2.html</code>
+  &nbsp;·&nbsp; <strong>Review</strong>: <code>docs/reports/001-design-review.html</code></p>
+
+<h2>Intent &amp; scope</h2>
+<p>フォルダ毎の <code>.aiview/favorites.json</code> に「最後に表示していた画像」を記録し、
+次にそのフォルダを開いた時、記録があれば<strong>「前回の位置へ移動するか」を尋ねる確認ダイアログ</strong>を表示する。
+OK で表示位置をその画像へ移動する。記録は<strong>画像切替の都度デバウンスして</strong>書き込む。
+ダイアログ表示の ON/OFF は設定で切替可能(デフォルト ON)。</p>
+<p><span class="ng"><strong>スコープ外</strong></span>:
+サブディレクトリ統合モードでの記録・復元 / 「最近見た画像」複数履歴(1件のみ保持) /
+アプリ起動時のフォルダ自動オープン(既存のウィンドウ状態復元とは別機能)。</p>
+
+<h2>決定済みの仕様（ユーザー確認済み）</h2>
+<table>
+  <tr><th>論点</th><th>決定</th></tr>
+  <tr><td>記録タイミング</td><td>画像切替の都度・<strong>0.8秒デバウンス</strong>で <code>.aiview/favorites.json</code> に書込</td></tr>
+  <tr><td>保存形式</td><td><code>favorites.json</code> を拡張(ADR 001: v2 ラッパー + 後方互換)</td></tr>
+  <tr><td>ダイアログ条件</td><td>記録があれば<strong>常に</strong>表示(明示的にファイルを指定して開いた場合も)</td></tr>
+  <tr><td>頻度/設定</td><td>設定トグルで ON/OFF。<strong>トグルは確認ダイアログのみを制御</strong>し、記録は常時行う(下記 注記)</td></tr>
+</table>
+<blockquote><strong>設定トグルの意味の決定</strong>: トグル(<code>前回の表示位置を確認する</code>, 既定 ON)は
+<em>確認ダイアログの表示可否</em>のみを制御する。記録(<code>lastViewedImage</code> の書込)はトグルに関係なく常時行う。
+理由: 記録は <code>.aiview</code> への既存書込と同程度に安価で、トグルを ON にした瞬間から復元が機能するため。
+<strong>この解釈で問題ないか承認時に確認してください</strong>(別案: トグル OFF で記録も止める)。</blockquote>
+
+<h2>Flow — フォルダを開いた時</h2>
+<pre class="mermaid">
+flowchart TD
+  O[openFolder/openFile/openPath] --> L[favorites + lastViewedImage を読込]
+  L --> S[スキャン → 初期表示位置を決定<br/>#40;先頭 or 明示指定画像。ここでは記録しない#41;]
+  S --> C{設定ON かつ 非統合モード かつ<br/>記録画像が存在 かつ 初期位置と異なる?}
+  C -- no --> N[そのまま表示・プロンプト無し]
+  C -- yes --> D[確認ダイアログ表示<br/>「前回の画像へ移動しますか?」]
+  D -- 移動 --> J[jumpToIndex#40;記録位置#41; → 画像更新 → 記録更新]
+  D -- このまま --> K[初期位置のまま]
+</pre>
+
+<h3>Flow — 画像移動時の記録（デバウンス）</h3>
+<pre class="mermaid">
+sequenceDiagram
+  participant U as ユーザー
+  participant VM as ImageBrowserViewModel
+  participant FS as FavoritesStore(actor)
+  U->>VM: moveToNext / カルーセル選択 → jumpToIndex(i)
+  VM->>VM: currentIndex=i, 画像ロード
+  VM->>VM: scheduleRecordLastViewed() (前回Taskをcancel)
+  Note over VM: 0.8s 待機（連打中は都度リセット）
+  VM->>FS: setLastViewedImage(currentImageURL.lastPathComponent)
+  FS->>FS: .aiview/favorites.json を v2 で atomic 保存
+</pre>
+<blockquote><strong>重要(競合回避) — design-review B1 反映</strong>:
+「<code>jumpToIndex</code> を経由したか」では記録ゲートにできない。フィルタ ON/OFF(<code>setFilterLevel</code> 812行)、
+フィルタ index 同期(<code>handleFilteredIndexChange</code> 855/859行)、アンカー同期(<code>syncCurrentIndexByAnchor</code> 1434行)も
+<code>jumpToIndex</code> を通り、これらはユーザーの「移動」ではない。よって
+<code>jumpToIndex(_ index: Int, recordLastViewed: Bool = false)</code> の<strong>明示フラグ</strong>で記録を制御する。
+<br>・<code>recordLastViewed: true</code> を渡すのは<strong>ユーザー操作のみ</strong>:
+<code>moveToNext</code>/<code>moveToPrevious</code>(403/406/417/420)、
+<code>moveToNextWithLoop</code>/<code>moveToPreviousWithLoop</code>(1025/1053)、
+カルーセルタップ(<code>MainWindowView.swift</code> 235行 → <code>jumpToIndex(index, recordLastViewed: true)</code>)、復元確定。
+<br>・それ以外(フィルタ/アンカー/その他内部ジャンプ)は既定 <code>false</code>。
+<br>初期自動表示(<code>handleFirstImage</code>/<code>handleScanComplete</code>)は <code>jumpToIndex</code> 自体を経由せず currentIndex を直接設定するため当然記録されない。これにより<strong>復元プロンプトを出す前に初期画像で <code>lastViewedImage</code> を上書きする事故を防ぐ</strong>。</blockquote>
+
+<h2>Acceptance criteria</h2>
+<blockquote>各項目は検証可能。inspector はこれに照らして GO/NOGO を出す。</blockquote>
+<ul>
+  <li class="ac"><strong>AC1</strong>: 通常モードで <code>recordLastViewed: true</code> のユーザー移動(矢印/「次へ・前へ」/ループ移動/カルーセル選択)を行うと、約0.8秒のデバウンス後に現在画像のファイル名が <code>&lt;folder&gt;/.aiview/favorites.json</code> の <code>lastViewedImage</code> に保存される。<strong>観測点</strong>: 保存後に <code>FavoritesStore.getLastViewedImage()</code> またはディスク上 JSON の <code>lastViewedImage</code> を直接アサート。<strong>negative</strong>: デバウンス満了前は未記録(古い値のまま)であること。お気に入りデータ(<code>favorites</code>)は保持される。</li>
+  <li class="ac"><strong>AC2</strong>: 後方互換 — 旧 <code>{"a.jpg":3}</code> 形式を読み込んでも <code>favorites</code> が失われず、保存時に v2 形式 <code>{"favorites":{…},"lastViewedImage":…}</code> へ移行する。病的ケース(空 <code>{}</code>、<code>{"favorites":1}</code> のようにファイル名が "favorites" の legacy)も legacy として安全に読める。<strong>既存 <code>FavoritesE2ETests</code> が全て green</strong>。</li>
+  <li class="ac"><strong>AC3</strong>: フォルダを開いた時、設定 ON かつ非統合モードかつ記録 <code>lastViewedImage</code> が現在フォルダに存在し、初期表示位置と<strong>異なる</strong>場合に移動確認ダイアログを表示する。<strong>観測点</strong>: <code>viewModel.lastViewedRestorePrompt != nil</code> かつその <code>filename</code> が記録値と一致。<code>openFile</code>/<code>openPath</code>/パス入力で<strong>明示的にファイルを指定して開いた場合も</strong>(記録があれば)表示する。</li>
+  <li class="ac"><strong>AC4</strong>: ダイアログで「移動」を選ぶと、確定時に <code>imageURLs</code> から<strong>ファイル名で index を再解決</strong>し <code>currentIndex</code> がその位置へ移動・画像が更新される(同一 index ガードに阻まれない)。「このまま」を選ぶと位置は変わらない。どちらでも <code>lastViewedRestorePrompt</code> が nil に戻る。</li>
+  <li class="ac"><strong>AC5</strong>: フォルダを開いた直後の初期自動表示(先頭画像 or 明示指定画像)、およびフィルタ ON/OFF・アンカー同期等の<strong>内部ジャンプ(<code>recordLastViewed: false</code>)</strong>では <code>lastViewedImage</code> を記録しない。<strong>観測点</strong>: フォルダを開いて待機後、記録値が開く前のまま不変であることをアサート。</li>
+  <li class="ac"><strong>AC6</strong>: 記録画像がフォルダ内に存在しない / 記録が初期位置と同一 / サブディレクトリ統合モード / 設定 OFF の場合は <code>lastViewedRestorePrompt == nil</code>(ダイアログを表示しない)。</li>
+  <li class="ac"><strong>AC7</strong>: 設定トグル「前回の表示位置を確認する」(既定 ON)を <code>SettingsView</code> から切替でき、<code>UserDefaults</code> に永続化される。OFF にすると次回以降フォルダを開いてもダイアログは出ない(記録は継続)。</li>
+  <li class="ac"><strong>AC8</strong>: <code>task build</code> が成功し、<code>task test:unit</code>(既存 <code>FavoritesE2ETests</code> + 新規 <code>LastViewedImageTests</code>)が green。</li>
+</ul>
+
+<h2>Task breakdown &amp; dependencies</h2>
+<pre class="mermaid">
+flowchart TD
+  T0[T0 design-review<br/>計画/ADRの敵対的レビュー]:::a --> T1[T1 Data層<br/>FavoritesStore + SettingsStore]:::i
+  T1 --> T2[T2 Domain層<br/>ImageBrowserViewModel]:::i
+  T2 --> T3[T3 Presentation層<br/>MainWindowView + SettingsView]:::i
+  T1 --> T4[T4 Tests]:::i
+  T2 --> T4
+  T3 --> T5[T5 inspect GO/NOGO]:::n
+  T4 --> T5
+  T5 --> T6[T6 doc-sync<br/>spec/README/CHANGELOG]:::d
+  classDef a fill:#e0e7ff,stroke:#6366f1
+  classDef i fill:#dcfce7,stroke:#16a34a
+  classDef n fill:#fef9c3,stroke:#ca8a04
+  classDef d fill:#fae8ff,stroke:#a21caf
+</pre>
+<p class="meta">T1–T4 は相互依存が強く、単一の implementer が逐次実装する(並列分割より衝突・手戻りが少ない)。
+ファイル所有権マップは衝突回避のための境界として明示する。</p>
+<table>
+  <tr><th>task</th><th>内容</th><th>gate</th><th>owner</th></tr>
+  <tr><td>T0</td><td>計画と ADR の敵対的レビュー(受け入れ基準の抜け・スキーマ移行リスク・競合シナリオ)</td><td>—</td><td>design-reviewer</td></tr>
+  <tr><td>T1</td><td>v2 スキーマ + <code>lastViewedImage</code> の読込/保存/取得 API、後方互換デコード、統合モード保存の lastViewed 保全。設定トグルキー追加。</td><td><code>[gate:inspect]</code></td><td>implementer</td></tr>
+  <tr><td>T2</td><td>openFolder で lastViewed 読込、<code>jumpToIndex</code> にデバウンス記録、復元プロンプト state + 確定/却下メソッド、初期表示では記録しない制御。</td><td><code>[gate:inspect]</code></td><td>implementer</td></tr>
+  <tr><td>T3</td><td>移動確認ダイアログ(.alert/.confirmationDialog、既存 errorBinding パターン踏襲)、設定トグル UI。</td><td><code>[gate:inspect]</code></td><td>implementer</td></tr>
+  <tr><td>T4</td><td>単体/結合テスト: 移行、ラウンドトリップ、復元プロンプト index、確定/却下、初期表示で非記録。</td><td><code>[gate:inspect]</code></td><td>implementer</td></tr>
+  <tr><td>T5</td><td>受け入れ基準に対する検証、<code>task build</code> / <code>task test:unit</code> 実行、GO/NOGO レポート。</td><td>—</td><td>inspector</td></tr>
+  <tr><td>T6</td><td>docs/spec・README(英日)・CHANGELOG 反映。</td><td>—</td><td>doc-sync</td></tr>
+</table>
+
+<h2>File-ownership map</h2>
+<table>
+  <tr><th>task</th><th>owned files</th></tr>
+  <tr><td>T1</td><td><code>AIview/Sources/Data/FavoritesStore.swift</code>, <code>AIview/Sources/Data/SettingsStore.swift</code></td></tr>
+  <tr><td>T2</td><td><code>AIview/Sources/Domain/ImageBrowserViewModel.swift</code></td></tr>
+  <tr><td>T3</td><td><code>AIview/Sources/Presentation/MainWindowView.swift</code>, <code>AIview/Sources/Presentation/SettingsView.swift</code></td></tr>
+  <tr><td>T4</td><td><code>AIviewTests/LastViewedImageTests.swift</code>(新規), 必要なら <code>AIviewTests/FavoritesE2ETests.swift</code></td></tr>
+  <tr><td>T6</td><td><code>docs/spec/02-features.md</code>, <code>docs/spec/04-thumbnail-cache.md</code>, <code>README.md</code>, <code>README-ja.md</code>, <code>CHANGELOG.md</code></td></tr>
+</table>
+
+<h2>実装ノート（implementer 向け要点 — design-review 反映済み）</h2>
+<ul>
+  <li><strong>FavoritesStore</strong>: <code>struct FavoritesFile: Codable { var favorites: [String:Int]; var lastViewedImage: String? }</code> を導入(<code>favorites</code> は<strong>非 optional</strong>。空は <code>[:]</code>。S3)。共通 <code>loadFile(at:) -&gt; FavoritesFile</code>(v2 を試行 → 失敗で legacy <code>[String:Int]</code> → <code>FavoritesFile(favorites:lastViewedImage:nil)</code>)を作り、<code>loadFavorites</code> / <code>loadFavoritesFromDisk</code>(nonisolated)双方で使う。
+    <code>getLastViewedImage() -&gt; String?</code> を公開(AC 観測点。B3)。
+    <code>setLastViewedImage(_ filename: String, for folderURL: URL)</code> は<strong>対象フォルダ URL を引数で受け</strong>、actor 内で <code>currentFolderURL</code> と一致する時のみ書く(古いフォルダ向け遅延書込を弾く。S2)。非統合モードのみ有効。
+    <code>saveToDisk()</code> は常に v2 で書く。統合モードの <code>saveToDisk(folderURL:favorites:)</code> は既存ファイルの <code>lastViewedImage</code> を read-modify-write で保全。</li>
+  <li><strong>SettingsStore</strong>: キー <code>restoreLastViewedConfirmEnabled</code>(Bool, 既定 true)を追加し <code>registerDefaults</code> に登録。</li>
+  <li><strong>ViewModel</strong>: <code>SettingsStore</code> を注入可能プロパティで保持(既定 <code>SettingsStore()</code>)。
+    <code>private var pendingLastViewedFilename: String?</code>、公開 <code>var lastViewedRestorePrompt: LastViewedRestore?</code>(<strong><code>struct { let filename: String }</code> — index は持たない</strong>。B2)。
+    <code>confirmRestoreLastViewed()</code> は確定時に <code>imageURLs.firstIndex{ $0.lastPathComponent == filename }</code> で<strong>index を再解決</strong>し <code>jumpToIndex(idx, recordLastViewed: true)</code>、その後 prompt=nil。<code>dismissRestoreLastViewed()</code> は prompt=nil のみ。
+    デバウンスは <code>private var lastViewedRecordTask: Task&lt;Void,Never&gt;?</code> + 0.8s sleep。記録対象 folderURL を Task にキャプチャ。
+    <strong>記録ゲートは <code>jumpToIndex(_ index:, recordLastViewed: Bool = false)</code> の明示フラグ</strong>(B1)。記録は <code>recordLastViewed == true</code> かつ非統合モードかつ非プライバシーモード(<code>!isPrivacyMode</code>。S4)時のみ <code>scheduleRecordLastViewed()</code> を呼ぶ。
+    <code>openFolder</code> は<strong>冒頭の旧処理 cancel と同じ位置で <code>lastViewedRecordTask?.cancel()</code></strong>(loadFavorites より前。S2)し、prompt/pending をクリア。<code>handleScanComplete</code> 末尾で(設定 ON・非統合・記録あり・初期 index と相違)時に <code>pendingLastViewedFilename</code> から prompt をセット。
+    <code>deleteCurrentImage</code> 冒頭で <code>lastViewedRecordTask?.cancel()</code>(ずれた currentImageURL の遅延記録を防ぐ。S1)。</li>
+  <li><strong>MainWindowView</strong>: カルーセルタップ(235行)を <code>jumpToIndex(index, recordLastViewed: true)</code> に変更。
+    <code>viewModel.lastViewedRestorePrompt != nil</code> を <code>Binding&lt;Bool&gt;</code> 化(errorBinding と同型)。<code>.alert("前回の表示位置", …)</code> で「移動」(default)→<code>Task { await viewModel.confirmRestoreLastViewed() }</code>、「このまま」(cancel)→<code>viewModel.dismissRestoreLastViewed()</code>。message にファイル名を出す。</li>
+  <li><strong>SettingsView</strong>: 新規タブ(例「表示」)または既存に <code>Toggle("フォルダを開いたとき前回の表示位置を確認する")</code> を追加し <code>SettingsStore.restoreLastViewedConfirmEnabled</code> に保存。footer/help に「記録はこの設定に関わらず行われます(プライバシーモード中を除く)」と明記(S4)。</li>
+</ul>
+
+<h2>Open questions / risks</h2>
+<ul>
+  <li>設定トグルの意味(記録は常時 vs OFF で記録停止)— 上記注記。<strong>承認時に確認</strong>。</li>
+  <li>スライドショー自動送りも <code>jumpToIndex</code> 経由のため記録対象になる。意図通り(「最後に表示していた画像」)として許容。</li>
+  <li>既存 <code>FavoritesE2ETests</code> がディスク上の JSON 形式に直接依存していないか要確認(implementer/inspector が確認)。</li>
+  <li>ダイアログ表示はスキャン完了後(全ソート済みリストで index を確定)。巨大フォルダではプロンプトが少し遅れて出るが、resume の性質上許容。</li>
+</ul>
+
+<h2>Linked ADRs</h2>
+<ul><li><code>docs/adr/001-favorites-file-schema-v2.html</code></li></ul>
+</body>
+</html>

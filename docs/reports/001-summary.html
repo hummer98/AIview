@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Report 001 — 前回の表示位置を復元（完了サマリ）</title>
+<style>
+  body{font:15px/1.7 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;max-width:880px;margin:32px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:24px;border-bottom:2px solid #ddd;padding-bottom:8px}
+  h2{font-size:18px;margin-top:28px}
+  code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin:12px 0}
+  th,td{border:1px solid #ddd;padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#f7f8fa}
+  .meta{color:#666;font-size:13px}
+  .go{color:#16a34a;font-weight:bold}
+  ul{margin:8px 0}
+</style>
+</head>
+<body>
+<h1>Report 001 — 前回の表示位置を復元（完了サマリ）</h1>
+<p class="meta"><strong>Plan</strong>: <code>plan:001</code> ·
+  <strong>Status</strong>: <span class="go">done（inspection GO）</span> ·
+  <strong>Verdict</strong>: <code>docs/reports/001-inspection.html</code> (Verdict: GO)</p>
+
+<h2>成果</h2>
+<p>フォルダ毎の <code>.aiview/favorites.json</code> に「最後に表示していた画像」を記録し、
+次にそのフォルダを開いた時に記録があれば移動確認ダイアログを表示、OK でその画像へ移動する機能を実装した。</p>
+<ul>
+  <li>記録: ユーザー移動の都度 0.8s デバウンス。統合モード/プライバシーモード/内部ジャンプ(フィルタ・アンカー同期)では非記録。</li>
+  <li>保存形式: <code>favorites.json</code> を v2 ラッパー化(<code>favorites</code> + <code>lastViewedImage</code>)。旧形式は後方互換で読め初回保存で自動移行。</li>
+  <li>復元: スキャン完了後に確認ダイアログ。「移動」はファイル名で index を再解決してジャンプ。明示ファイル指定 open でも記録があれば表示。</li>
+  <li>設定: 「フォルダを開いたとき前回の表示位置を確認する」(既定 ON)を設定の新「表示」タブに追加。OFF でダイアログ抑止(記録は継続)。</li>
+</ul>
+
+<h2>プロセス（OOD）</h2>
+<table>
+  <tr><th>段階</th><th>成果物</th></tr>
+  <tr><td>spec dialogue</td><td>ユーザーへ 4 + 1 問の確認(記録タイミング/保存形式/ダイアログ条件/トグル意味)</td></tr>
+  <tr><td>plan + ADR</td><td><code>docs/plans/001-resume-last-viewed-image.html</code>, <code>docs/adr/001-favorites-file-schema-v2.html</code></td></tr>
+  <tr><td>design-review</td><td><code>docs/reports/001-design-review.html</code> — B1/B2/B3 + S1–S4 を計画へ反映</td></tr>
+  <tr><td>implement</td><td>Data → Domain → Presentation → Tests（単一 implementer、逐次）</td></tr>
+  <tr><td>inspect</td><td><code>docs/reports/001-inspection.html</code> — <span class="go">Verdict: GO</span></td></tr>
+  <tr><td>doc-sync</td><td>spec(02/01/04) + README 英日 + CHANGELOG(Unreleased)</td></tr>
+</table>
+
+<h2>design-review で防いだ主要リスク</h2>
+<ul>
+  <li><strong>B1</strong>: 「<code>jumpToIndex</code> 経由か」で記録ゲートにすると、フィルタ ON/OFF やアンカー同期も通るため誤記録 → <code>recordLastViewed</code> 明示フラグ方式に変更。</li>
+  <li><strong>B2</strong>: prompt に index を埋めると同一 index ガード/ソート後 index ずれで「移動」が無反応 → ファイル名のみ保持し確定時に再解決。</li>
+  <li><strong>B3</strong>: 観測点(<code>getLastViewedImage()</code> / <code>lastViewedRestorePrompt</code>)を公開し AC をテストで検証可能に。</li>
+</ul>
+
+<h2>検証</h2>
+<ul>
+  <li><code>task build</code>: BUILD SUCCEEDED</li>
+  <li><code>task test:unit</code>: 新規 <code>LastViewedImageTests</code> 15 件 + 既存 <code>FavoritesE2ETests</code> / <code>FavoritesStoreTests</code> 全 green</li>
+</ul>
+
+<h2>変更ファイル</h2>
+<ul>
+  <li>実装: <code>FavoritesStore.swift</code>, <code>SettingsStore.swift</code>, <code>ImageBrowserViewModel.swift</code>, <code>MainWindowView.swift</code>, <code>SettingsView.swift</code></li>
+  <li>テスト: <code>AIviewTests/LastViewedImageTests.swift</code>(新規), <code>FavoritesStoreTests.swift</code>(v2 デコードへ追従), <code>AIview.xcodeproj/project.pbxproj</code>(テスト登録)</li>
+  <li>docs: <code>docs/spec/{01,02,04}</code>, <code>README.md</code>, <code>README-ja.md</code>, <code>CHANGELOG.md</code>, および <code>docs/{plans,adr,reports}/</code></li>
+</ul>
+
+<h2>残懸念 / フォローアップ</h2>
+<ul>
+  <li>privacy mode 非記録(S4)は guard で担保済みだが専用テストは無し(任意)。</li>
+  <li>未コミット。リリース時の version 確定/CHANGELOG の <code>[Unreleased]</code> → 版番号付与は <code>release</code> スキルで行う。</li>
+</ul>
+</body>
+</html>

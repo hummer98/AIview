@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Inspection 001 — 前回の表示位置を復元</title>
+<style>
+  body{font:15px/1.7 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;max-width:880px;margin:32px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:26px;border-bottom:2px solid #ddd;padding-bottom:8px}
+  h2{font-size:19px;margin-top:28px}
+  .verdict{display:inline-block;padding:4px 14px;border-radius:6px;font-weight:800;font-size:18px}
+  .go{background:#dcfce7;color:#166534} .nogo{background:#fee2e2;color:#991b1b}
+  code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+  .meta{color:#666;font-size:13px}
+  blockquote{border-left:3px solid #cbd5e1;margin:12px 0;padding:4px 14px;color:#555;background:#f8fafc}
+  ol li,ul li{margin:5px 0}
+  table{border-collapse:collapse;width:100%;margin:12px 0}
+  th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;vertical-align:top}
+  th{background:#f7f8fa}
+  .mermaid{display:flex;justify-content:center;margin:14px 0;padding:12px;background:#fafbfc;border:1px solid #eee;border-radius:10px}
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Inspection 001 — 前回の表示位置を復元</h1>
+<p class="meta"><strong>Plan ref</strong>: <code>plan:001</code> &nbsp;·&nbsp;
+   <strong>Inspected</strong>: working tree (uncommitted) on <code>master</code> @ <code>deffa6f</code> &nbsp;·&nbsp;
+   <strong>Inspector</strong>: independent context &nbsp;·&nbsp; <strong>Date</strong>: 2026-06-06</p>
+
+<h2>Verdict: GO</h2>
+<p><span class="verdict go">GO</span> &nbsp;<span class="meta">全 AC1–AC8 充足・<code>BUILD SUCCEEDED</code>・全テスト green・design-review B1/B2/B3 + S1–S4 反映済み・critical findings なし。</span></p>
+
+<h2>Summary</h2>
+<p>実装は計画の受け入れ基準 8 件すべてを満たす。<code>task build</code> は <strong>BUILD SUCCEEDED</strong>、<code>task test:unit</code> は新規 <code>LastViewedImageTests</code>(15 件)・既存 <code>FavoritesE2ETests</code>・<code>FavoritesStoreTests</code> を含め全て passed(failures 0)。design-review の blocker B1(明示フラグ式記録ゲート)・B2(prompt は index を持たず confirm で再解決)・B3(<code>getLastViewedImage()</code> / <code>lastViewedRestorePrompt</code> 観測点)と should-fix S1–S4 が全てコードに反映されている。所有権境界外の修正(<code>FavoritesStoreTests.swift</code> 3 箇所、<code>project.pbxproj</code>)は ADR 準拠の機械的変更で、仕様の発明はない。</p>
+
+<h2>Acceptance criteria status</h2>
+<div class="mermaid">
+stateDiagram-v2
+  [*] --> AC1_met
+  [*] --> AC2_met
+  [*] --> AC3_met
+  [*] --> AC4_met
+  [*] --> AC5_met
+  [*] --> AC6_met
+  [*] --> AC7_met
+  [*] --> AC8_met
+  AC1_met: AC1 ✅ デバウンス記録(pos/neg)
+  AC2_met: AC2 ✅ 後方互換+病的ケース
+  AC3_met: AC3 ✅ プロンプト表示条件
+  AC4_met: AC4 ✅ 再解決ジャンプ/dismiss
+  AC5_met: AC5 ✅ 初期/内部ジャンプ非記録
+  AC6_met: AC6 ✅ no-prompt 4 ケース
+  AC7_met: AC7 ✅ トグル永続/抑止
+  AC8_met: AC8 ✅ build+test green
+</div>
+<table>
+  <tr><th>criterion</th><th>状態</th><th>evidence</th></tr>
+  <tr><td>AC1</td><td>✅ met</td>
+    <td><code>jumpToIndex(recordLastViewed:true)</code>→<code>scheduleRecordLastViewed()</code>(VM 480-481, 517-534)が 0.8s(テストでは注入 50ms)デバウンス後に <code>setLastViewedImage</code> を呼ぶ。<code>testViewModel_UserMove_RecordsAfterDebounce</code> が positive(満了後 <code>test_image_02.png</code> 記録)と negative(満了前 nil)の両方をアサート。favorites 保持は round-trip テストで確認。passed。</td></tr>
+  <tr><td>AC2</td><td>✅ met</td>
+    <td><code>FavoritesStore.loadFile(at:)</code>(266-280)が v2 試行→失敗で legacy <code>[String:Int]</code> fallback。保存は常に v2(<code>writeFile</code>)。病的ケース <code>{}</code> / <code>{"favorites":1}</code> / legacy <code>{"a":3}</code> の 3 テスト + 既存 <code>FavoritesE2ETests</code> 全 green。</td></tr>
+  <tr><td>AC3</td><td>✅ met</td>
+    <td><code>evaluateRestorePromptOnScanComplete()</code>(660-677): 設定ON ∧ 非統合 ∧ 記録が <code>imageURLs</code> に存在 ∧ 初期 index と相違 で <code>lastViewedRestorePrompt</code> をセット。<code>pendingInitialImageURL</code> 経路(明示 open)も同じ <code>handleScanComplete</code> 末尾で直列に判定。<code>testViewModel_OpenFolderWithRecord_ShowsPrompt</code> で filename 一致を確認。</td></tr>
+  <tr><td>AC4</td><td>✅ met</td>
+    <td><code>confirmRestoreLastViewed()</code>(683-692)が確定時に <code>imageURLs.firstIndex{ lastPathComponent==filename }</code> で再解決→<code>jumpToIndex(recordLastViewed:true)</code>、prompt=nil。<code>dismiss</code> は prompt=nil のみ。<code>testViewModel_ConfirmRestore_JumpsToRecordedImage</code>(currentIndex==3, URL==test_image_04)・<code>testViewModel_DismissRestore_KeepsPosition</code>(index 不変 0)。同一 index ガード(474)は再解決 index で回避。</td></tr>
+  <tr><td>AC5</td><td>✅ met</td>
+    <td>記録ゲートは <code>recordLastViewed</code> 明示フラグ(B1)。初期表示は <code>handleFirstImage</code>/<code>handleScanComplete</code> が <code>currentIndex</code> を直接設定し <code>jumpToIndex</code> を経由しない。フィルタ(<code>setFilterLevel</code> 938)・anchor 同期(<code>syncCurrentIndexByAnchor</code> 1560)・<code>handleFilteredIndexChange</code>(981/985)は既定 <code>false</code>。<code>testViewModel_InitialDisplay_DoesNotRecord</code> / <code>testViewModel_InternalJump_DoesNotRecord</code> passed。</td></tr>
+  <tr><td>AC6</td><td>✅ met</td>
+    <td>記録欠落/初期同一/統合モード/設定OFF の 4 経路すべてで <code>lastViewedRestorePrompt==nil</code>。<code>testViewModel_RecordedImageMissing_NoPrompt</code> / <code>RecordedEqualsInitial</code> / <code>SubdirectoryMode</code> / <code>SettingOff</code> passed。</td></tr>
+  <tr><td>AC7</td><td>✅ met</td>
+    <td><code>SettingsStore.restoreLastViewedConfirmEnabled</code>(既定 true、<code>registerDefaults</code> 登録)。<code>SettingsView</code>「表示」タブに Toggle + footer 説明(S4)。OFF で <code>evaluateRestorePromptOnScanComplete</code> 冒頭 guard により prompt 抑止、記録は継続(<code>scheduleRecordLastViewed</code> は設定非依存)。テストは隔離 suite で永続化を検証。</td></tr>
+  <tr><td>AC8</td><td>✅ met</td>
+    <td><code>task build</code> → <strong>** BUILD SUCCEEDED **</strong>。<code>task test:unit</code> exit 0、failures 0。<code>-only-testing:AIviewTests/LastViewedImageTests</code> 単独実行で 15 件すべて passed(<strong>** TEST SUCCEEDED **</strong>)。</td></tr>
+</table>
+
+<h2>build / test 実出力要点</h2>
+<ul>
+  <li><code>task build</code>(xcodebuild Debug): 末尾 <code>** BUILD SUCCEEDED **</code>。</li>
+  <li><code>task test:unit</code>: exit code 0。<code>FavoritesE2ETests.*</code>(統合/フィルタ/サブディレクトリ含む全件)・<code>FavoritesStoreTests</code>・<code>LastViewedImageTests</code>・<code>SlideshowTimerTests</code>・<code>PerformanceTests</code> 等すべて passed、<code>failed</code> 0 件。</li>
+  <li><code>LastViewedImageTests</code> 単独 15 件: <code>testMigration_EmptyObject_IsSafe</code> / <code>FavoritesKeyWithIntValue_IsLegacy</code> / <code>LegacyFormat_PreservesFavorites_LastViewedNil</code> / <code>RoundTrip_SetLastViewed_PersistsAndReloads</code> / <code>SetLastViewed_FolderMismatch_DoesNotWrite</code> / <code>ConfirmRestore_JumpsToRecordedImage</code> / <code>DismissRestore_KeepsPosition</code> / <code>InitialDisplay_DoesNotRecord</code> / <code>InternalJump_DoesNotRecord</code> / <code>OpenFolderWithRecord_ShowsPrompt</code> / <code>RecordedEqualsInitial_NoPrompt</code> / <code>RecordedImageMissing_NoPrompt</code> / <code>SettingOff_NoPrompt</code> / <code>SubdirectoryMode_NoPrompt</code> / <code>UserMove_RecordsAfterDebounce</code> — 全 passed。</li>
+  <li><strong>型チェックタイムアウト(deffa6f)確認</strong>: <code>MainWindowView.swift</code> の view body に巨大式の持ち込みなし。追加分はトップレベル <code>.alert(isPresented: restorePromptBinding)</code> 修飾子 1 個と、別 computed property <code>restorePromptBinding</code>(177-181)へ分離した <code>Binding&lt;Bool&gt;</code> のみで、既存 <code>errorBinding</code> パターンを踏襲。カルーセル <code>onSelect</code> は引数フラグ追加のみ。Debug ビルド成功 + body 目視で型チェック負荷増は認められない(<code>build:release</code> は実行せず Debug 成功 + 目視で代替)。</li>
+</ul>
+
+<h2>design-review 反映状況</h2>
+<table>
+  <tr><th>項目</th><th>反映</th><th>確認箇所</th></tr>
+  <tr><td>B1 明示フラグ式記録ゲート</td><td>✅</td><td><code>jumpToIndex(_:recordLastViewed:Bool=false)</code>。<code>true</code> は moveToNext/Previous(444/447/458/461)・ループ移動(1151/1179)・カルーセルタップ(<code>MainWindowView</code> 254)・confirm(691)のみ。フィルタ/anchor(938/981/985/1560)は既定 false。</td></tr>
+  <tr><td>B2 prompt は index 非保持・confirm で再解決</td><td>✅</td><td><code>struct LastViewedRestore { let filename: String }</code>(13-15)。confirm が確定時 <code>imageURLs</code> から再解決(687)。</td></tr>
+  <tr><td>B3 観測点公開</td><td>✅</td><td><code>FavoritesStore.getLastViewedImage()</code>(169) / <code>VM.lastViewedRestorePrompt</code>(44)。テストが両方を直接アサート。</td></tr>
+  <tr><td>S1 deleteCurrentImage cancel</td><td>✅</td><td><code>deleteCurrentImage</code> 冒頭で <code>lastViewedRecordTask?.cancel()</code>(543-544)。</td></tr>
+  <tr><td>S2 openFolder cancel 位置 + folderURL 一致確認</td><td>✅</td><td><code>openFolder</code> 冒頭(<code>loadFavorites</code> より前、257-258)で cancel。<code>setLastViewedImage(_:for:)</code> が <code>currentFolderURL.path==folderURL.path</code> を actor 内で再確認(184)。<code>testSetLastViewed_FolderMismatch_DoesNotWrite</code> で担保。</td></tr>
+  <tr><td>S3 favorites 非optional・病的ケーステスト</td><td>✅</td><td><code>FavoritesFile.favorites: [String:Int]</code> 非 optional(10)。病的 2 ケーステスト存在。</td></tr>
+  <tr><td>S4 privacy mode 非記録・toggle 説明</td><td>✅</td><td><code>scheduleRecordLastViewed</code> が <code>!isPrivacyMode</code> guard(518)。<code>SettingsView</code> footer に「記録はこの設定に関わらず行われます（プライバシーモード中を除く）」明記。</td></tr>
+</table>
+
+<h2>所有権境界外修正の評価</h2>
+<ul>
+  <li><strong><code>AIviewTests/FavoritesStoreTests.swift</code></strong>(3 箇所、81/270/335 行): on-disk JSON を素の <code>[String:Int]</code> でデコードしていた既存アサートを <code>FavoritesFile</code> 経由デコード + <code>saved.favorites[...]</code> へ変更。これは ADR 001「保存は常に v2」に追従する<strong>機械的修正</strong>であり、仕様の発明はない。ヘルパー <code>createFavoritesFile</code>(342-347)は依然 legacy <code>[String:Int]</code> を書くため、移行経路のテスト土台として正しく機能している(design-review N3 の意図どおり)。全 green。</li>
+  <li><strong><code>AIview.xcodeproj/project.pbxproj</code></strong>: <code>LastViewedImageTests.swift</code> を PBXBuildFile / PBXFileReference / group / Sources build phase の 4 箇所に登録。整合し、実際にテストが実行・収集されたことで wiring を確認済み。</li>
+</ul>
+
+<h2>Findings</h2>
+<ol>
+  <li>(minor) privacy mode 中の非記録(S4)はコード上 <code>!isPrivacyMode</code> guard で担保されているが、専用の単体テストは無い。critical ではない(他テストで記録経路自体は検証済み、guard は単純条件)。フォローのテスト追加は任意。</li>
+  <li>(minor) 実装はワーキングツリー上で未コミット。<code>docs/spec</code>/README/CHANGELOG への反映(T6 doc-sync)は本 inspection のスコープ外。GO 後に doc-sync で対応されること。</li>
+  <li>(info) <code>SettingsView.DisplaySettingsTab</code> は <code>SettingsStore</code> を 2 度生成(プロパティ + init)している。既存 <code>CacheSettingsTab</code> と同じ確立済みパターンで、機能・永続化に影響なし。</li>
+</ol>
+
+<h2>Fix Required</h2>
+<blockquote>なし（GO）。上記 findings はいずれも minor/info で、リリースをブロックしない。</blockquote>
+
+</body>
+</html>

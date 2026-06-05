@@ -76,9 +76,10 @@ final class FavoritesStoreTests: XCTestCase {
             .appendingPathComponent("favorites.json")
         XCTAssertTrue(FileManager.default.fileExists(atPath: favoritesFile.path), "favorites.jsonが作成されること")
 
+        // ADR 001: 保存は常に v2 形式（FavoritesFile ラッパー）
         let data = try Data(contentsOf: favoritesFile)
-        let savedFavorites = try JSONDecoder().decode([String: Int].self, from: data)
-        XCTAssertEqual(savedFavorites["test.png"], 4, "ディスクに正しく保存されること")
+        let saved = try JSONDecoder().decode(FavoritesFile.self, from: data)
+        XCTAssertEqual(saved.favorites["test.png"], 4, "ディスクに正しく保存されること")
     }
 
     /// Requirements: 1.4 - お気に入りレベルは1〜5の範囲
@@ -264,9 +265,10 @@ final class FavoritesStoreTests: XCTestCase {
             .appendingPathComponent("favorites.json")
         XCTAssertTrue(FileManager.default.fileExists(atPath: favoritesFile.path))
 
+        // ADR 001: 保存は常に v2 形式（FavoritesFile ラッパー）
         let data = try Data(contentsOf: favoritesFile)
-        let saved = try JSONDecoder().decode([String: Int].self, from: data)
-        XCTAssertEqual(saved["image.png"], 5)
+        let saved = try JSONDecoder().decode(FavoritesFile.self, from: data)
+        XCTAssertEqual(saved.favorites["image.png"], 5)
     }
 
     /// Requirements: 4.3 - 統合モード中のお気に入りレベル取得
@@ -328,9 +330,10 @@ final class FavoritesStoreTests: XCTestCase {
         // ディスクからも削除されていることを確認
         let favoritesFile = subDir.appendingPathComponent(".aiview").appendingPathComponent("favorites.json")
         if FileManager.default.fileExists(atPath: favoritesFile.path) {
+            // ADR 001: 保存は常に v2 形式（FavoritesFile ラッパー）
             let data = try Data(contentsOf: favoritesFile)
-            let saved = try JSONDecoder().decode([String: Int].self, from: data)
-            XCTAssertNil(saved["image.png"])
+            let saved = try JSONDecoder().decode(FavoritesFile.self, from: data)
+            XCTAssertNil(saved.favorites["image.png"])
         }
     }
 

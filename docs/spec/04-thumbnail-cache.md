@@ -11,7 +11,7 @@ your-image-folder/
 ├── sunset.heic
 ├── draft01.png
 └── .aiview/
-    ├── favorites.json    ← FavoritesStore が共有
+    ├── favorites.json    ← FavoritesStore が共有（お気に入り + 前回の表示位置の v2 形式）
     ├── sunset.heic.jpg   ← サムネイル本体
     └── draft01.png.jpg
 ```

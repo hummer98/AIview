@@ -40,6 +40,7 @@
 		A1000032 /* FavoriteIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000032 /* FavoriteIndicator.swift */; };
 		A1000033 /* FavoritesIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000033 /* FavoritesIntegrationTests.swift */; };
 		A1000034 /* FavoritesE2ETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000034 /* FavoritesE2ETests.swift */; };
+		A10000F1 /* LastViewedImageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000F1 /* LastViewedImageTests.swift */; };
 		A1000035 /* SlideshowTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000035 /* SlideshowTimer.swift */; };
 		A1000036 /* SlideshowTimerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000036 /* SlideshowTimerTests.swift */; };
 		A1000037 /* ImageBrowserViewModelSlideshowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000037 /* ImageBrowserViewModelSlideshowTests.swift */; };
@@ -124,6 +125,7 @@
 		A2000032 /* FavoriteIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteIndicator.swift; sourceTree = "<group>"; };
 		A2000033 /* FavoritesIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesIntegrationTests.swift; sourceTree = "<group>"; };
 		A2000034 /* FavoritesE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesE2ETests.swift; sourceTree = "<group>"; };
+		A20000F1 /* LastViewedImageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LastViewedImageTests.swift; sourceTree = "<group>"; };
 		A2000035 /* SlideshowTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowTimer.swift; sourceTree = "<group>"; };
 		A2000036 /* SlideshowTimerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowTimerTests.swift; sourceTree = "<group>"; };
 		A2000037 /* ImageBrowserViewModelSlideshowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserViewModelSlideshowTests.swift; sourceTree = "<group>"; };
@@ -296,6 +298,7 @@
 				A2000031 /* FavoritesStoreTests.swift */,
 				A2000033 /* FavoritesIntegrationTests.swift */,
 				A2000034 /* FavoritesE2ETests.swift */,
+				A20000F1 /* LastViewedImageTests.swift */,
 				A2000036 /* SlideshowTimerTests.swift */,
 				A2000037 /* ImageBrowserViewModelSlideshowTests.swift */,
 				A2000042 /* ImageBrowserViewModelSubdirectoryTests.swift */,
@@ -505,6 +508,7 @@
 				A1000031 /* FavoritesStoreTests.swift in Sources */,
 				A1000033 /* FavoritesIntegrationTests.swift in Sources */,
 				A1000034 /* FavoritesE2ETests.swift in Sources */,
+				A10000F1 /* LastViewedImageTests.swift in Sources */,
 				A1000036 /* SlideshowTimerTests.swift in Sources */,
 				A1000037 /* ImageBrowserViewModelSlideshowTests.swift in Sources */,
 				A1000042 /* ImageBrowserViewModelSubdirectoryTests.swift in Sources */,
@@ -691,7 +695,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.6.0;
+				MARKETING_VERSION = 0.7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIview;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -716,7 +720,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.6.0;
+				MARKETING_VERSION = 0.7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIview;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -731,7 +735,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.6.0;
+				MARKETING_VERSION = 0.7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -747,7 +751,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.6.0;
+				MARKETING_VERSION = 0.7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -764,7 +768,7 @@
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.6.0;
+				MARKETING_VERSION = 0.7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -781,7 +785,7 @@
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.6.0;
+				MARKETING_VERSION = 0.7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;

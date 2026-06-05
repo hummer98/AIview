@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Design Review 001 — 前回の表示位置を復元</title>
+<style>
+  body{font:15px/1.7 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;max-width:920px;margin:32px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:25px;border-bottom:2px solid #ddd;padding-bottom:8px}
+  h2{font-size:19px;margin-top:30px}
+  h3{font-size:16px;margin-top:20px}
+  code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin:12px 0}
+  th,td{border:1px solid #ddd;padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#f7f8fa}
+  .blocker{color:#b91c1c;font-weight:bold}
+  .should{color:#b45309;font-weight:bold}
+  .nice{color:#2563eb;font-weight:bold}
+  .meta{color:#666;font-size:13px}
+  blockquote{border-left:3px solid #cbd5e1;margin:12px 0;padding:4px 14px;color:#444;background:#f8fafc}
+  .verdict{background:#fef9c3;border:1px solid #ca8a04;border-radius:8px;padding:12px 16px;font-size:16px}
+</style>
+</head>
+<body>
+<h1>Design Review 001 — 前回の表示位置を復元</h1>
+<p class="meta"><strong>Reviewer</strong>: design-reviewer (independent) &nbsp;·&nbsp;
+  <strong>Reviewed</strong>: plan 001 / ADR 001 &nbsp;·&nbsp; <strong>Date</strong>: 2026-06-06</p>
+
+<div class="verdict"><strong>判定: 修正してから GO。</strong>
+ADR の後方互換設計は健全。だが計画の中核前提「記録は <code>jumpToIndex</code> にのみ置けば初期表示の上書きを防げる」が、
+フィルタ／サブディレクトリ操作が <em>すべて</em> <code>jumpToIndex</code> を経由する現実装と噛み合っておらず、
+意図しない記録と AC5/AC6 のテスト不能を生む。下記 B1–B3 を解消すれば実装に渡してよい。</div>
+
+<h2>Blockers</h2>
+
+<h3 class="blocker">B1. 「記録は jumpToIndex のみ」前提が、フィルタ／サブディレクトリの自動ジャンプを巻き込む</h3>
+<p><strong>なぜ問題か</strong>: 計画は「初期表示は <code>jumpToIndex</code> を経由しないので記録されない／移動だけが記録される」を安全性の根拠にしている。
+しかし現実装では以下が<strong>すべて</strong> <code>jumpToIndex</code> を経由する:</p>
+<ul>
+  <li><code>setFilterLevel</code>（行810-814）: フィルタON時に現在画像が対象外なら先頭該当へ <code>jumpToIndex</code>。</li>
+  <li><code>handleFilteredIndexChange</code>（行848-864）: お気に入り変更でフィルタから外れた時に <code>jumpToIndex</code>。</li>
+  <li><code>syncCurrentIndexByAnchor</code>（行1414-1435）: <code>currentIndex = -1</code> にしてから <code>jumpToIndex</code>。
+    <code>setFilterLevelWithSubdirectories</code> / <code>disableSubdirectoryMode</code> / <code>clearFilterWithSubdirectories</code> から呼ばれる。</li>
+</ul>
+<p>計画は「非統合モード時のみ記録」で統合系を弾く想定だが、<strong>通常モードのフィルタON/OFF・お気に入り変更によるジャンプは非統合モードなので記録対象に入ってしまう</strong>。
+結果、ユーザーが画像を「移動」していないのに <code>lastViewedImage</code> がフィルタ先頭などに書き換わる。
+さらに <code>setFilterLevel</code> の自動ジャンプはフォルダオープン直後（プロンプト判定前後）にも起こりうるため、AC5 の「初期表示で記録しない」を破る経路になる。</p>
+<p><strong>推奨修正</strong>: 記録ゲートを「<code>jumpToIndex</code> を通ったか」ではなく<strong>「ユーザー主導のナビゲーションか」</strong>で定義する。具体的には</p>
+<ul>
+  <li><code>jumpToIndex(_ index:Int, recordLastViewed: Bool = false)</code> のように<strong>明示フラグ化</strong>し、
+    <code>moveToNext/Previous</code>・カルーセル <code>onSelect</code>・スライドショー送り・<code>confirmRestoreLastViewed</code> のみ <code>true</code> を渡す。
+    フィルタ／サブディレクトリ／anchor 同期からの呼び出しは <code>false</code>（デフォルト）。</li>
+  <li>これで「経由するか」依存の暗黙ルールを廃し、AC5/AC6 を機械的に保証できる。</li>
+</ul>
+
+<h3 class="blocker">B2. 復元ジャンプ先が currentIndex==0 のとき jumpToIndex の同一indexガードで沈黙failする</h3>
+<p><strong>なぜ問題か</strong>: <code>jumpToIndex</code> 冒頭に <code>guard clampedIndex != currentIndex else { return }</code> がある（行428）。
+通常オープン直後の初期位置は <code>currentIndex = 0</code>。記録画像がたまたま index 0 に解決されるケースは AC6（記録==初期位置ならプロンプト出さない）で弾けるが、
+<strong>プロンプトを出すのは「初期位置と異なる」場合に限る</strong>という条件と <code>confirmRestoreLastViewed()</code> が <code>jumpToIndex(targetIndex)</code> を呼ぶ実装が整合しているかは、targetIndex の確定タイミングに依存する。
+特に <code>handleScanComplete</code> でソート後に index を再計算するため、プロンプト表示時の <code>targetIndex</code> と確定時の index がずれると、ガードに当たって移動が起きない（＝「移動」を押しても何も起きない）か、誤った位置へ飛ぶ。</p>
+<p><strong>推奨修正</strong>: <code>lastViewedRestorePrompt</code> に index を埋め込まず<strong>ファイル名のみ</strong>を保持し、
+<code>confirmRestoreLastViewed()</code> 内で<strong>確定時点の <code>imageURLs</code> から index を再解決</strong>してから <code>jumpToIndex(recordLastViewed: true)</code> する。
+index を AC4 のテストで検証する場合は、再解決後の <code>currentIndex</code> をアサートする形にする（プロンプト struct の <code>targetIndex</code> をテスト対象にしない）。</p>
+
+<h3 class="blocker">B3. AC5/AC6 が現状の公開APIでは単体検証できない（テスト可能性の欠落）</h3>
+<p><strong>なぜ問題か</strong>: AC5「初期表示で記録しない」・AC6「統合モード除外」を確かめるには、
+テストから<strong>ディスク上の <code>lastViewedImage</code> を読む手段</strong>か、<strong>プロンプトが出る/出ないを観測する手段</strong>が要る。
+現状 <code>FavoritesStore</code> には <code>lastViewedImage</code> の getter が無く、<code>ImageBrowserViewModel</code> にもプロンプト状態の公開プロパティが無い。
+計画の実装ノートには <code>lastViewedRestorePrompt</code> 公開・<code>getLastViewedImage()</code> 相当が暗黙に含まれるが、AC として<strong>明文化されていない</strong>ため inspector が「検証可能」と判定できない。
+また既存 <code>FavoritesE2ETests</code> はすべて 0.8s デバウンスより<strong>長い 500ms 以上の sleep を多用しつつ即時アサート</strong>しており、記録フックを <code>jumpToIndex</code> に足すと、これらの既存テストの <code>jumpToIndex</code> 連打が<strong>意図せず <code>lastViewedImage</code> を書く副作用</strong>を持つ（テスト間でフォルダを使い回さないので破壊はしないが、AC2 の「favorites 保持」を確認する新テストが <code>lastViewedImage</code> 混入で誤検知しうる）。</p>
+<p><strong>推奨修正</strong>:</p>
+<ul>
+  <li>AC に<strong>観測点を明記</strong>する。例: 「<code>FavoritesStore.loadFavoritesFromDisk(for:)</code> 相当が <code>FavoritesFile</code> を返し、テストは <code>.lastViewedImage</code> を直接アサートする」。</li>
+  <li>プロンプト判定を副作用なく観測できるよう、<code>viewModel.lastViewedRestorePrompt</code>（<code>nil</code>/非nil）を AC3/AC6 の<strong>明示アサート対象</strong>として AC 本文に書く。</li>
+  <li>デバウンス記録は <code>Task.sleep</code> を含むため、テストは「sleep 後に書かれる」ことと「sleep 前は書かれない」ことの両方を検証する必要がある。AC1 に<strong>negative 条件（移動直後・デバウンス満了前は未記録）</strong>を追記する。</li>
+</ul>
+
+<h2>Should-fix</h2>
+
+<h3 class="should">S1. deleteCurrentImage がデバウンス記録と整合しない（記録が削除済みファイルを指す）</h3>
+<p><code>deleteCurrentImage</code>（行465-493）は <code>jumpToIndex</code> を通らず <code>loadCurrentImage</code> を直接呼ぶ。B1 のフラグ方式なら記録はされないが、
+<strong>削除直前に予約済みの 0.8s デバウンスTask</strong>が、削除でずれた <code>currentImageURL</code> を後から記録する競合がある。
+また「最後に表示していた画像」が削除済みファイル名のまま残ると、次回オープンで AC6 の「記録画像がフォルダ内に存在しない→プロンプト出さない」に落ちるので致命ではないが、
+<strong>削除時に保留中の record Task を cancel</strong>しておくのが安全。<strong>推奨</strong>: <code>deleteCurrentImage</code> 冒頭で <code>lastViewedRecordTask?.cancel()</code>。</p>
+
+<h3 class="should">S2. record Task の対象フォルダと actor の currentFolderURL がずれる窓</h3>
+<p><code>FavoritesStore.setLastViewedImage(_:)</code> は actor 内の <code>currentFolderURL</code> に書く設計（実装ノート）。
+だが <code>openFolder</code> は冒頭で <code>await favoritesStore.loadFavorites(for: url)</code> を呼び <code>currentFolderURL</code> を即書き換える。
+旧フォルダ向けに予約された 0.8s record Task が、<strong>新フォルダの <code>loadFavorites</code> 完了後に発火</strong>すると、旧フォルダのファイル名を<strong>新フォルダの favorites.json</strong> に書く。
+計画は「<code>openFolder</code> 冒頭で record task cancel」と書いており方向は正しいが、cancel は <code>await folderScanner.cancelCurrentScan()</code> より<strong>前</strong>かつ <code>loadFavorites</code> より前に置くこと、
+かつ <code>setLastViewedImage</code> 側でも<strong>記録時に対象フォルダURLを引数で渡して actor 内で currentFolderURL と一致確認</strong>する二重防御を推奨。フラグ＋cancel だけだと TOCTOU が残る。</p>
+
+<h3 class="should">S3. ADR の構造判別、optional 全欠落の legacy 空ファイル/空オブジェクトで誤判定の可能性</h3>
+<p>ADR は「legacy の値は <code>Int</code> なので <code>FavoritesFile</code> デコードは失敗し fallback する」と主張。これは概ね正しいが穴がある:</p>
+<ul>
+  <li><strong><code>{}</code>（空オブジェクト）</strong>: legacy の「お気に入り0件」も v2 の「favorites/lastViewed 両方nil」も <code>{}</code>。
+    <code>FavoritesFile</code> の両プロパティを optional にすると <code>{}</code> は<strong>v2デコード成功</strong>し <code>favorites=nil→[:]</code> になる。結果は無害だが、
+    「<code>favorites</code> を非optional <code>[String:Int]</code>」にすると <code>{}</code> は<strong>キー欠落でデコード失敗</strong>→legacy 経路。どちらでも結果 <code>[:]</code> なので実害なしだが、ADR が言う「favorites: [String:Int]（非optional）」前提なら <code>{}</code> は legacy 扱いになる点を明記すべき。</li>
+  <li><strong>キー名 <code>"favorites"</code> を持つ実在画像</strong>: <code>favorites.heic</code> など。legacy <code>{"favorites.heic": 3}</code> は <code>FavoritesFile</code> デコードで <code>favorites</code> キー値が <code>Int(3)</code> → <code>[String:Int]</code> へのデコード失敗 → legacy fallback。ADR の主張どおり安全。<strong>ただし</strong> <code>{"favorites": 3}</code>（拡張子なし）という病的ケースも同じく Int なので安全。問題なし。</li>
+</ul>
+<p><strong>推奨</strong>: <code>favorites</code> を<strong>非optional</strong>（<code>var favorites: [String:Int] = [:]</code>）にし、判別ロジックを「v2 decode 成功 かつ <code>favorites</code> キーが存在」ではなく単純な try/catch fallback に保つ。
+AC2 のテストに<strong>空オブジェクト <code>{}</code> と <code>{"favorites": 1}</code> の2病的ケース</strong>を追加するよう T4 に明記。</p>
+
+<h3 class="should">S4. 設定トグルが「記録ではなくダイアログのみ」を制御する判断の副作用</h3>
+<p>計画自身が「承認時に確認」とフラグ済み。レビューとしての所見:
+トグルOFFでも記録し続ける設計は、<strong>OFFにしたユーザーが「もう .aiview に状態を書いてほしくない」意図だった場合に裏切る</strong>。
+CLAUDE.md は「ユーザーフォルダに .aiview が残るのは許容」としているので致命ではないが、
+プライバシー観点（このアプリは privacy mode を持つ＝痕跡を気にするユーザー層がいる）では<strong>OFF=記録も停止</strong>のほうが直感的。
+<strong>推奨</strong>: 最低限、トグルの説明文に「OFFでも前回位置は記録されます（確認のみ無効）」と明記。あるいは OFF で記録も止める案を採用（実装コストはフラグ1つで差は小さい）。lead がユーザーに最終確認すべき。</p>
+
+<h2>Nice-to-have</h2>
+
+<h3 class="nice">N1. スキャン完了後プロンプトの UX 順序</h3>
+<p>巨大フォルダで「先頭画像を表示→数秒後にプロンプト」が出ると、ユーザーが先頭を見始めた後で割り込まれる。計画も risk として認識済み。
+<strong>推奨</strong>: <code>handleFirstImage</code> でなく <code>handleScanComplete</code> 完了直後に最小遅延で出す現設計でよいが、
+プロンプト表示中にユーザーが矢印キーで移動したら<strong>プロンプトを自動 dismiss</strong>（＝ユーザーは既に意思表示した）するガードを入れると角が取れる。</p>
+
+<h3 class="nice">N2. ファイルパス指定オープン（openFile）+ 記録ありの二重意図</h3>
+<p>AC3 は「明示ファイル指定でも記録があればプロンプト表示」。だが <code>openFile</code> はユーザーが<strong>特定画像を名指しで開いた</strong>意図が強い。
+そこに「前回の別画像へ移動しますか？」が出るのは人によっては煩わしい。仕様決定済み（ユーザー確認済み）なので尊重するが、
+<code>pendingInitialImageURL</code> が記録画像と異なるときだけ出す（同一なら無音）ことは AC6 で既にカバーされている。実装時に <code>pendingInitialImageURL</code> 経路の index 確定（行546-550）と prompt 判定の順序を <code>handleScanComplete</code> 内で正しく直列化すること。</p>
+
+<h3 class="nice">N3. ファイル所有権マップは衝突なし</h3>
+<p>T1=Data, T2=Domain, T3=Presentation, T4=Tests で重複なし。逐次実装方針も妥当。ただし B3 で <code>FavoritesStore</code> に観測用 API を足すため、
+T1 と T4 の境界（テストが触る公開API）を T1 着手時に確定させること。<code>FavoritesE2ETests.createFavoritesFile</code> は legacy 形式を書くので、AC2 の移行テストの土台として再利用可。</p>
+
+<h2>受け入れ基準ごとの所見</h2>
+<table>
+  <tr><th>AC</th><th>検証可能性</th><th>所見</th></tr>
+  <tr><td>AC1</td><td>△</td><td>negative条件（デバウンス満了前は未記録）を追記すべき。観測点（ディスクの lastViewedImage）を明記。</td></tr>
+  <tr><td>AC2</td><td>○</td><td>良い。病的ケース <code>{}</code> / <code>{"favorites":1}</code> を追加（S3）。</td></tr>
+  <tr><td>AC3</td><td>△</td><td>「異なる場合」の index 確定タイミングが B2 依存。prompt!=nil を明示アサート対象に。</td></tr>
+  <tr><td>AC4</td><td>△</td><td>同一indexガード（B2）で「移動」が無反応になりうる。再解決後の currentIndex をアサート。</td></tr>
+  <tr><td>AC5</td><td>✕→○</td><td>B1 のフラグ化が前提。現設計（経由依存）ではフィルタ自動ジャンプで破れる。観測APIが必要（B3）。</td></tr>
+  <tr><td>AC6</td><td>△</td><td>統合モード除外は jumpToIndex の「非統合のみ記録」で担保。だがプロンプト非表示の観測点を明記。</td></tr>
+  <tr><td>AC7</td><td>○</td><td>SettingsStore registerDefaults パターンに素直に乗る。トグル意味は S4 で要確認。</td></tr>
+  <tr><td>AC8</td><td>○</td><td>妥当。</td></tr>
+</table>
+
+</body>
+</html>

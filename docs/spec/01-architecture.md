@@ -39,9 +39,9 @@ Presentation/  SwiftUI ビュー
 
 | ファイル | 永続化先 | 内容 |
 |---------|--------|------|
-| `FavoritesStore.swift` | `<folder>/.aiview/favorites.json` | フォルダごと `[ファイル名: レベル(1-5)]`。サブディレクトリ走査時は統合モード |
+| `FavoritesStore.swift` | `<folder>/.aiview/favorites.json` | フォルダごと `[ファイル名: レベル(1-5)]` + `lastViewedImage`（前回の表示位置）の v2 ラッパー形式。旧素辞書は後方互換で読込。サブディレクトリ走査時は統合モード |
 | `RecentFoldersStore.swift` | UserDefaults | 最近のフォルダ最大 10 件 + Security-Scoped Bookmark |
-| `SettingsStore.swift` | UserDefaults | キャッシュサイズ、スライドショー間隔 |
+| `SettingsStore.swift` | UserDefaults | キャッシュサイズ、スライドショー間隔、前回の表示位置を確認するか |
 | `DiskCacheStore.swift` | `<folder>/.aiview/<original>.jpg` | サムネイル本体。詳細は [`04-thumbnail-cache.md`](04-thumbnail-cache.md) |
 | `FileSystemAccess.swift` | — | フォルダ削除・Trash への移動などの薄いラッパー |
 

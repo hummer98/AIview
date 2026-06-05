@@ -111,6 +111,16 @@ struct MainWindowView: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
+        .alert("前回の表示位置", isPresented: restorePromptBinding) {
+            Button("移動") {
+                Task { await viewModel.confirmRestoreLastViewed() }
+            }
+            Button("このまま", role: .cancel) {
+                viewModel.dismissRestoreLastViewed()
+            }
+        } message: {
+            Text("前回は「\(viewModel.lastViewedRestorePrompt?.filename ?? "")」を表示していました。その位置へ移動しますか？")
+        }
         .toolbar {
             toolbarContent
         }
@@ -159,6 +169,15 @@ struct MainWindowView: View {
         .init(
             get: { viewModel.errorMessage != nil },
             set: { if !$0 { viewModel.clearError() } }
+        )
+    }
+
+    /// 前回の表示位置の確認ダイアログ表示状態（errorBinding と同型）。
+    /// dismiss（false 化）は却下として扱う。
+    private var restorePromptBinding: Binding<Bool> {
+        .init(
+            get: { viewModel.lastViewedRestorePrompt != nil },
+            set: { if !$0 { viewModel.dismissRestoreLastViewed() } }
         )
     }
 
@@ -232,7 +251,7 @@ struct MainWindowView: View {
                     currentIndex: viewModel.currentIndex,
                     onSelect: { index in
                         Task {
-                            await viewModel.jumpToIndex(index)
+                            await viewModel.jumpToIndex(index, recordLastViewed: true)
                         }
                     },
                     thumbnailCacheManager: viewModel.thumbnailCacheManager,

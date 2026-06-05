@@ -5,6 +5,11 @@ import SwiftUI
 struct SettingsView: View {
     var body: some View {
         TabView {
+            DisplaySettingsTab()
+                .tabItem {
+                    Label("表示", systemImage: "photo")
+                }
+
             CacheSettingsTab()
                 .tabItem {
                     Label("キャッシュ", systemImage: "memorychip")
@@ -16,6 +21,41 @@ struct SettingsView: View {
                 }
         }
         .frame(width: 520, height: 480)
+    }
+}
+
+// MARK: - Display Settings Tab
+
+private struct DisplaySettingsTab: View {
+    private let settingsStore = SettingsStore()
+
+    @State private var restoreLastViewedConfirmEnabled: Bool
+
+    init() {
+        let store = SettingsStore()
+        _restoreLastViewedConfirmEnabled = State(initialValue: store.restoreLastViewedConfirmEnabled)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle(
+                    "フォルダを開いたとき前回の表示位置を確認する",
+                    isOn: $restoreLastViewedConfirmEnabled
+                )
+                .onChange(of: restoreLastViewedConfirmEnabled) { _, newValue in
+                    var store = settingsStore
+                    store.restoreLastViewedConfirmEnabled = newValue
+                }
+            } header: {
+                Text("前回の表示位置")
+            } footer: {
+                Text("ON にすると、記録がある場合にフォルダを開いた直後へ移動確認ダイアログを表示します。記録はこの設定に関わらず行われます（プライバシーモード中を除く）。")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 

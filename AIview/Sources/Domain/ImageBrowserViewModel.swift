@@ -8,6 +8,12 @@ enum SiblingFolderDirection {
     case next
 }
 
+/// 「前回の表示位置を復元しますか？」確認プロンプトの状態。
+/// index は持たず、確定時に `imageURLs` からファイル名で index を再解決する（design-review B2）。
+struct LastViewedRestore: Equatable {
+    let filename: String
+}
+
 /// 画像ブラウザのUI状態管理ViewModel
 /// Requirements: All UI-related requirements
 @MainActor
@@ -30,6 +36,12 @@ final class ImageBrowserViewModel {
     private(set) var currentMetadata: ImageMetadata?
     private(set) var errorMessage: String?
     private(set) var isScanningFolder: Bool = false
+
+    // MARK: - Last Viewed Restore State
+
+    /// 「前回の表示位置へ移動しますか？」確認プロンプト。非 nil で View がダイアログを表示する。
+    /// `handleScanComplete` 末尾でセットし、確定/却下で nil に戻す。
+    var lastViewedRestorePrompt: LastViewedRestore?
 
     // MARK: - Favorites State
 
@@ -166,6 +178,21 @@ final class ImageBrowserViewModel {
     let diskCacheStore: DiskCacheStore
     private let beepPlayer: BeepPlayer
 
+    /// 設定ストア（注入可能。テストから差し替え可能）。
+    /// 前回位置の確認ダイアログ ON/OFF の参照に使う。
+    private let settingsStore: SettingsStore
+
+    // MARK: - Last Viewed Record State
+
+    /// フォルダオープン時に読み込んだ記録画像ファイル名。`handleScanComplete` でプロンプト判定に使う。
+    private var pendingLastViewedFilename: String?
+
+    /// デバウンス記録用 Task。画像移動の都度 cancel→再予約する。
+    private var lastViewedRecordTask: Task<Void, Never>?
+
+    /// 前回位置記録のデバウンス時間（秒）。本番は 0.8s、テストから短縮注入できる。
+    private let lastViewedRecordDebounce: Duration
+
     /// プリフェッチ設定
     private let prefetchBackward = 3
     private let prefetchForward = 12
@@ -190,9 +217,13 @@ final class ImageBrowserViewModel {
         favoritesStore: FavoritesStore? = nil,
         cacheManager: CacheManager? = nil,
         thumbnailCacheManager: ThumbnailCacheManager? = nil,
-        beepPlayer: BeepPlayer? = nil
+        beepPlayer: BeepPlayer? = nil,
+        settingsStore: SettingsStore? = nil,
+        lastViewedRecordDebounce: Duration = .seconds(0.8)
     ) {
-        let settings = SettingsStore()
+        let settings = settingsStore ?? SettingsStore()
+        self.settingsStore = settings
+        self.lastViewedRecordDebounce = lastViewedRecordDebounce
         let diskCacheStore = DiskCacheStore()
         self.diskCacheStore = diskCacheStore
         let cache = cacheManager ?? CacheManager(maxSizeBytes: settings.fullImageCacheSizeBytes)
@@ -219,7 +250,14 @@ final class ImageBrowserViewModel {
     func openFolder(_ url: URL, initialImageURL: URL? = nil) async {
         Logger.app.info("Opening folder: \(url.path, privacy: .public)")
 
-        // 旧フォルダの処理をキャンセル
+        // 旧フォルダの処理をキャンセル。
+        // 前回位置の遅延記録 Task は loadFavorites より前に cancel する。
+        // これを後にすると、旧フォルダ向けの記録が新フォルダの currentFolderURL 確定後に
+        // 発火し、新フォルダの favorites.json を汚す競合が起きる（design-review S2）。
+        lastViewedRecordTask?.cancel()
+        lastViewedRecordTask = nil
+        lastViewedRestorePrompt = nil
+        pendingLastViewedFilename = nil
         await folderScanner.cancelCurrentScan()
         imageLoader.cancelAll()
         cancelThumbnailWarming()
@@ -252,6 +290,9 @@ final class ImageBrowserViewModel {
         // お気に入りを読み込み
         await favoritesStore.loadFavorites(for: url)
         favorites = await favoritesStore.getAllFavorites()
+
+        // 前回の表示位置（記録があれば）を退避。スキャン完了後にプロンプト判定で使う。
+        pendingLastViewedFilename = await favoritesStore.getLastViewedImage()
 
         // 履歴に追加
         recentFoldersStore.addRecentFolder(url)
@@ -400,10 +441,10 @@ final class ImageBrowserViewModel {
             // フィルタリング中はフィルタ後リスト内で移動
             let currentFilterIdx = currentFilteredIndex
             guard currentFilterIdx < filteredIndices.count - 1 else { return }
-            await jumpToIndex(filteredIndices[currentFilterIdx + 1])
+            await jumpToIndex(filteredIndices[currentFilterIdx + 1], recordLastViewed: true)
         } else {
             guard canMoveNext else { return }
-            await jumpToIndex(currentIndex + 1)
+            await jumpToIndex(currentIndex + 1, recordLastViewed: true)
         }
     }
 
@@ -414,21 +455,31 @@ final class ImageBrowserViewModel {
             // フィルタリング中はフィルタ後リスト内で移動
             let currentFilterIdx = currentFilteredIndex
             guard currentFilterIdx > 0 else { return }
-            await jumpToIndex(filteredIndices[currentFilterIdx - 1])
+            await jumpToIndex(filteredIndices[currentFilterIdx - 1], recordLastViewed: true)
         } else {
             guard canMovePrevious else { return }
-            await jumpToIndex(currentIndex - 1)
+            await jumpToIndex(currentIndex - 1, recordLastViewed: true)
         }
     }
 
     /// 指定インデックスへジャンプ
-    func jumpToIndex(_ index: Int) async {
+    /// - Parameters:
+    ///   - index: ジャンプ先インデックス
+    ///   - recordLastViewed: ユーザー主導のナビゲーションのとき true を渡すと、現在画像を
+    ///     「最後に表示していた画像」としてデバウンス記録する（design-review B1）。
+    ///     フィルタ/アンカー同期等の内部ジャンプは既定 false のままにし、記録しない。
+    func jumpToIndex(_ index: Int, recordLastViewed: Bool = false) async {
         guard !imageURLs.isEmpty else { return }
         let clampedIndex = max(0, min(index, imageURLs.count - 1))
         guard clampedIndex != currentIndex else { return }
 
         let direction: PrefetchDirection = clampedIndex > currentIndex ? .forward : .backward
         currentIndex = clampedIndex
+
+        // ユーザー主導の移動のみ前回位置を記録（非統合・非プライバシーモード時）
+        if recordLastViewed {
+            scheduleRecordLastViewed()
+        }
 
         // 前回の読み込みタスクをキャンセル
         currentImageTask?.cancel()
@@ -459,11 +510,38 @@ final class ImageBrowserViewModel {
     
     private var currentImageTask: Task<Void, Never>?
 
+    /// 現在画像を「最後に表示していた画像」としてデバウンス記録する。
+    /// 連打中は都度 cancel→再予約し、0.8s 静止後に 1 回だけ書く。
+    /// 記録は非統合モードかつ非プライバシーモード時のみ（design-review S4）。
+    /// 対象フォルダ URL と filename を Task にキャプチャし、actor 側でフォルダ一致を再確認する（S2）。
+    private func scheduleRecordLastViewed() {
+        guard !isSubdirectoryMode, !isPrivacyMode else { return }
+        guard let folderURL = currentFolderURL, let url = currentImageURL else { return }
+        let filename = url.lastPathComponent
+        let debounce = lastViewedRecordDebounce
+
+        lastViewedRecordTask?.cancel()
+        lastViewedRecordTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: debounce)
+            } catch {
+                // cancel された場合は記録しない
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await self?.favoritesStore.setLastViewedImage(filename, for: folderURL)
+        }
+    }
+
     // MARK: - Actions
 
     /// 現在の画像を削除
     func deleteCurrentImage() async throws {
         guard let url = currentImageURL else { return }
+
+        // 削除でずれる currentImageURL を遅延記録が後から書くのを防ぐ（design-review S1）
+        lastViewedRecordTask?.cancel()
+        lastViewedRecordTask = nil
 
         Logger.app.info("Deleting: \(url.lastPathComponent, privacy: .public)")
 
@@ -568,6 +646,54 @@ final class ImageBrowserViewModel {
 
         // バックグラウンドサムネイル warmer 起動（archive 閲覧前提でフォルダ全件を順に見ることを想定）
         startThumbnailWarming()
+
+        // 前回の表示位置の確認プロンプト判定（スキャン完了後、全ソート済みリストで index を確定してから）
+        evaluateRestorePromptOnScanComplete()
+    }
+
+    /// スキャン完了時に「前回の表示位置を復元しますか？」プロンプトの表示可否を判定する。
+    /// 表示条件（design-review B2 / AC3・AC6）:
+    /// - 設定 ON（`restoreLastViewedConfirmEnabled`）
+    /// - 非統合モード
+    /// - 記録画像（`pendingLastViewedFilename`）が現在の `imageURLs` に存在する
+    /// - 記録画像が初期表示位置（currentIndex）と異なる
+    private func evaluateRestorePromptOnScanComplete() {
+        // 判定後は退避値を消費する（毎回開く度に最新を読み直す）
+        let filename = pendingLastViewedFilename
+        pendingLastViewedFilename = nil
+
+        guard settingsStore.restoreLastViewedConfirmEnabled else { return }
+        guard !isSubdirectoryMode else { return }
+        guard let filename else { return }
+        guard let recordedIndex = imageURLs.firstIndex(where: { $0.lastPathComponent == filename }) else {
+            // 記録画像がフォルダ内に存在しない
+            return
+        }
+        // 記録が初期位置と同一なら何もしない
+        guard recordedIndex != currentIndex else { return }
+
+        lastViewedRestorePrompt = LastViewedRestore(filename: filename)
+        Logger.app.info("Restore prompt shown for: \(filename, privacy: .public)")
+    }
+
+    // MARK: - Last Viewed Restore Operations
+
+    /// 復元プロンプトで「移動」が選ばれたときの確定処理。
+    /// 確定時点の `imageURLs` からファイル名で index を再解決し、ユーザー移動として記録対象でジャンプする。
+    func confirmRestoreLastViewed() async {
+        guard let prompt = lastViewedRestorePrompt else { return }
+        lastViewedRestorePrompt = nil
+
+        guard let idx = imageURLs.firstIndex(where: { $0.lastPathComponent == prompt.filename }) else {
+            // スキャン完了後にファイルが消えた等。何もしない。
+            return
+        }
+        await jumpToIndex(idx, recordLastViewed: true)
+    }
+
+    /// 復元プロンプトで「このまま」が選ばれた／自動 dismiss されたときの却下処理。
+    func dismissRestoreLastViewed() {
+        lastViewedRestorePrompt = nil
     }
 
     /// バックグラウンドサムネイル warmer を起動する。
@@ -1022,7 +1148,7 @@ final class ImageBrowserViewModel {
         }
 
         if nextIndex != currentIndex {
-            await jumpToIndex(nextIndex)
+            await jumpToIndex(nextIndex, recordLastViewed: true)
         }
     }
 
@@ -1050,7 +1176,7 @@ final class ImageBrowserViewModel {
         }
 
         if prevIndex != currentIndex {
-            await jumpToIndex(prevIndex)
+            await jumpToIndex(prevIndex, recordLastViewed: true)
         }
     }
 
