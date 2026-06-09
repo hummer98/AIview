@@ -27,6 +27,17 @@ struct ImageDisplayView: View {
                         .foregroundColor(.white.opacity(0.4))
                         .font(.subheadline)
                 }
+            } else if isLoading {
+                // ローディング中。古い画像は表示せず、ローディングを優先する。
+                // これにより「index は進んだのにメイン画像が古いまま」に見える状態を防ぐ
+                // （表示確定 currentIndex 自体もロード完了まで進まない）。
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .progressViewStyle(.circular)
+                    Text("読み込み中...")
+                        .foregroundColor(.white.opacity(0.7))
+                }
             } else if let image = image {
                 // 画像を表示（アスペクト比維持）
                 Image(nsImage: image)
@@ -39,15 +50,6 @@ struct ImageDisplayView: View {
                                 .padding(12)
                         }
                     }
-            } else if isLoading {
-                // ローディング中
-                VStack(spacing: 16) {
-                    ProgressView()
-                        .scaleEffect(1.5)
-                        .progressViewStyle(.circular)
-                    Text("読み込み中...")
-                        .foregroundColor(.white.opacity(0.7))
-                }
             } else if !hasImages {
                 // 画像がない
                 VStack(spacing: 16) {

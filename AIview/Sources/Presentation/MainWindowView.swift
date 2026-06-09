@@ -305,9 +305,13 @@ struct MainWindowView: View {
                         .foregroundColor(.green)
                         .font(.system(size: 12, weight: .medium))
                 }
-                Text(viewModel.filterStatusText)
-                    .foregroundColor(viewModel.isFiltering ? .yellow : .white)
-                    .font(.system(size: 12))
+                // スキャン中は枚数が確定していない（段階的に増える）ため、カウンタを出さない。
+                // 確定後に正しい総数を表示する。スキャン状態は中央の「スキャン中...」で示す。
+                if !viewModel.isScanningFolder {
+                    Text(viewModel.filterStatusText)
+                        .foregroundColor(viewModel.isFiltering ? .yellow : .white)
+                        .font(.system(size: 12))
+                }
             }
 
             Spacer()

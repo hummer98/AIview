@@ -54,6 +54,7 @@
 		A1000045 /* Metrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000045 /* Metrics.swift */; };
 		A1000046 /* MetricsCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000046 /* MetricsCollector.swift */; };
 		A1000047 /* QueueInstrumentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000047 /* QueueInstrumentation.swift */; };
+		A1000099 /* NavigationDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000099 /* NavigationDiagnostics.swift */; };
 		A1000049 /* ThumbnailGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000049 /* ThumbnailGenerator.swift */; };
 		A1000048 /* MetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000048 /* MetricsTests.swift */; };
 		A1000050 /* ThumbnailWarmerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000050 /* ThumbnailWarmerTests.swift */; };
@@ -139,6 +140,7 @@
 		A2000045 /* Metrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Metrics.swift; sourceTree = "<group>"; };
 		A2000046 /* MetricsCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsCollector.swift; sourceTree = "<group>"; };
 		A2000047 /* QueueInstrumentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueInstrumentation.swift; sourceTree = "<group>"; };
+		A2000099 /* NavigationDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationDiagnostics.swift; sourceTree = "<group>"; };
 		A2000049 /* ThumbnailGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailGenerator.swift; sourceTree = "<group>"; };
 		A2000048 /* MetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsTests.swift; sourceTree = "<group>"; };
 		A2000050 /* ThumbnailWarmerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailWarmerTests.swift; sourceTree = "<group>"; };
@@ -263,6 +265,7 @@
 				A2000047 /* QueueInstrumentation.swift */,
 				A2000049 /* ThumbnailGenerator.swift */,
 				A2000060 /* BeepPlayer.swift */,
+				A2000099 /* NavigationDiagnostics.swift */,
 			);
 			path = Domain;
 			sourceTree = "<group>";
@@ -488,6 +491,7 @@
 				A1000045 /* Metrics.swift in Sources */,
 				A1000046 /* MetricsCollector.swift in Sources */,
 				A1000047 /* QueueInstrumentation.swift in Sources */,
+				A1000099 /* NavigationDiagnostics.swift in Sources */,
 				A1000049 /* ThumbnailGenerator.swift in Sources */,
 				A1000060 /* BeepPlayer.swift in Sources */,
 				A1000065 /* ThumbnailActivityIndicator.swift in Sources */,
@@ -695,7 +699,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.7.0;
+				MARKETING_VERSION = 0.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIview;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -720,7 +724,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.7.0;
+				MARKETING_VERSION = 0.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIview;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -735,7 +739,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.7.0;
+				MARKETING_VERSION = 0.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -751,7 +755,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.7.0;
+				MARKETING_VERSION = 0.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -768,7 +772,7 @@
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.7.0;
+				MARKETING_VERSION = 0.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -785,7 +789,7 @@
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.7.0;
+				MARKETING_VERSION = 0.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;

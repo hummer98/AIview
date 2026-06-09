@@ -27,8 +27,23 @@ final class ImageBrowserViewModel {
     /// View 側 (ThumbnailCarousel) はこれを `.task(id:)` の id として使い、フォルダ切替時のみ
     /// thumbnailStates をリセットする。scan progress 中の imageURLs 増分では更新しない。
     private(set) var folderID: UUID = UUID()
+    /// 表示確定済みインデックス。メイン画像のロードが完了した時点で更新する。
+    /// カウンタ・サムネイル選択枠・`currentImageURL`（＝お気に入り/削除等の操作対象）は
+    /// すべてこの値を基準にし、「画像が表示される瞬間」と同期させる。
     private(set) var currentIndex: Int = 0
+
+    /// ナビゲーションの目標インデックス（先行する論理位置）。
+    /// `moveToNext` / `moveToPrevious` / `jumpToIndex` はこの値を進め、ロード完了で
+    /// `currentIndex` に確定する。連打時は `targetIndex` だけが先に進み、中間はロードされずに
+    /// スキップされる（最新の `targetIndex` のみ表示確定する）。
+    private var targetIndex: Int = 0
+
     private(set) var currentImage: NSImage?
+
+    /// `currentImage` が実際に表す画像の URL（診断用）。
+    /// `currentImage` をセットするたびに同期更新する。確定済み index と画像が一致しない
+    /// ＝メイン画像が追従できていない状態の検出に使う。
+    private(set) var loadedImageURL: URL?
     private(set) var isLoading: Bool = false
     private(set) var isPrivacyMode: Bool = false
     private(set) var isInfoPanelVisible: Bool = false
@@ -261,6 +276,9 @@ final class ImageBrowserViewModel {
         await folderScanner.cancelCurrentScan()
         imageLoader.cancelAll()
         cancelThumbnailWarming()
+        // 前フォルダ向けの遅延 commit が新フォルダの currentIndex を書き換えるのを防ぐ
+        currentImageTask?.cancel()
+        currentImageTask = nil
 
         // 状態をリセット
         currentFolderURL = url
@@ -268,7 +286,9 @@ final class ImageBrowserViewModel {
         folderID = UUID()
         imageURLs = []
         currentIndex = 0
+        targetIndex = 0
         currentImage = nil
+        loadedImageURL = nil
         currentMetadata = nil
         errorMessage = nil
         isLoading = true
@@ -438,13 +458,13 @@ final class ImageBrowserViewModel {
     /// Requirements: 3.5, 5.1
     func moveToNext() async {
         if isFiltering {
-            // フィルタリング中はフィルタ後リスト内で移動
-            let currentFilterIdx = currentFilteredIndex
-            guard currentFilterIdx < filteredIndices.count - 1 else { return }
-            await jumpToIndex(filteredIndices[currentFilterIdx + 1], recordLastViewed: true)
+            // フィルタリング中はフィルタ後リスト内で移動（基準は目標 index）
+            let base = targetFilteredIndex
+            guard base < filteredIndices.count - 1 else { return }
+            await jumpToIndex(filteredIndices[base + 1], recordLastViewed: true)
         } else {
-            guard canMoveNext else { return }
-            await jumpToIndex(currentIndex + 1, recordLastViewed: true)
+            guard targetIndex < imageURLs.count - 1 else { return }
+            await jumpToIndex(targetIndex + 1, recordLastViewed: true)
         }
     }
 
@@ -452,14 +472,20 @@ final class ImageBrowserViewModel {
     /// Requirements: 3.5, 5.2
     func moveToPrevious() async {
         if isFiltering {
-            // フィルタリング中はフィルタ後リスト内で移動
-            let currentFilterIdx = currentFilteredIndex
-            guard currentFilterIdx > 0 else { return }
-            await jumpToIndex(filteredIndices[currentFilterIdx - 1], recordLastViewed: true)
+            // フィルタリング中はフィルタ後リスト内で移動（基準は目標 index）
+            let base = targetFilteredIndex
+            guard base > 0 else { return }
+            await jumpToIndex(filteredIndices[base - 1], recordLastViewed: true)
         } else {
-            guard canMovePrevious else { return }
-            await jumpToIndex(currentIndex - 1, recordLastViewed: true)
+            guard targetIndex > 0 else { return }
+            await jumpToIndex(targetIndex - 1, recordLastViewed: true)
         }
+    }
+
+    /// 目標 index のフィルタ後リスト内位置（連打の基準）。
+    /// `targetIndex` が見つからなければ表示中位置 (`currentFilteredIndex`) にフォールバック。
+    private var targetFilteredIndex: Int {
+        filteredIndices.firstIndex(of: targetIndex) ?? currentFilteredIndex
     }
 
     /// 指定インデックスへジャンプ
@@ -469,36 +495,54 @@ final class ImageBrowserViewModel {
     ///     「最後に表示していた画像」としてデバウンス記録する（design-review B1）。
     ///     フィルタ/アンカー同期等の内部ジャンプは既定 false のままにし、記録しない。
     func jumpToIndex(_ index: Int, recordLastViewed: Bool = false) async {
-        guard !imageURLs.isEmpty else { return }
-        let clampedIndex = max(0, min(index, imageURLs.count - 1))
-        guard clampedIndex != currentIndex else { return }
-
-        let direction: PrefetchDirection = clampedIndex > currentIndex ? .forward : .backward
-        currentIndex = clampedIndex
-
-        // ユーザー主導の移動のみ前回位置を記録（非統合・非プライバシーモード時）
-        if recordLastViewed {
-            scheduleRecordLastViewed()
+        guard !imageURLs.isEmpty else {
+            NavigationDiagnostics.shared.breadcrumb("jumpToIndex(\(index)) skipped: imageURLs empty")
+            return
         }
+        let clampedIndex = max(0, min(index, imageURLs.count - 1))
+        // 目標 index を基準に重複判定する。表示確定 (currentIndex) はロード後に追従するため、
+        // 連打中に currentIndex がまだ前のままでも、既に同じ目標へ向かっていれば二重起動しない。
+        guard clampedIndex != targetIndex else {
+            NavigationDiagnostics.shared.breadcrumb("jumpToIndex(\(index)) skipped: same target \(targetIndex) (displayed \(currentIndex))")
+            return
+        }
+
+        // direction は「表示中位置 → 目標」で判定（プリフェッチの進行方向）
+        let direction: PrefetchDirection = clampedIndex > currentIndex ? .forward : .backward
+        NavigationDiagnostics.shared.breadcrumb("jumpToIndex: target \(targetIndex) -> \(clampedIndex) (displayed \(currentIndex)) url=\(imageURLs[clampedIndex].lastPathComponent) record=\(recordLastViewed)")
+        targetIndex = clampedIndex
 
         // 前回の読み込みタスクをキャンセル
         currentImageTask?.cancel()
 
-        let url = imageURLs[currentIndex]
+        let url = imageURLs[clampedIndex]
         let startTime = CFAbsoluteTimeGetCurrent()
 
         // cancelAllExcept は Task の外で同期呼び出しする。
         // Task 内で呼ぶと、キャンセル済み Task の body が後から実行された際に
-        // 古い url で新しい load を誤キャンセルする競合が起きる
-        // （矢印キー連打時に index は進むが画像が変わらなくなる事象の原因）。
+        // 古い url で新しい load を誤キャンセルする競合が起きる。
         imageLoader.cancelAllExcept(url)
 
-        // 新しいタスクを開始（UI更新をブロックしない）
-        currentImageTask = Task(priority: .userInitiated) {
-            await loadCurrentImage(startTime: startTime)
+        // ロード完了で currentIndex を確定する。表示同期のためロードが終わるまで待つ
+        // （cache ヒットなら即時）。連打時は後続の jumpToIndex がこの Task を cancel し、
+        // 中間 index はロードされずにスキップされる。
+        let task = Task(priority: .userInitiated) {
+            await loadAndCommit(index: clampedIndex, startTime: startTime)
 
-            // タスクがキャンセルされていない場合のみプリフェッチ更新
+            // キャンセルされていなければ（＝このタスクが最新の生存ナビゲーション）後処理
             if !Task.isCancelled {
+                if currentIndex == clampedIndex {
+                    // 表示確定に成功。ユーザー主導の移動のみ前回位置を記録
+                    if recordLastViewed {
+                        scheduleRecordLastViewed()
+                    }
+                } else if errorMessage == nil {
+                    // 生存タスクなのに index が確定していない＝表示同期に失敗（追跡対象の症状）。
+                    NavigationDiagnostics.shared.reportAnomaly(
+                        "nav to \(clampedIndex) (\(url.lastPathComponent)) did not commit; displayed=\(currentIndex) loaded=\(loadedImageURL?.lastPathComponent ?? "nil") isLoading=\(isLoading)"
+                    )
+                }
+
                 if isFiltering {
                     updateFilteredPrefetch()
                 } else {
@@ -506,6 +550,10 @@ final class ImageBrowserViewModel {
                 }
             }
         }
+        currentImageTask = task
+        // ロード（またはキャンセル）の完了まで待つ。これにより呼び出し側は表示確定後の
+        // currentIndex を観測できる。キャンセルされた場合は速やかに戻る。
+        await task.value
     }
     
     private var currentImageTask: Task<Void, Never>?
@@ -551,16 +599,20 @@ final class ImageBrowserViewModel {
             // リストから削除
             imageURLs.remove(at: currentIndex)
 
-            // インデックスを調整
+            // インデックスを調整（表示確定 index と目標 index を一致させる）
             if imageURLs.isEmpty {
                 currentIndex = 0
+                targetIndex = 0
                 currentImage = nil
+                loadedImageURL = nil
                 currentMetadata = nil
             } else if currentIndex >= imageURLs.count {
                 currentIndex = imageURLs.count - 1
-                await loadCurrentImage()
+                targetIndex = currentIndex
+                await loadAndCommit(index: currentIndex)
             } else {
-                await loadCurrentImage()
+                targetIndex = currentIndex
+                await loadAndCommit(index: currentIndex)
             }
 
             Logger.app.info("Deleted successfully")
@@ -605,8 +657,9 @@ final class ImageBrowserViewModel {
             Logger.app.debug("First image found: \(url.lastPathComponent, privacy: .public)")
             self.imageURLs = [url]
             self.currentIndex = 0
+            self.targetIndex = 0
         }
-        await loadCurrentImage()
+        await loadAndCommit(index: 0)
     }
 
     private func handleScanProgress(_ urls: [URL]) async {
@@ -632,13 +685,15 @@ final class ImageBrowserViewModel {
                 self.currentIndex = newIndex
             }
             self.pendingInitialImageURL = nil
+            // 表示確定 index に目標 index を一致させる
+            self.targetIndex = self.currentIndex
 
             Logger.app.info("Scan complete: \(urls.count, privacy: .public) images")
         }
 
         // 初期画像へジャンプした場合は先頭画像（handleFirstImage で読込済み）ではなく対象を読み込む
         if didJumpToInitialImage {
-            await loadCurrentImage()
+            await loadAndCommit(index: currentIndex)
         }
 
         // 先読みを開始（同期的にタスク作成、UIをブロックしない）
@@ -724,19 +779,32 @@ final class ImageBrowserViewModel {
         thumbnailWarmingTask = nil
     }
 
-    private func loadCurrentImage(startTime: CFAbsoluteTime? = nil) async {
-        guard let url = currentImageURL else {
+    /// 指定 index の画像をロードし、成功したら `currentIndex` を index に確定（commit）する。
+    /// ロードが終わるまで `currentIndex`・メイン画像を切り替えないので、カウンタ・サムネイル枠・
+    /// メイン画像の表示が同期する（index だけが先行しない）。キャッシュヒット時は即確定。
+    /// キャンセル時（連打で後続に追い越された等）は何も確定しない。
+    private func loadAndCommit(index: Int, startTime: CFAbsoluteTime? = nil) async {
+        guard index >= 0, index < imageURLs.count else {
+            NavigationDiagnostics.shared.breadcrumb("loadAndCommit abort: index out of range \(index)/\(imageURLs.count)")
             currentImage = nil
+            loadedImageURL = nil
             return
         }
+        let url = imageURLs[index]
 
-        // まずキャッシュを直接チェック（actorを経由しない）
+        // まずキャッシュを直接チェック（actorを経由しない）。ヒット時はローディングを挟まず即確定。
         if let cached = cacheManager.getCachedImage(for: url) {
-            // キャンセルされていたら更新しない
-            if Task.isCancelled { return }
+            // キャンセルされていたら確定しない
+            if Task.isCancelled {
+                NavigationDiagnostics.shared.breadcrumb("loadAndCommit cache-hit abort: task cancelled idx=\(index) url=\(url.lastPathComponent)")
+                return
+            }
 
             self.currentImage = cached
+            self.currentIndex = index
+            self.loadedImageURL = url
             self.isLoading = false
+            NavigationDiagnostics.shared.breadcrumb("loadAndCommit commit (cache hit): idx=\(index) \(url.lastPathComponent)")
 
             if let startTime = startTime {
                 let elapsedMs = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
@@ -745,22 +813,32 @@ final class ImageBrowserViewModel {
             return
         }
 
+        // キャッシュミス: ロード中はローディング表示にする（古い画像は隠す）
         isLoading = true
 
         do {
             let t0 = CFAbsoluteTimeGetCurrent()
             let result = try await imageLoader.loadImage(from: url, priority: .display, targetSize: nil)
-            
-            // キャンセルされていたら更新しない
-            if Task.isCancelled { return }
+
+            // キャンセルされていたら確定しない
+            if Task.isCancelled {
+                NavigationDiagnostics.shared.breadcrumb("loadAndCommit post-load abort: task cancelled idx=\(index) url=\(url.lastPathComponent)")
+                return
+            }
 
             let t1 = CFAbsoluteTimeGetCurrent()
             await MainActor.run {
                 // MainActor上でも再度キャンセル確認
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    NavigationDiagnostics.shared.breadcrumb("loadAndCommit MainActor abort: task cancelled idx=\(index) url=\(url.lastPathComponent)")
+                    return
+                }
 
                 self.currentImage = result.image
+                self.currentIndex = index
+                self.loadedImageURL = url
                 self.isLoading = false
+                NavigationDiagnostics.shared.breadcrumb("loadAndCommit commit (\(result.cacheHit ? "cache hit" : "decoded")): idx=\(index) \(url.lastPathComponent)")
             }
             let t2 = CFAbsoluteTimeGetCurrent()
 
@@ -775,12 +853,27 @@ final class ImageBrowserViewModel {
             }
         } catch {
             // キャンセル時は何もしない（状態を上書きしない）
-            if (error as? ImageLoaderError) == .cancelled || Task.isCancelled {
+            let reportedCancelled = (error as? ImageLoaderError) == .cancelled
+            if reportedCancelled || Task.isCancelled {
+                // このタスク自身はキャンセルされていないのに loadImage が .cancelled を返した場合、
+                // 「生存タスクなのに画像更新を諦めて return する」異常な経路。これが起きると index は
+                // 進んだのにメイン画像が固まる。原因究明のため即インシデント記録する。
+                if reportedCancelled && !Task.isCancelled {
+                    NavigationDiagnostics.shared.reportAnomaly(
+                        "loadImage returned .cancelled for a live task: idx=\(index) url=\(url.lastPathComponent)"
+                    )
+                } else {
+                    NavigationDiagnostics.shared.breadcrumb("loadAndCommit cancelled (normal): idx=\(index) url=\(url.lastPathComponent)")
+                }
                 return
             }
 
+            NavigationDiagnostics.shared.breadcrumb("loadAndCommit error: idx=\(index) url=\(url.lastPathComponent) error=\(error.localizedDescription)")
             await MainActor.run {
+                // 失敗時も index は確定させ、エラー表示と位置を一致させる
                 self.currentImage = nil
+                self.currentIndex = index
+                self.loadedImageURL = nil
                 self.isLoading = false
                 self.errorMessage = error.localizedDescription
             }
@@ -1131,23 +1224,23 @@ final class ImageBrowserViewModel {
 
         let nextIndex: Int
         if isFiltering {
-            let currentFilterIdx = currentFilteredIndex
-            if currentFilterIdx >= filteredIndices.count - 1 {
+            let base = targetFilteredIndex
+            if base >= filteredIndices.count - 1 {
                 // ループ: 最初に戻る
                 nextIndex = filteredIndices.first ?? 0
             } else {
-                nextIndex = filteredIndices[currentFilterIdx + 1]
+                nextIndex = filteredIndices[base + 1]
             }
         } else {
-            if currentIndex >= imageURLs.count - 1 {
+            if targetIndex >= imageURLs.count - 1 {
                 // ループ: 最初に戻る
                 nextIndex = 0
             } else {
-                nextIndex = currentIndex + 1
+                nextIndex = targetIndex + 1
             }
         }
 
-        if nextIndex != currentIndex {
+        if nextIndex != targetIndex {
             await jumpToIndex(nextIndex, recordLastViewed: true)
         }
     }
@@ -1159,23 +1252,23 @@ final class ImageBrowserViewModel {
 
         let prevIndex: Int
         if isFiltering {
-            let currentFilterIdx = currentFilteredIndex
-            if currentFilterIdx <= 0 {
+            let base = targetFilteredIndex
+            if base <= 0 {
                 // ループ: 最後に移動
                 prevIndex = filteredIndices.last ?? 0
             } else {
-                prevIndex = filteredIndices[currentFilterIdx - 1]
+                prevIndex = filteredIndices[base - 1]
             }
         } else {
-            if currentIndex <= 0 {
+            if targetIndex <= 0 {
                 // ループ: 最後に移動
                 prevIndex = imageURLs.count - 1
             } else {
-                prevIndex = currentIndex - 1
+                prevIndex = targetIndex - 1
             }
         }
 
-        if prevIndex != currentIndex {
+        if prevIndex != targetIndex {
             await jumpToIndex(prevIndex, recordLastViewed: true)
         }
     }
@@ -1214,6 +1307,9 @@ final class ImageBrowserViewModel {
         await folderScanner.cancelCurrentScan()
         imageLoader.cancelAll()
         cancelThumbnailWarming()
+        // 進行中の遅延 commit がリロード後の位置復元を上書きしないようキャンセル
+        currentImageTask?.cancel()
+        currentImageTask = nil
 
         // ThumbnailCarousel の .task(id: folderID) を再発火させ、サムネイルの世代交代を
         // 確実に trigger するため folderID を更新。imageURLs = [] は hasImages を false にして
@@ -1320,7 +1416,9 @@ final class ImageBrowserViewModel {
         if imageURLs.isEmpty {
             // 空フォルダ状態（Requirements: 3.3）
             currentIndex = 0
+            targetIndex = 0
             currentImage = nil
+            loadedImageURL = nil
             currentMetadata = nil
             Logger.app.info("Folder is now empty after reload")
             return
@@ -1335,10 +1433,11 @@ final class ImageBrowserViewModel {
             currentIndex = min(savedIndex, imageURLs.count - 1)
             Logger.app.debug("Selected nearest image at index \(self.currentIndex, privacy: .public)")
         }
+        targetIndex = currentIndex
 
         // 現在の画像を再読み込み
         Task {
-            await loadCurrentImage()
+            await loadAndCommit(index: currentIndex)
         }
     }
 
@@ -1536,10 +1635,11 @@ final class ImageBrowserViewModel {
     /// imageURLs 差し替え後、アンカー URL を基準に currentIndex を同期する
     /// - Parameter anchorURL: 差し替え前に表示していた画像 URL（新リストに含まれるなら位置復元）
     /// - Parameter fallback: 新リストにアンカーが見つからない場合の index（デフォルト 0）
-    /// - Note: jumpToIndex の同一 index ガードを回避するため currentIndex を一旦 -1 に戻してから呼ぶ
+    /// - Note: jumpToIndex の同一目標ガードを回避するため targetIndex を一旦 -1 に戻してから呼ぶ
     private func syncCurrentIndexByAnchor(anchorURL: URL?, fallback: Int = 0) async {
         guard !imageURLs.isEmpty else {
             currentIndex = 0
+            targetIndex = 0
             return
         }
 
@@ -1555,8 +1655,8 @@ final class ImageBrowserViewModel {
         }
 
         let clamped = max(0, min(target, imageURLs.count - 1))
-        // jumpToIndex の同一 index ガード回避
-        currentIndex = -1
+        // jumpToIndex の同一目標ガード回避（targetIndex を無効値にしてから呼ぶ）
+        targetIndex = -1
         await jumpToIndex(clamped)
     }
 }

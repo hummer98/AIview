@@ -80,12 +80,23 @@ ImageBrowserViewModel.openFolder(url)
 ```
 ←/→ キー
   ↓
-ImageBrowserViewModel.next() / previous()
+ImageBrowserViewModel.moveToNext() / moveToPrevious()
+  ├─ targetIndex を進める（先行する論理位置）
   ├─ ImageLoader.loadImage(.display) → CacheManager (LRU memory)
+  │    └─ 完了で currentIndex = targetIndex を確定（表示同期）
   └─ ImageLoader.prefetch([next ±N], .prefetch, direction)
        ↓ 進行方向に応じて 12 枚先行 / 3 枚遡る
        CacheManager にバックグラウンド充填
 ```
+
+### 表示同期（targetIndex と currentIndex の分離）
+
+ナビゲーションは 2 つの index を持つ:
+
+- **`targetIndex`**: 移動操作が進める論理位置（先行）。連打時はここだけが進み、中間 index はロードされずにスキップされる
+- **`currentIndex`**: 表示確定位置。メイン画像のロードが完了した時点で `targetIndex` に追従する。カウンタ・サムネイル選択枠・`currentImageURL`（お気に入り/削除の対象）はすべてこちらを基準にする
+
+これにより「index だけ先行してメイン画像が古いまま」になる状態を防ぐ。ロードが遅延している間は古い画像を表示せず `isLoading` でローディング表示に切り替える（キャッシュ済みは即時確定なのでローディングを挟まない）。`jumpToIndex` はロード（またはキャンセル）完了まで `await` するため、呼び出し側は確定後の `currentIndex` を観測できる。
 
 ## 並行性モデル
 
