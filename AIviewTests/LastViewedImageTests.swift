@@ -204,11 +204,42 @@ final class LastViewedImageTests: XCTestCase {
         try await Task.sleep(nanoseconds: 600_000_000)
 
         XCTAssertNotNil(viewModel.lastViewedRestorePrompt)
-        await viewModel.confirmRestoreLastViewed()
+        await viewModel.confirmRestoreLastViewed()?.value
 
         XCTAssertNil(viewModel.lastViewedRestorePrompt, "確定後 prompt は nil")
         XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_04.png")
         XCTAssertEqual(viewModel.currentIndex, 3)
+    }
+
+    /// 回帰（plan: 移動ボタン不具合）: 「移動」確定の直後に dismiss が走っても移動が失われない。
+    ///
+    /// 不具合の再現条件: SwiftUI の alert は「移動」アクション実行後に dismiss し、
+    /// `restorePromptBinding` の `set(false)` が `dismissRestoreLastViewed()` を呼んで
+    /// `lastViewedRestorePrompt` を nil 化する。旧実装は確定処理を `Task { await … }` で
+    /// 遅延させていたため、その本体が走る前に dismiss が prompt を消し、移動が起きなかった。
+    /// 現在は確定（prompt 消費 + index 解決）が同期的なので、後続の dismiss は no-op になり
+    /// 移動は確実にコミットされる。本テストはその順序（confirm → dismiss）を再現して固定する。
+    func testViewModel_ConfirmThenDismiss_StillJumps() async throws {
+        try writeRawFavorites(
+            "{\"favorites\":{},\"lastViewedImage\":\"test_image_04.png\"}",
+            in: testFolderURL
+        )
+
+        let viewModel = makeViewModel(confirmEnabled: true)
+        await viewModel.openFolder(testFolderURL)
+        try await Task.sleep(nanoseconds: 600_000_000)
+
+        XCTAssertNotNil(viewModel.lastViewedRestorePrompt)
+
+        // 「移動」アクション（同期スナップショット）→ alert dismiss(set(false)) の順序を再現
+        let jump = viewModel.confirmRestoreLastViewed()
+        viewModel.dismissRestoreLastViewed()
+        await jump?.value
+
+        XCTAssertNil(viewModel.lastViewedRestorePrompt, "確定後 prompt は nil")
+        XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_04.png",
+                       "dismiss と競合しても記録画像へ移動する")
+        XCTAssertEqual(viewModel.currentIndex, 3, "記録位置（index 3）へ移動が確定する")
     }
 
     /// dismissRestoreLastViewed()→位置不変・prompt nil

@@ -735,15 +735,23 @@ final class ImageBrowserViewModel {
 
     /// 復元プロンプトで「移動」が選ばれたときの確定処理。
     /// 確定時点の `imageURLs` からファイル名で index を再解決し、ユーザー移動として記録対象でジャンプする。
-    func confirmRestoreLastViewed() async {
-        guard let prompt = lastViewedRestorePrompt else { return }
+    ///
+    /// **同期スナップショットである理由**: SwiftUI の alert は「移動」ボタンのアクション実行後に
+    /// dismiss し、`restorePromptBinding` の `set(false)` 経由で `dismissRestoreLastViewed()` が
+    /// `lastViewedRestorePrompt` を nil 化する。確定処理を `Task { await … }` で遅延させると、
+    /// その非同期本体が走る前に dismiss が prompt を消し、`guard let prompt` が早期 return して
+    /// 移動が起きない（v0.7.x の不具合）。そこで prompt の消費と index 解決は**同期的**に行い、
+    /// 非同期なのは実際のロード（`jumpToIndex`）だけにする。テストが完了を待てるよう Task を返す。
+    @discardableResult
+    func confirmRestoreLastViewed() -> Task<Void, Never>? {
+        guard let prompt = lastViewedRestorePrompt else { return nil }
         lastViewedRestorePrompt = nil
 
         guard let idx = imageURLs.firstIndex(where: { $0.lastPathComponent == prompt.filename }) else {
             // スキャン完了後にファイルが消えた等。何もしない。
-            return
+            return nil
         }
-        await jumpToIndex(idx, recordLastViewed: true)
+        return Task { await jumpToIndex(idx, recordLastViewed: true) }
     }
 
     /// 復元プロンプトで「このまま」が選ばれた／自動 dismiss されたときの却下処理。

@@ -113,7 +113,9 @@ struct MainWindowView: View {
         }
         .alert("前回の表示位置", isPresented: restorePromptBinding) {
             Button("移動") {
-                Task { await viewModel.confirmRestoreLastViewed() }
+                // 同期呼び出しが必須: Task でラップすると dismiss(set(false)) が先に走り、
+                // prompt が nil 化されて移動が失われる（confirmRestoreLastViewed の doc 参照）。
+                viewModel.confirmRestoreLastViewed()
             }
             Button("このまま", role: .cancel) {
                 viewModel.dismissRestoreLastViewed()

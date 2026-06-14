@@ -2,6 +2,12 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [0.7.2] - 2026-06-15
+
+### Fixed
+
+- 「前回の表示位置へ移動しますか?」確認ダイアログで「移動」を押しても移動しない不具合を修正。SwiftUI の alert はボタンアクション実行後に dismiss するため、確定処理を `Task { await … }` で遅延させていると dismiss 側の却下処理が先に走って記録（`lastViewedRestorePrompt`）を消し、移動が失われていた。確定（記録の消費と移動先 index の解決）を同期的に行い、非同期はロードのみに限定して修正。dismiss と競合しても移動が確定することを検証する回帰テスト（`LastViewedImageTests.testViewModel_ConfirmThenDismiss_StillJumps`）を追加
+
 ## [0.7.1] - 2026-06-09
 
 ### Fixed
