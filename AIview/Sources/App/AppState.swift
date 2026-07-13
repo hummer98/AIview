@@ -1,5 +1,15 @@
 import Foundation
 
+/// メインビューのズーム操作コマンド。
+/// メニュー / キーボードショートカットから発行し、`ZoomableImageView` が
+/// ビュー座標系（コンテナサイズ）を使って解釈・適用する。
+enum ZoomCommand: Equatable {
+    case zoomIn       // 拡大（⌘+）
+    case zoomOut      // 縮小（⌘-）
+    case actualSize   // 実際のサイズ 100%（⌘0）
+    case fit          // ウィンドウに合わせる（⌘9）
+}
+
 /// アプリケーション全体の状態を管理
 /// メニューコマンドとビュー間の橋渡しを担当
 /// Requirements: 1.1, 1.4, 1.5, 2.3, 2.4
@@ -51,6 +61,27 @@ final class AppState {
     /// 現在フォルダが選択されているか（メニュー有効/無効判定用）
     /// Requirements: 2.4
     var hasCurrentFolder = false
+
+    /// 表示中の画像があるか（ズーム系メニューの有効/無効判定用）
+    var hasImages = false
+
+    // MARK: - Zoom
+
+    /// ズーム操作のリクエスト（nil なら未要求）。
+    /// メニュー / ショートカットで set し、`ZoomableImageView` が消費して nil に戻す。
+    /// 同じコマンドの連打（例: ⌘+ の連続）でも nil→値の遷移になるよう、
+    /// 消費側が都度クリアする設計。
+    private(set) var zoomCommand: ZoomCommand?
+
+    /// ズーム操作をトリガー
+    func requestZoom(_ command: ZoomCommand) {
+        zoomCommand = command
+    }
+
+    /// ズームリクエストを消費済みにする（ビューが適用後に呼ぶ）
+    func clearZoomCommand() {
+        zoomCommand = nil
+    }
 
     /// リロードをトリガー
     /// Requirements: 2.3

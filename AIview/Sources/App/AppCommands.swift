@@ -79,6 +79,33 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut(.downArrow, modifiers: .command)
             .disabled(!appState.hasCurrentFolder)
+
+            Divider()
+
+            // ズーム
+            Button("拡大") {
+                appState.requestZoom(.zoomIn)
+            }
+            .keyboardShortcut("+", modifiers: .command)
+            .disabled(!appState.hasImages)
+
+            Button("縮小") {
+                appState.requestZoom(.zoomOut)
+            }
+            .keyboardShortcut("-", modifiers: .command)
+            .disabled(!appState.hasImages)
+
+            Button("実際のサイズ") {
+                appState.requestZoom(.actualSize)
+            }
+            .keyboardShortcut("0", modifiers: .command)
+            .disabled(!appState.hasImages)
+
+            Button("ウィンドウに合わせる") {
+                appState.requestZoom(.fit)
+            }
+            .keyboardShortcut("9", modifiers: .command)
+            .disabled(!appState.hasImages)
         }
 
         // 開発メニュー: メトリクスをログに出力

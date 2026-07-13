@@ -35,6 +35,10 @@ struct MainWindowView: View {
                 appState?.hasCurrentFolder = (viewModel.currentFolderURL != nil)
                 storedFolderPath = viewModel.currentFolderURL?.path ?? ""
             }
+            .onChange(of: viewModel.hasImages) { _, newValue in
+                // ズーム系メニューの有効/無効判定に使う
+                appState?.hasImages = newValue
+            }
             .navigationTitle(viewModel.currentFolderURL?.path ?? "AIview")
             .onAppear {
                 handleAppear()
@@ -238,7 +242,8 @@ struct MainWindowView: View {
                 isLoading: viewModel.isLoading,
                 hasImages: viewModel.hasImages,
                 favoriteLevel: viewModel.currentFavoriteLevel,
-                isFilterEmpty: viewModel.isFilterEmpty
+                isFilterEmpty: viewModel.isFilterEmpty,
+                imageID: viewModel.currentImageURL?.path
             )
 
             // ステータスバー

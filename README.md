@@ -33,6 +33,17 @@ A high-performance image viewer for macOS, optimized for browsing large image co
 | `Space` | Toggle privacy mode |
 | `s` | Open slideshow settings dialog |
 
+### Zoom
+
+Zoom the main image with a trackpad pinch, or via the View menu / shortcuts. Drag to pan while zoomed in. Switching images resets to fit.
+
+| Key | Action |
+|-----|--------|
+| `⌘+` | Zoom in |
+| `⌘−` | Zoom out |
+| `⌘0` | Actual size (100%) |
+| `⌘9` | Zoom to fit (fit to window) |
+
 ### Favorites
 
 | Key | Action |
