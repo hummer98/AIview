@@ -179,6 +179,14 @@ AIview は [Homebrew Cask](https://github.com/hummer98/homebrew-aiview) 経由�
 
 トラッキング Issue: [#1 - Distribution automation](https://github.com/hummer98/AIview/issues/1)
 
+## プライバシー
+
+AIview は、アプリが実際にどれくらい使われているかを把握するため、起動時に**匿名の利用 ping** を1日1回送信します。**個人情報は一切含みません**。送信するのはランダムな識別子・アプリのバージョン・macOS のバージョン・CPU 種別・言語設定のみで、ファイルパス・画像の内容・個人を特定する情報は送信しません。
+
+**設定 → 表示 → プライバシー → 「匿名の利用統計を送信する」** で完全に停止できます。OFF にすると、計測に関する通信は一切行いません。
+
+詳細: [ADR 002](docs/adr/002-anonymous-usage-telemetry.html)。
+
 ## ライセンス
 
 MIT License - 詳細は [LICENSE](LICENSE) を参照してください。

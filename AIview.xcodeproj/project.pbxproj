@@ -27,6 +27,7 @@
 		A1000016 /* PrivacyOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000016 /* PrivacyOverlay.swift */; };
 		A1000027 /* ThumbnailCacheManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000027 /* ThumbnailCacheManager.swift */; };
 		A1000028 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000028 /* SettingsStore.swift */; };
+		A100003A /* TelemetryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200003A /* TelemetryService.swift */; };
 		A1000029 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000029 /* SettingsView.swift */; };
 		A1000017 /* FileSystemAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000017 /* FileSystemAccessTests.swift */; };
 		A1000018 /* RecentFoldersStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000018 /* RecentFoldersStoreTests.swift */; };
@@ -120,6 +121,7 @@
 		A2000023 /* AIview.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIview.entitlements; sourceTree = "<group>"; };
 		A2000027 /* ThumbnailCacheManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCacheManager.swift; sourceTree = "<group>"; };
 		A2000028 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
+		A200003A /* TelemetryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryService.swift; sourceTree = "<group>"; };
 		A2000029 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A2000030 /* FavoritesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesStore.swift; sourceTree = "<group>"; };
 		A2000031 /* FavoritesStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesStoreTests.swift; sourceTree = "<group>"; };
@@ -245,6 +247,7 @@
 				A2000005 /* RecentFoldersStore.swift */,
 				A2000009 /* DiskCacheStore.swift */,
 				A2000028 /* SettingsStore.swift */,
+				A200003A /* TelemetryService.swift */,
 				A2000030 /* FavoritesStore.swift */,
 			);
 			path = Data;
@@ -482,6 +485,7 @@
 				A1000016 /* PrivacyOverlay.swift in Sources */,
 				A1000027 /* ThumbnailCacheManager.swift in Sources */,
 				A1000028 /* SettingsStore.swift in Sources */,
+				A100003A /* TelemetryService.swift in Sources */,
 				A1000029 /* SettingsView.swift in Sources */,
 				A1000030 /* FavoritesStore.swift in Sources */,
 				A1000032 /* FavoriteIndicator.swift in Sources */,
@@ -699,7 +703,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.9.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIview;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -724,7 +728,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.9.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIview;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -739,7 +743,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.9.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -755,7 +759,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.9.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -772,7 +776,7 @@
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.9.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -789,7 +793,7 @@
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.9.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;

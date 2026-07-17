@@ -1,0 +1,14 @@
+{
+  "name": "aiview-metrics",
+  "private": true,
+  "version": "1.0.0",
+  "description": "AIview の匿名利用計測 Cloudflare Worker (D1)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

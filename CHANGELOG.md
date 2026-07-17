@@ -2,6 +2,16 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [0.9.0] - 2026-07-18
+
+### Added
+
+- 匿名の利用計測を追加（配布後の実利用を把握するため）
+  - 起動時に日次デバウンスで匿名 ping を1回送信。送信内容は匿名 install UUID・アプリ版・macOS版・CPUアーキ・ロケールのみ（ファイル/画像/個人情報は送らない）
+  - **opt-out（既定 ON）**: 設定「表示 > プライバシー > 匿名の利用統計を送信する」で完全停止。OFF 中は計測通信を一切行わない
+  - サーバは自前ホストの Cloudflare Worker + D1（`cloudflare/aiview-metrics/`）。install 単位1行を upsert し、`/stats` が total / DAU・WAU・MAU / 版・OS・アーキ・国分布を返す
+  - クライアント実装は `TelemetryService`（`Sources/Data/`）。設計判断は ADR 002
+
 ## [0.8.0] - 2026-07-13
 
 ### Added

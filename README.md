@@ -179,6 +179,14 @@ For day-to-day release procedure, see [`docs/release.md`](docs/release.md).
 
 Tracking issue: [#1 - Distribution automation](https://github.com/hummer98/AIview/issues/1).
 
+## Privacy
+
+AIview sends an **anonymous usage ping** once per day at launch, to understand how much the app is actually used. It contains **no personal data**: only a random install identifier, the app version, the macOS version, the CPU architecture, and the locale. No file paths, image contents, or personally identifying information are ever sent.
+
+You can turn this off completely under **Settings → Display → Privacy → "Send anonymous usage statistics"**. When disabled, the app makes no analytics-related network requests at all.
+
+Details: [ADR 002](docs/adr/002-anonymous-usage-telemetry.html).
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.

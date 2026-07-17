@@ -1,0 +1,13 @@
+name = "aiview-metrics"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+workers_dev = true
+minify = true
+
+# D1: `npx wrangler d1 create aiview-metrics` で作成し database_id を埋める
+[[d1_databases]]
+binding = "DB"
+database_name = "aiview-metrics"
+database_id = "1238af9e-9447-447b-b7d5-a90d507dbd11"
+
+# STATS_KEY は secret（`npx wrangler secret put STATS_KEY`）。ここには置かない。

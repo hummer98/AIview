@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ADR 002 — 匿名利用計測（Cloudflare Worker + D1）</title>
+<style>
+  body{font:15px/1.7 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;max-width:840px;margin:32px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:24px;border-bottom:2px solid #ddd;padding-bottom:8px}
+  h2{font-size:18px;margin-top:26px}
+  code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+  pre.code{background:#0f172a;color:#e2e8f0;border-radius:8px;padding:12px 14px;overflow:auto;font-size:12.5px;line-height:1.5}
+  .meta{color:#666;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin:12px 0}
+  th,td{border:1px solid #ddd;padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#f7f8fa}
+</style>
+</head>
+<body>
+<h1>ADR 002 — 匿名利用計測（Cloudflare Worker + D1）</h1>
+<p class="meta"><strong>Status</strong>: accepted &nbsp;·&nbsp; <strong>関連</strong>: <code>TelemetryService.swift</code> / <code>cloudflare/aiview-metrics/</code></p>
+
+<h2>Context</h2>
+<p>AIview は GitHub Releases（dmg/zip 直DL）と Homebrew Cask で配布しているが、
+<strong>実際にどれくらいダウンロード・利用されているかを測る手段が無い</strong>。
+GitHub の <code>download_count</code> は CI（tap 更新時の sha256 取得）や <code>brew</code> の zip 取得が混ざりノイズが多く、
+サードパーティ tap には Homebrew の install 統計も無い。何より「DL 後に起動・継続利用されているか」は
+アプリがテレメトリを持たない限り原理的に分からない。</p>
+<p>一方で AIview は<strong>ローカル完結・ネットワーク非依存・プライバシー重視</strong>（プライバシーモード等）の思想を持つ。
+計測のために通信を入れることは思想の変更点であり、最小限かつ透明・停止可能である必要がある。</p>
+
+<h2>Decision</h2>
+<p>アプリ起動時に、<strong>匿名の利用 ping を日次で 1 回だけ fire-and-forget 送信</strong>する。
+送信先は自前ホストの Cloudflare Worker + D1（<code>cloudflare/aiview-metrics/</code>）。</p>
+<ul>
+  <li><strong>opt-out（既定 ON）</strong>: 設定「表示 &gt; プライバシー &gt; 匿名の利用統計を送信する」で停止できる。
+    OFF の間は計測目的の通信を一切行わない。</li>
+  <li><strong>送信内容（PII 無し）</strong>: 匿名 install UUID（初回生成しローカル保存）/ アプリ版 / macOS 版 / CPU アーキ（arm64・x86_64）/ ロケール。
+    国コードはサーバ側で CF の <code>cf-ipcountry</code> ヘッダから付与（IP は保存しない）。
+    ファイルパス・画像・ユーザー名など個人を特定しうる情報は送らない。</li>
+  <li><strong>日次デバウンス</strong>: <code>UserDefaults</code> に最終送信日(UTC)を持ち、同日は再送しない。
+    送信前に楽観的に当日を記録し、多重ウィンドウ/多重起動での重複を防ぐ。</li>
+  <li><strong>サーバは install 単位 1 行のみ保持</strong>（イベントログは持たない）。
+    upsert で <code>last_seen</code> と延べ active 日数を更新する。これで<strong>ユニーク install 数・DAU/WAU/MAU・版/OS/アーキ/国分布</strong>が取れる。</li>
+  <li><strong>集計は Worker の <code>/stats</code></strong>（<code>STATS_KEY</code> 保護）が JSON で返す。CF ダッシュボードや追加のトークンスコープ不要で <code>curl</code> だけで確認できる。</li>
+</ul>
+
+<h3>エンドポイント</h3>
+<table>
+  <tr><th>ルート</th><th>用途</th></tr>
+  <tr><td><code>GET /ping?id=&amp;v=&amp;os=&amp;arch=&amp;lang=</code></td><td>install 行を upsert し <code>204</code></td></tr>
+  <tr><td><code>GET /stats?key=STATS_KEY</code></td><td>集計 JSON（total / new_today / dau,wau,mau / by_version 他）</td></tr>
+</table>
+
+<h2>Consequences</h2>
+<ul>
+  <li><strong>易</strong>: ダウンロード数のノイズに頼らず「実利用（起動）ベース」の指標が得られる。無料枠（Worker + D1）で $0。</li>
+  <li><strong>受容</strong>: ローカル完結アプリに初めて通信が入る。既定 ON のため、初回リリース時は README / 設定でその旨を明示し、opt-out を確実に提供する。</li>
+  <li><strong>注意</strong>: 送信は fire-and-forget。失敗しても致命ではなく翌アクティブ日に再試行される（当日は再送しない）。</li>
+  <li><strong>運用</strong>: <code>STATS_KEY</code> は Worker の secret。ローカルには <code>cloudflare/aiview-metrics/.stats-key</code>（gitignore）に保管。エンドポイント URL はアプリにコンパイル時定数として埋め込む。</li>
+</ul>
+
+<h2>Alternatives considered</h2>
+<ul>
+  <li><strong>Sparkle appcast の更新チェック ping で代用</strong> — 自己アップデートまで抱き合わせになり、Homebrew 配布との二重管理が生じる。計測が主目的なので過剰。将来自己更新が欲しくなれば再検討。</li>
+  <li><strong>TelemetryDeck 等の SaaS</strong> — 機能は豊富だが外部依存が増える。最小の自前 ping で十分。</li>
+  <li><strong>Cloudflare Analytics Engine</strong> — 時系列に強いが、ユニーク install の正確な集計や自前 <code>/stats</code> での取り回しは D1 の方が単純。低トラフィックでは D1 で十分。</li>
+  <li><strong>GitHub download_count のみで運用</strong> — CI/brew ノイズが大きく、起動・継続利用は測れない。却下。</li>
+</ul>
+</body>
+</html>

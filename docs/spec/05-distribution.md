@@ -59,3 +59,20 @@ brew uninstall --zap --cask aiview
 ```
 
 `--zap` を付けると `~/Library/Preferences/com.ridgeroot.AIview.plist` 等のキャッシュも削除される。各画像フォルダ内の `.aiview/` は手動削除（ユーザーデータと同居しているため）。
+
+## 利用計測（匿名テレメトリ）
+
+配布後の利用状況を把握するため、アプリ起動時に**匿名の利用 ping** を日次で 1 回だけ送信する。設計判断は ADR [`002-anonymous-usage-telemetry`](../adr/002-anonymous-usage-telemetry.html)。
+
+- **opt-out（既定 ON）**: 設定「表示 > プライバシー > 匿名の利用統計を送信する」で停止できる。OFF の間は計測目的の通信を一切行わない。
+- **送信内容（PII 無し）**: 匿名 install UUID / アプリ版 / macOS 版 / CPU アーキ / ロケール。国コードはサーバ側で CF ヘッダから付与（IP は保存しない）。ファイル・画像・個人情報は送らない。
+- **実装**: クライアントは `TelemetryService`（`Sources/Data/`）。起動時に `UserDefaults` の最終送信日(UTC)で日次デバウンスし、fire-and-forget で GET。
+- **サーバ**: 自前ホストの Cloudflare Worker + D1（`cloudflare/aiview-metrics/`）。install 単位 1 行を upsert し、`GET /stats?key=STATS_KEY` が集計 JSON（total / new_today / dau,wau,mau / 版・OS・アーキ・国分布）を返す。デプロイ・集計手順は同ディレクトリの README を参照。
+
+### 集計の確認
+
+```bash
+curl -s "https://aiview-metrics.rr-yamamoto.workers.dev/stats?key=$STATS_KEY" | python3 -m json.tool
+```
+
+`STATS_KEY` は Worker の secret（ローカルは `cloudflare/aiview-metrics/.stats-key`、gitignore）。

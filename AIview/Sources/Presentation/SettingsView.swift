@@ -30,10 +30,12 @@ private struct DisplaySettingsTab: View {
     private let settingsStore = SettingsStore()
 
     @State private var restoreLastViewedConfirmEnabled: Bool
+    @State private var analyticsEnabled: Bool
 
     init() {
         let store = SettingsStore()
         _restoreLastViewedConfirmEnabled = State(initialValue: store.restoreLastViewedConfirmEnabled)
+        _analyticsEnabled = State(initialValue: store.analyticsEnabled)
     }
 
     var body: some View {
@@ -51,6 +53,23 @@ private struct DisplaySettingsTab: View {
                 Text("前回の表示位置")
             } footer: {
                 Text("ON にすると、記録がある場合にフォルダを開いた直後へ移動確認ダイアログを表示します。記録はこの設定に関わらず行われます（プライバシーモード中を除く）。")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+
+            Section {
+                Toggle(
+                    "匿名の利用統計を送信する",
+                    isOn: $analyticsEnabled
+                )
+                .onChange(of: analyticsEnabled) { _, newValue in
+                    var store = settingsStore
+                    store.analyticsEnabled = newValue
+                }
+            } header: {
+                Text("プライバシー")
+            } footer: {
+                Text("開発の参考にするため、起動時に匿名の利用統計を1日1回送信します。送信内容はランダムな識別子・アプリのバージョン・macOS のバージョン・CPU 種別・言語設定のみで、ファイルや画像・個人を特定する情報は一切含みません。OFF にすると送信を完全に停止します。")
                     .foregroundStyle(.secondary)
                     .font(.caption)
             }

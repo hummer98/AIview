@@ -40,6 +40,12 @@ struct AIviewApp: App {
                     // 旧中央ディスクキャッシュを削除 (task 019: per-folder 方式へ移行)
                     _ = AIviewApp.purgeLegacyTask
 
+                    // 匿名利用統計を送信（設定ON かつ本日未送信のときのみ、日次デバウンス）。
+                    // UI テスト時は送らない。
+                    if !isUITestMode {
+                        TelemetryService.pingIfNeeded()
+                    }
+
                     if isUITestMode {
                         // UIテスト時はウィンドウを画面中央に配置
                         centerWindow()
@@ -113,4 +119,5 @@ extension Logger {
     static let fileSystem = Logger(subsystem: subsystem, category: "FileSystem")
     static let slideshow = Logger(subsystem: subsystem, category: "Slideshow")
     static let metrics = Logger(subsystem: subsystem, category: "Metrics")
+    static let telemetry = Logger(subsystem: subsystem, category: "Telemetry")
 }

@@ -10,6 +10,7 @@ final class SettingsStore {
         static let thumbnailCacheSizeMB = "thumbnailCacheSizeMB"
         static let slideshowIntervalSeconds = "slideshowIntervalSeconds"
         static let restoreLastViewedConfirmEnabled = "restoreLastViewedConfirmEnabled"
+        static let analyticsEnabled = "analyticsEnabled"
     }
 
     // MARK: - Default Values
@@ -25,6 +26,9 @@ final class SettingsStore {
 
     /// 前回の表示位置の確認ダイアログ既定値（ON）
     static let defaultRestoreLastViewedConfirmEnabled: Bool = true
+
+    /// 匿名利用統計の送信 既定値（ON / opt-out）
+    static let defaultAnalyticsEnabled: Bool = true
 
     // MARK: - Properties
 
@@ -43,6 +47,7 @@ final class SettingsStore {
             Keys.thumbnailCacheSizeMB: Self.defaultThumbnailCacheSizeMB,
             Keys.slideshowIntervalSeconds: Self.defaultSlideshowIntervalSeconds,
             Keys.restoreLastViewedConfirmEnabled: Self.defaultRestoreLastViewedConfirmEnabled,
+            Keys.analyticsEnabled: Self.defaultAnalyticsEnabled,
         ])
     }
 
@@ -94,5 +99,14 @@ final class SettingsStore {
     var restoreLastViewedConfirmEnabled: Bool {
         get { defaults.bool(forKey: Keys.restoreLastViewedConfirmEnabled) }
         set { defaults.set(newValue, forKey: Keys.restoreLastViewedConfirmEnabled) }
+    }
+
+    // MARK: - Analytics（匿名利用統計）
+
+    /// 匿名の利用統計を送信するか（既定 ON / opt-out）。
+    /// OFF の間はアプリは計測目的の通信を一切行わない。詳細は `TelemetryService`。
+    var analyticsEnabled: Bool {
+        get { defaults.bool(forKey: Keys.analyticsEnabled) }
+        set { defaults.set(newValue, forKey: Keys.analyticsEnabled) }
     }
 }
