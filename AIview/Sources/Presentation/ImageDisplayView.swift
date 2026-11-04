@@ -152,7 +152,7 @@ struct ZoomableImageView: View {
                 Image(nsImage: image)
                     .resizable()
                     .interpolation(.high)
-                    .aspectRatio(contentMode: .fit)
+                    .scaledToFit()
                     .frame(width: geo.size.width, height: geo.size.height)
                     .scaleEffect(effectiveScale, anchor: .center)
                     .offset(liveOffset)

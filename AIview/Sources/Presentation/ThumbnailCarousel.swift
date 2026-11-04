@@ -382,7 +382,7 @@ struct ThumbnailItemView: View {
             if let image = loadState?.image {
                 Image(nsImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .scaledToFill()
                     .frame(width: size, height: size)
                     .clipped()
             } else if loadState?.isFailed == true {
