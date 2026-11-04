@@ -117,6 +117,10 @@ final class ScrollPerformanceUITests: XCTestCase {
 
     /// カルーセルスクロールのパフォーマンステスト（キャッシュあり）
     func testScrollPerformance_withCache() throws {
+        // warmup + cache待ち + measure反復（各回 端まで往復）で、CI runnerでは既定の5分を超える。
+        // hangではなく所要時間のため、xcodebuildの -maximum-test-execution-time-allowance (900s) まで許可する。
+        executionTimeAllowance = 900
+
         // フォルダを開く
         openTestFolder()
 
