@@ -105,8 +105,7 @@ final class ThumbnailWarmerTests: XCTestCase {
             .appendingPathComponent(url.lastPathComponent + ".jpg")
         let mtime1 = try cacheURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
 
-        // 少し時間を空けて 2 回目を実行（スキップされるはずなので mtime は変わらない）
-        try await Task.sleep(for: .milliseconds(50))
+        QueueInstrumentation.thumbnailQueueShared._debugReset()
         await thumbnailCacheManager.warmFolderDiskCache(
             urls: [url],
             startIndex: 0,
@@ -116,25 +115,34 @@ final class ThumbnailWarmerTests: XCTestCase {
 
         let mtime2 = try cacheURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
         XCTAssertEqual(mtime1, mtime2, "valid な disk cache がある URL は再生成されないはず")
+        XCTAssertEqual(
+            QueueInstrumentation.thumbnailQueueShared.snapshot().totalEnqueued,
+            0,
+            "validなdisk cacheではgeneratorへenqueueしない"
+        )
     }
 
     /// Task.cancel() で warmer が早期終了することを検証。
     /// 大量の URL を渡し、cancel 後の生成数が全件未満になることを確認。
     func testWarmFolderDiskCache_cancellation() async throws {
         let urls = try (0..<20).map { try createTestImage(name: "cancel_\($0).png") }
+        let gate = ThumbnailWarmerSuspensionGate()
+        let manager = thumbnailCacheManager!
 
-        let task = Task(priority: .background) { [thumbnailCacheManager] in
-            await thumbnailCacheManager?.warmFolderDiskCache(
+        let task = Task(priority: .background) {
+            await manager.warmFolderDiskCache(
                 urls: urls,
                 startIndex: 0,
                 size: CGSize(width: 80, height: 80),
-                generator: ThumbnailGenerator.shared
+                generator: ThumbnailGenerator.shared,
+                beforeProcessing: { _ in await gate.suspend() }
             )
         }
 
-        // 数件処理されたあたりで cancel
-        try await Task.sleep(for: .milliseconds(100))
+        // 最初の URL を処理する直前で確実に停止させてから cancel する。
+        await gate.waitUntilSuspended()
         task.cancel()
+        await gate.resume()
         await task.value
 
         // 全件が disk に書かれていないこと（cancel が効いている）を verify
@@ -179,6 +187,25 @@ final class ThumbnailWarmerTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testWarmerGeneration_lateACompletionDoesNotClearB() {
+        var slot = GenerationTaskSlot()
+        let firstTask = Task<Void, Never> {}
+        let generationA = slot.begin()
+        slot.install(firstTask, generation: generationA)
+
+        let secondTask = Task<Void, Never> {}
+        let generationB = slot.begin()
+        slot.install(secondTask, generation: generationB)
+
+        XCTAssertFalse(slot.finish(generation: generationA))
+        XCTAssertEqual(slot.snapshot().generation, generationB)
+        XCTAssertEqual(slot.snapshot().activeTasks, 1)
+
+        XCTAssertTrue(slot.finish(generation: generationB))
+        XCTAssertTrue(slot.snapshot().isIdle)
+    }
+
     // MARK: - Helpers
 
     /// 1×1 の最小 PNG をテスト用に作成。
@@ -194,5 +221,33 @@ final class ThumbnailWarmerTests: XCTestCase {
         ])
         try pngData.write(to: url)
         return url
+    }
+}
+
+private actor ThumbnailWarmerSuspensionGate {
+    private var isSuspended = false
+    private var resumeContinuation: CheckedContinuation<Void, Never>?
+    private var suspensionWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func suspend() async {
+        isSuspended = true
+        let waiters = suspensionWaiters
+        suspensionWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        await withCheckedContinuation { continuation in
+            resumeContinuation = continuation
+        }
+    }
+
+    func waitUntilSuspended() async {
+        if isSuspended { return }
+        await withCheckedContinuation { continuation in
+            suspensionWaiters.append(continuation)
+        }
+    }
+
+    func resume() {
+        resumeContinuation?.resume()
+        resumeContinuation = nil
     }
 }

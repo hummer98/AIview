@@ -113,4 +113,60 @@ final class ThumbnailActivityStateTests: XCTestCase {
         let model = ThumbnailActivityModel(metricsCollector: collector)
         XCTAssertFalse(model.isVisible)
     }
+
+    @MainActor
+    func testThumbnailActivityModel_pollingTaskDoesNotRetainOwner() async {
+        let collector = MetricsCollector()
+        let gate = ThumbnailActivitySuspensionGate()
+        weak var weakModel: ThumbnailActivityModel?
+        var model: ThumbnailActivityModel? = ThumbnailActivityModel(
+            metricsCollector: collector,
+            sleeper: { @Sendable _ in await gate.suspend() }
+        )
+
+        weakModel = model
+        model?.start()
+        await gate.waitUntilSuspended()
+        XCTAssertEqual(model?._debugTaskSnapshot().activeTasks, 1)
+        model = nil
+
+        XCTAssertNil(weakModel, "polling sleep 中の Task が model を保持してはならない")
+        await gate.resume()
+    }
+
+    @MainActor
+    func testThumbnailActivityModel_stopMakesSnapshotIdle() {
+        let model = ThumbnailActivityModel(metricsCollector: MetricsCollector())
+        model.start()
+        model.stop()
+        XCTAssertTrue(model._debugTaskSnapshot().isIdle)
+    }
+}
+
+private actor ThumbnailActivitySuspensionGate {
+    private var suspended = false
+    private var resumeContinuation: CheckedContinuation<Void, Never>?
+    private var suspensionWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func suspend() async {
+        suspended = true
+        let waiters = suspensionWaiters
+        suspensionWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        await withCheckedContinuation { continuation in
+            resumeContinuation = continuation
+        }
+    }
+
+    func waitUntilSuspended() async {
+        if suspended { return }
+        await withCheckedContinuation { continuation in
+            suspensionWaiters.append(continuation)
+        }
+    }
+
+    func resume() {
+        resumeContinuation?.resume()
+        resumeContinuation = nil
+    }
 }

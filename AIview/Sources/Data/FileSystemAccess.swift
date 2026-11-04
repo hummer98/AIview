@@ -38,40 +38,36 @@ protocol FileSystemAccessProtocol: Sendable {
 
 /// ファイルシステムアクセスの実装
 /// Requirements: 4.1, 4.2, 4.3, 4.4, 11.2
-final class FileSystemAccess: FileSystemAccessProtocol, @unchecked Sendable {
-    private let fileManager: FileManager
-
-    init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-    }
+final class FileSystemAccess: FileSystemAccessProtocol, Sendable {
 
     /// ファイルをゴミ箱に移動する（ゴミ箱がない場合は直接削除）
     /// - Parameter url: 削除するファイルのURL
     /// - Throws: FileSystemError
     func moveToTrash(_ url: URL) async throws {
-        Logger.fileSystem.debug("Moving to trash: \(url.path, privacy: .public)")
+        let fileManager = FileManager.default
+        Logger.fileSystem.debug("Moving to trash: \(url.path, privacy: .private)")
 
         guard fileManager.fileExists(atPath: url.path) else {
-            Logger.fileSystem.error("File not found for trash: \(url.path, privacy: .public)")
+            Logger.fileSystem.error("File not found for trash: \(url.path, privacy: .private)")
             throw FileSystemError.fileNotFound(url)
         }
 
         do {
             var resultingURL: NSURL?
             try fileManager.trashItem(at: url, resultingItemURL: &resultingURL)
-            Logger.fileSystem.info("Successfully moved to trash: \(url.lastPathComponent, privacy: .public)")
+            Logger.fileSystem.info("Successfully moved current image to trash")
         } catch let trashError as NSError where trashError.domain == NSCocoaErrorDomain && trashError.code == NSFeatureUnsupportedError {
             // ゴミ箱がないボリューム（外部ドライブ等）の場合、直接削除にフォールバック
-            Logger.fileSystem.warning("Trash not available, falling back to direct delete: \(url.lastPathComponent, privacy: .public)")
+            Logger.fileSystem.warning("Trash not available, falling back to direct delete")
             do {
                 try fileManager.removeItem(at: url)
-                Logger.fileSystem.info("Successfully deleted (direct): \(url.lastPathComponent, privacy: .public)")
+                Logger.fileSystem.info("Successfully deleted current image directly")
             } catch {
-                Logger.fileSystem.error("Failed to delete: \(error.localizedDescription, privacy: .public)")
+                Logger.fileSystem.error("Failed to delete: \(error.localizedDescription, privacy: .private)")
                 throw FileSystemError.deleteFailed(url, underlying: error)
             }
         } catch {
-            Logger.fileSystem.error("Failed to move to trash: \(error.localizedDescription, privacy: .public)")
+            Logger.fileSystem.error("Failed to move to trash: \(error.localizedDescription, privacy: .private)")
             throw FileSystemError.deleteFailed(url, underlying: error)
         }
     }
@@ -80,6 +76,7 @@ final class FileSystemAccess: FileSystemAccessProtocol, @unchecked Sendable {
     /// - Parameter url: 確認するファイル/ディレクトリのURL
     /// - Returns: アクセス可能な場合はtrue
     func checkAccess(to url: URL) -> Bool {
+        let fileManager = FileManager.default
         let exists = fileManager.fileExists(atPath: url.path)
         if exists {
             return fileManager.isReadableFile(atPath: url.path)
@@ -92,6 +89,7 @@ final class FileSystemAccess: FileSystemAccessProtocol, @unchecked Sendable {
     /// - Returns: FileAttributes
     /// - Throws: FileSystemError
     func getFileAttributes(_ url: URL) throws -> FileAttributes {
+        let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: url.path) else {
             throw FileSystemError.fileNotFound(url)
         }

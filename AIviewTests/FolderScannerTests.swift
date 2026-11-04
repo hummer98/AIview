@@ -1,8 +1,7 @@
+import AppKit
 import XCTest
 @testable import AIview
 
-/// FolderScanner のユニットテスト
-/// Task 2.1: フォルダスキャン機能の実装
 final class FolderScannerTests: XCTestCase {
     var sut: FolderScanner!
     var tempDirectory: URL!
@@ -19,405 +18,564 @@ final class FolderScannerTests: XCTestCase {
         sut = nil
     }
 
-    // MARK: - supportedExtensions Tests
-
     func testSupportedExtensions_containsAllRequiredFormats() {
-        // Then
-        XCTAssertTrue(FolderScanner.supportedExtensions.contains("jpg"))
-        XCTAssertTrue(FolderScanner.supportedExtensions.contains("jpeg"))
-        XCTAssertTrue(FolderScanner.supportedExtensions.contains("png"))
-        XCTAssertTrue(FolderScanner.supportedExtensions.contains("heic"))
-        XCTAssertTrue(FolderScanner.supportedExtensions.contains("webp"))
-        XCTAssertTrue(FolderScanner.supportedExtensions.contains("gif"))
+        XCTAssertEqual(
+            FolderScanner.supportedExtensions,
+            ["jpg", "jpeg", "png", "heic", "webp", "gif"]
+        )
     }
 
-    // MARK: - scan Tests
+    func testScan_emitsFirstProgressAndSortedComplete() async throws {
+        try createTestFile(name: "c_image.jpg")
+        try createTestFile(name: "a_image.PNG")
+        try createTestFile(name: "b_image.jpeg")
+        try createTestFile(name: "document.txt")
+        sut = FolderScanner(batchSize: 2)
 
-    func testScan_findsImageFiles() async throws {
-        // Given
+        let events = try await collect(await sut.scan(folderURL: tempDirectory))
+
+        guard case .first(let firstURL) = events.first else {
+            return XCTFail("最初の画像発見をfirst eventで通知すること")
+        }
+        XCTAssertTrue(FolderScanner.supportedExtensions.contains(firstURL.pathExtension.lowercased()))
+        XCTAssertTrue(events.contains { event in
+            if case .progress(let urls) = event { return urls.count == 2 }
+            return false
+        })
+        guard case .complete(let completedURLs) = events.last else {
+            return XCTFail("最後はcomplete eventであること")
+        }
+        XCTAssertEqual(completedURLs.map(\.lastPathComponent), ["a_image.PNG", "b_image.jpeg", "c_image.jpg"])
+    }
+
+    func testScan_emptyFolderEmitsOnlyComplete() async throws {
+        let events = try await collect(await sut.scan(folderURL: tempDirectory))
+        XCTAssertEqual(events, [.complete([])])
+    }
+
+    func testScan_findsSupportedImageFiles() async throws {
         try createTestFile(name: "image1.jpg")
         try createTestFile(name: "image2.png")
         try createTestFile(name: "document.txt")
 
-        var foundURLs: [URL] = []
+        let urls = try await completedURLs(await sut.scan(folderURL: tempDirectory))
 
-        // When
-        try await sut.scan(
-            folderURL: tempDirectory,
-            onFirstImage: { _ in },
-            onProgress: { _ in },
-            onComplete: { urls in
-                foundURLs = urls
-            }
-        )
-
-        // Then
-        XCTAssertEqual(foundURLs.count, 2)
-        XCTAssertTrue(foundURLs.contains { $0.lastPathComponent == "image1.jpg" })
-        XCTAssertTrue(foundURLs.contains { $0.lastPathComponent == "image2.png" })
+        XCTAssertEqual(Set(urls.map(\.lastPathComponent)), ["image1.jpg", "image2.png"])
     }
 
-    func testScan_callsOnFirstImageImmediately() async throws {
-        // Given
+    func testScan_firstEventPrecedesComplete() async throws {
         try createTestFile(name: "first.jpg")
         try createTestFile(name: "second.png")
 
-        var firstImageURL: URL?
-        var firstImageCallTime: Date?
-        var completeTime: Date?
+        let events = try await collect(await sut.scan(folderURL: tempDirectory))
 
-        // When
-        try await sut.scan(
-            folderURL: tempDirectory,
-            onFirstImage: { url in
-                firstImageURL = url
-                firstImageCallTime = Date()
-            },
-            onProgress: { _ in },
-            onComplete: { _ in
-                completeTime = Date()
-            }
-        )
-
-        // Then
-        XCTAssertNotNil(firstImageURL)
-        XCTAssertNotNil(firstImageCallTime)
-        XCTAssertNotNil(completeTime)
+        XCTAssertGreaterThanOrEqual(events.count, 2)
+        guard case .first = events[0], case .complete = events[events.count - 1] else {
+            return XCTFail("first eventがcompleteより前に届くこと")
+        }
     }
 
     func testScan_filtersUnsupportedExtensions() async throws {
-        // Given
         try createTestFile(name: "image.jpg")
         try createTestFile(name: "document.pdf")
         try createTestFile(name: "video.mp4")
-        try createTestFile(name: "text.txt")
 
-        var foundURLs: [URL] = []
+        let urls = try await completedURLs(await sut.scan(folderURL: tempDirectory))
 
-        // When
-        try await sut.scan(
-            folderURL: tempDirectory,
-            onFirstImage: { _ in },
-            onProgress: { _ in },
-            onComplete: { urls in
-                foundURLs = urls
-            }
-        )
-
-        // Then
-        XCTAssertEqual(foundURLs.count, 1)
-        XCTAssertEqual(foundURLs.first?.lastPathComponent, "image.jpg")
+        XCTAssertEqual(urls.map(\.lastPathComponent), ["image.jpg"])
     }
 
     func testScan_handlesCaseInsensitiveExtensions() async throws {
-        // Given
         try createTestFile(name: "image1.JPG")
         try createTestFile(name: "image2.PNG")
         try createTestFile(name: "image3.Jpeg")
 
-        var foundURLs: [URL] = []
+        let urls = try await completedURLs(await sut.scan(folderURL: tempDirectory))
 
-        // When
-        try await sut.scan(
-            folderURL: tempDirectory,
-            onFirstImage: { _ in },
-            onProgress: { _ in },
-            onComplete: { urls in
-                foundURLs = urls
-            }
-        )
-
-        // Then
-        XCTAssertEqual(foundURLs.count, 3)
+        XCTAssertEqual(urls.count, 3)
     }
 
-    func testScan_returnsEmptyForEmptyFolder() async throws {
-        // Given (empty folder)
-        var foundURLs: [URL] = []
-        var firstImageCalled = false
-
-        // When
-        try await sut.scan(
-            folderURL: tempDirectory,
-            onFirstImage: { _ in
-                firstImageCalled = true
-            },
-            onProgress: { _ in },
-            onComplete: { urls in
-                foundURLs = urls
-            }
-        )
-
-        // Then
-        XCTAssertTrue(foundURLs.isEmpty)
-        XCTAssertFalse(firstImageCalled)
-    }
-
-    func testScan_sortsFilesByName() async throws {
-        // Given
+    func testScan_sortsCompleteByLocalizedFilename() async throws {
         try createTestFile(name: "c_image.jpg")
         try createTestFile(name: "a_image.jpg")
         try createTestFile(name: "b_image.jpg")
 
-        var foundURLs: [URL] = []
+        let urls = try await completedURLs(await sut.scan(folderURL: tempDirectory))
 
-        // When
-        try await sut.scan(
-            folderURL: tempDirectory,
-            onFirstImage: { _ in },
-            onProgress: { _ in },
-            onComplete: { urls in
-                foundURLs = urls
-            }
-        )
-
-        // Then
-        XCTAssertEqual(foundURLs.count, 3)
-        XCTAssertEqual(foundURLs[0].lastPathComponent, "a_image.jpg")
-        XCTAssertEqual(foundURLs[1].lastPathComponent, "b_image.jpg")
-        XCTAssertEqual(foundURLs[2].lastPathComponent, "c_image.jpg")
+        XCTAssertEqual(urls.map(\.lastPathComponent), ["a_image.jpg", "b_image.jpg", "c_image.jpg"])
     }
 
-    // MARK: - Cancel Tests
+    func testScan_doesNotDescendIntoSubdirectories() async throws {
+        try createTestFile(name: "parent.jpg")
+        let child = tempDirectory.appendingPathComponent("child")
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        try Data("test".utf8).write(to: child.appendingPathComponent("child.jpg"))
 
-    func testCancelCurrentScan_stopsScanning() async throws {
-        // Given
-        for i in 0..<100 {
-            try createTestFile(name: "image\(i).jpg")
-        }
+        let urls = try await completedURLs(await sut.scan(folderURL: tempDirectory))
 
-        var wasCancelled = false
+        XCTAssertEqual(urls.map(\.lastPathComponent), ["parent.jpg"])
+    }
 
-        // When - Start scan and immediately cancel
-        Task {
-            try? await Task.sleep(nanoseconds: 1_000_000) // 1ms
-            await sut.cancelCurrentScan()
-            wasCancelled = true
-        }
-
-        // Then - Scan should complete or be cancelled without crashing
+    func testScan_nonexistentFolderThrowsTypedError() async {
+        let missing = tempDirectory.appendingPathComponent("missing")
         do {
-            try await sut.scan(
-                folderURL: tempDirectory,
-                onFirstImage: { _ in },
-                onProgress: { _ in },
-                onComplete: { _ in }
-            )
+            _ = try await collect(await sut.scan(folderURL: missing))
+            XCTFail("存在しないfolderは失敗すること")
+        } catch let error as FolderScanError {
+            guard case .folderNotFound(let url) = error else {
+                return XCTFail("folderNotFoundであること: \(error)")
+            }
+            XCTAssertEqual(url, missing)
         } catch {
-            // Cancellation is expected
+            XCTFail("FolderScanErrorであること: \(error)")
+        }
+    }
+
+    func testScan_consumerCancellationStopsOwnedEnumerator() async throws {
+        for index in 0..<3 {
+            try createTestFile(name: "image_\(index).jpg")
+        }
+        let gate = FolderScanSuspensionGate()
+        sut = FolderScanner(batchSize: 1) { _ in
+            await gate.suspend()
+            if Task.isCancelled {
+                await gate.recordEnumeratorCancellation()
+            }
+        }
+        let stream = await sut.scan(folderURL: tempDirectory)
+
+        let consumer = Task {
+            do {
+                for try await _ in stream {}
+            } catch is CancellationError {
+                // expected
+            } catch {
+                XCTFail("consumer cancellationはCancellationErrorであること: \(error)")
+            }
         }
 
-        // Give time for cancellation
-        try await Task.sleep(nanoseconds: 100_000_000) // 100ms
-        XCTAssertTrue(wasCancelled || true) // Test passes if no crash
+        await gate.waitUntilSuspended()
+        consumer.cancel()
+        // consumer終了（= stream termination handler実行）を先に確定し、その後enumeratorを再開する。
+        await consumer.value
+        await gate.resume()
+        await gate.waitUntilEnumeratorCancellation()
+        let processedEntryCount = await gate.processedEntryCount()
+        XCTAssertEqual(processedEntryCount, 1)
     }
 
-    // MARK: - Subdirectory Scan Tests
-
-    /// Requirements: 1.1 - フィルター適用時にサブディレクトリを探索
-    func testScanWithSubdirectories_findsImagesInSubdirectories() async throws {
-        // Given - 親フォルダとサブディレクトリに画像を配置
-        try createTestFile(name: "parent1.jpg")
-        try createTestFile(name: "parent2.png")
-
-        let subDir1 = tempDirectory.appendingPathComponent("subdir1")
-        try FileManager.default.createDirectory(at: subDir1, withIntermediateDirectories: true)
-        try Data("test".utf8).write(to: subDir1.appendingPathComponent("sub1_image.jpg"))
-
-        let subDir2 = tempDirectory.appendingPathComponent("subdir2")
-        try FileManager.default.createDirectory(at: subDir2, withIntermediateDirectories: true)
-        try Data("test".utf8).write(to: subDir2.appendingPathComponent("sub2_image.png"))
-
-        var foundURLs: [URL] = []
-        var foundSubdirectories: [URL] = []
-
-        // When
-        try await sut.scan(
-            folderURL: tempDirectory,
-            includeSubdirectories: true,
-            onFirstImage: { _ in },
-            onProgress: { _ in },
-            onComplete: { urls in
-                foundURLs = urls
-            },
-            onSubdirectories: { subdirs in
-                foundSubdirectories = subdirs
-            }
-        )
-
-        // Then
-        XCTAssertEqual(foundURLs.count, 4, "親フォルダとサブディレクトリの画像が見つかること")
-        XCTAssertTrue(foundURLs.contains { $0.lastPathComponent == "parent1.jpg" })
-        XCTAssertTrue(foundURLs.contains { $0.lastPathComponent == "parent2.png" })
-        XCTAssertTrue(foundURLs.contains { $0.lastPathComponent == "sub1_image.jpg" })
-        XCTAssertTrue(foundURLs.contains { $0.lastPathComponent == "sub2_image.png" })
-        XCTAssertEqual(foundSubdirectories.count, 2, "サブディレクトリが2つ見つかること")
-    }
-
-    /// Requirements: 4.2 - 1階層のみの探索に制限
-    func testScanWithSubdirectories_onlyScansOneLevel() async throws {
-        // Given - 2階層深いサブディレクトリを作成
+    func testScanWithSubdirectories_findsOnlyParentAndOneLevel() async throws {
         try createTestFile(name: "parent.jpg")
+        let child = tempDirectory.appendingPathComponent("child")
+        let grandchild = child.appendingPathComponent("grandchild")
+        try FileManager.default.createDirectory(at: grandchild, withIntermediateDirectories: true)
+        try Data("test".utf8).write(to: child.appendingPathComponent("child.png"))
+        try Data("test".utf8).write(to: grandchild.appendingPathComponent("deep.jpg"))
 
-        let subDir1 = tempDirectory.appendingPathComponent("subdir1")
-        try FileManager.default.createDirectory(at: subDir1, withIntermediateDirectories: true)
-        try Data("test".utf8).write(to: subDir1.appendingPathComponent("sub1_image.jpg"))
+        let result = try await sut.scanWithSubdirectories(folderURL: tempDirectory)
 
-        let deepSubDir = subDir1.appendingPathComponent("deepsubdir")
-        try FileManager.default.createDirectory(at: deepSubDir, withIntermediateDirectories: true)
-        try Data("test".utf8).write(to: deepSubDir.appendingPathComponent("deep_image.jpg"))
-
-        var foundURLs: [URL] = []
-
-        // When
-        try await sut.scan(
-            folderURL: tempDirectory,
-            includeSubdirectories: true,
-            onFirstImage: { _ in },
-            onProgress: { _ in },
-            onComplete: { urls in
-                foundURLs = urls
-            },
-            onSubdirectories: { _ in }
-        )
-
-        // Then
-        XCTAssertEqual(foundURLs.count, 2, "2階層目の画像は含まれないこと")
-        XCTAssertTrue(foundURLs.contains { $0.lastPathComponent == "parent.jpg" })
-        XCTAssertTrue(foundURLs.contains { $0.lastPathComponent == "sub1_image.jpg" })
-        XCTAssertFalse(foundURLs.contains { $0.lastPathComponent == "deep_image.jpg" })
+        XCTAssertEqual(result.subdirectoryURLs.map(\.lastPathComponent), ["child"])
+        XCTAssertEqual(result.imageURLs.map(\.lastPathComponent), ["child.png", "parent.jpg"])
     }
 
-    /// Requirements: 1.3 - 隠しフォルダをスキップ
-    func testScanWithSubdirectories_skipsHiddenDirectories() async throws {
-        // Given
+    func testScanWithSubdirectories_skipsHiddenAndUnsupportedEntries() async throws {
         try createTestFile(name: "parent.jpg")
+        let hidden = tempDirectory.appendingPathComponent(".hidden")
+        let visible = tempDirectory.appendingPathComponent("visible")
+        try FileManager.default.createDirectory(at: hidden, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: visible, withIntermediateDirectories: true)
+        try Data("test".utf8).write(to: hidden.appendingPathComponent("hidden.png"))
+        try Data("test".utf8).write(to: visible.appendingPathComponent("visible.webp"))
+        try Data("test".utf8).write(to: visible.appendingPathComponent("document.pdf"))
 
-        let hiddenDir = tempDirectory.appendingPathComponent(".hidden")
-        try FileManager.default.createDirectory(at: hiddenDir, withIntermediateDirectories: true)
-        try Data("test".utf8).write(to: hiddenDir.appendingPathComponent("hidden_image.jpg"))
+        let result = try await sut.scanWithSubdirectories(folderURL: tempDirectory)
 
-        let visibleDir = tempDirectory.appendingPathComponent("visible")
-        try FileManager.default.createDirectory(at: visibleDir, withIntermediateDirectories: true)
-        try Data("test".utf8).write(to: visibleDir.appendingPathComponent("visible_image.jpg"))
-
-        var foundURLs: [URL] = []
-        var foundSubdirectories: [URL] = []
-
-        // When
-        try await sut.scan(
-            folderURL: tempDirectory,
-            includeSubdirectories: true,
-            onFirstImage: { _ in },
-            onProgress: { _ in },
-            onComplete: { urls in
-                foundURLs = urls
-            },
-            onSubdirectories: { subdirs in
-                foundSubdirectories = subdirs
-            }
-        )
-
-        // Then
-        XCTAssertEqual(foundURLs.count, 2, "隠しフォルダの画像は含まれないこと")
-        XCTAssertFalse(foundURLs.contains { $0.lastPathComponent == "hidden_image.jpg" })
-        XCTAssertTrue(foundURLs.contains { $0.lastPathComponent == "visible_image.jpg" })
-        XCTAssertEqual(foundSubdirectories.count, 1, "隠しフォルダはサブディレクトリに含まれないこと")
+        XCTAssertEqual(result.subdirectoryURLs.map(\.lastPathComponent), ["visible"])
+        XCTAssertEqual(result.imageURLs.map(\.lastPathComponent), ["parent.jpg", "visible.webp"])
     }
 
-    /// Requirements: 1.2 - 対応画像拡張子のみフィルタリング（サブディレクトリでも同様）
-    func testScanWithSubdirectories_filtersUnsupportedExtensions() async throws {
-        // Given
+    func testScanWithSubdirectories_findsImagesInEachVisibleChild() async throws {
         try createTestFile(name: "parent.jpg")
+        for childName in ["childA", "childB"] {
+            let child = tempDirectory.appendingPathComponent(childName)
+            try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+            try Data("test".utf8).write(to: child.appendingPathComponent("\(childName).png"))
+        }
 
-        let subDir = tempDirectory.appendingPathComponent("subdir")
-        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
-        try Data("test".utf8).write(to: subDir.appendingPathComponent("image.png"))
-        try Data("test".utf8).write(to: subDir.appendingPathComponent("document.pdf"))
-        try Data("test".utf8).write(to: subDir.appendingPathComponent("video.mp4"))
+        let result = try await sut.scanWithSubdirectories(folderURL: tempDirectory)
 
-        var foundURLs: [URL] = []
-
-        // When
-        try await sut.scan(
-            folderURL: tempDirectory,
-            includeSubdirectories: true,
-            onFirstImage: { _ in },
-            onProgress: { _ in },
-            onComplete: { urls in
-                foundURLs = urls
-            },
-            onSubdirectories: { _ in }
+        XCTAssertEqual(result.subdirectoryURLs.map(\.lastPathComponent), ["childA", "childB"])
+        XCTAssertEqual(
+            result.imageURLs.map(\.lastPathComponent),
+            ["childA.png", "childB.png", "parent.jpg"]
         )
-
-        // Then
-        XCTAssertEqual(foundURLs.count, 2, "画像ファイルのみが見つかること")
-        XCTAssertTrue(foundURLs.contains { $0.lastPathComponent == "parent.jpg" })
-        XCTAssertTrue(foundURLs.contains { $0.lastPathComponent == "image.png" })
     }
 
-    /// Requirements: 4.1 - サブディレクトリスキャン時も最初の画像発見時にコールバック
-    func testScanWithSubdirectories_callsOnFirstImageImmediately() async throws {
-        // Given
-        try createTestFile(name: "first.jpg")
-
-        let subDir = tempDirectory.appendingPathComponent("subdir")
-        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
-        try Data("test".utf8).write(to: subDir.appendingPathComponent("sub_image.jpg"))
-
-        var firstImageURL: URL?
-        var onFirstImageCalled = false
-
-        // When
-        try await sut.scan(
-            folderURL: tempDirectory,
-            includeSubdirectories: true,
-            onFirstImage: { url in
-                firstImageURL = url
-                onFirstImageCalled = true
-            },
-            onProgress: { _ in },
-            onComplete: { _ in },
-            onSubdirectories: { _ in }
-        )
-
-        // Then
-        XCTAssertTrue(onFirstImageCalled, "onFirstImageが呼ばれること")
-        XCTAssertNotNil(firstImageURL)
+    private func collect(
+        _ stream: AsyncThrowingStream<FolderScanEvent, Error>
+    ) async throws -> [FolderScanEvent] {
+        var events: [FolderScanEvent] = []
+        for try await event in stream {
+            events.append(event)
+        }
+        return events
     }
 
-    /// Requirements: 1.4 - includeSubdirectories=falseの場合は親フォルダ直下のみ
-    func testScanWithSubdirectories_whenDisabled_onlyScansParent() async throws {
-        // Given
-        try createTestFile(name: "parent.jpg")
-
-        let subDir = tempDirectory.appendingPathComponent("subdir")
-        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
-        try Data("test".utf8).write(to: subDir.appendingPathComponent("sub_image.jpg"))
-
-        var foundURLs: [URL] = []
-
-        // When
-        try await sut.scan(
-            folderURL: tempDirectory,
-            includeSubdirectories: false,
-            onFirstImage: { _ in },
-            onProgress: { _ in },
-            onComplete: { urls in
-                foundURLs = urls
-            },
-            onSubdirectories: { _ in }
-        )
-
-        // Then
-        XCTAssertEqual(foundURLs.count, 1, "親フォルダ直下の画像のみ")
-        XCTAssertEqual(foundURLs.first?.lastPathComponent, "parent.jpg")
+    private func completedURLs(
+        _ stream: AsyncThrowingStream<FolderScanEvent, Error>
+    ) async throws -> [URL] {
+        let events = try await collect(stream)
+        guard case .complete(let urls) = events.last else {
+            XCTFail("complete eventが必要")
+            return []
+        }
+        return urls
     }
-
-    // MARK: - Helper Methods
 
     private func createTestFile(name: String) throws {
-        let fileURL = tempDirectory.appendingPathComponent(name)
-        try Data("test".utf8).write(to: fileURL)
+        try Data("test".utf8).write(to: tempDirectory.appendingPathComponent(name))
+    }
+}
+
+private actor FolderScanSuspensionGate {
+    private var entryCount = 0
+    private var resumeContinuation: CheckedContinuation<Void, Never>?
+    private var suspensionWaiters: [CheckedContinuation<Void, Never>] = []
+    private var cancellationObserved = false
+    private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func suspend() async {
+        entryCount += 1
+        let waiters = suspensionWaiters
+        suspensionWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        await withCheckedContinuation { continuation in
+            resumeContinuation = continuation
+        }
+    }
+
+    func waitUntilSuspended() async {
+        if resumeContinuation != nil { return }
+        await withCheckedContinuation { continuation in
+            suspensionWaiters.append(continuation)
+        }
+    }
+
+    func resume() {
+        resumeContinuation?.resume()
+        resumeContinuation = nil
+    }
+
+    func recordEnumeratorCancellation() {
+        cancellationObserved = true
+        let waiters = cancellationWaiters
+        cancellationWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+
+    func waitUntilEnumeratorCancellation() async {
+        if cancellationObserved { return }
+        await withCheckedContinuation { continuation in
+            cancellationWaiters.append(continuation)
+        }
+    }
+
+    func processedEntryCount() -> Int {
+        entryCount
+    }
+}
+
+@MainActor
+final class ImageBrowserSessionTests: XCTestCase {
+    func testOpenBImmediatelyAfterAFirst_keepsOnlyBState() async throws {
+        let fixture = try BrowserSessionFixture(label: "FirstThenB")
+        defer { fixture.cleanup() }
+        let scanner = ControlledFolderScanner()
+        let checkpoint = BrowserSessionSuspensionGate(suspendOn: .first)
+        let viewModel = makeViewModel(scanner: scanner, checkpoint: checkpoint, fixture: fixture)
+        let folderA = try fixture.makeFolder("A")
+        let folderB = try fixture.makeFolder("B")
+        let imageA = folderA.appendingPathComponent("a.png")
+        let imageB = folderB.appendingPathComponent("b.png")
+
+        let openA = Task { await viewModel.openFolder(folderA) }
+        await scanner.waitForInvocationCount(1)
+        await scanner.yield(.first(imageA), for: folderA)
+        await checkpoint.waitUntilSuspended()
+
+        let openB = Task { await viewModel.openFolder(folderB) }
+        await scanner.waitForInvocationCount(2)
+        await checkpoint.resume()
+        await scanner.yield(.complete([imageB]), for: folderB)
+        await scanner.finish(folderB)
+        await openB.value
+        await openA.value
+
+        XCTAssertEqual(viewModel.currentFolderURL, folderB)
+        XCTAssertEqual(viewModel.imageURLs, [imageB])
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertFalse(viewModel.isScanningFolder)
+        viewModel.sceneDidDisappear()
+    }
+
+    func testOpenBWhileAProgressCommitIsSuspended_discardsAProgress() async throws {
+        let fixture = try BrowserSessionFixture(label: "ProgressThenB")
+        defer { fixture.cleanup() }
+        let scanner = ControlledFolderScanner()
+        let checkpoint = BrowserSessionSuspensionGate(suspendOn: .progress)
+        let viewModel = makeViewModel(scanner: scanner, checkpoint: checkpoint, fixture: fixture)
+        let folderA = try fixture.makeFolder("A-progress")
+        let folderB = try fixture.makeFolder("B-progress")
+        let imageA = folderA.appendingPathComponent("a.png")
+        let imageB = folderB.appendingPathComponent("b.png")
+
+        let openA = Task { await viewModel.openFolder(folderA) }
+        await scanner.waitForInvocationCount(1)
+        await scanner.yield(.progress([imageA]), for: folderA)
+        await checkpoint.waitUntilSuspended()
+
+        let openB = Task { await viewModel.openFolder(folderB) }
+        await scanner.waitForInvocationCount(2)
+        await checkpoint.resume()
+        await scanner.yield(.complete([imageB]), for: folderB)
+        await scanner.finish(folderB)
+        await openB.value
+        await openA.value
+
+        XCTAssertEqual(viewModel.currentFolderURL, folderB)
+        XCTAssertEqual(viewModel.imageURLs, [imageB])
+        viewModel.sceneDidDisappear()
+    }
+
+    func testLateAErrorAfterBOpen_isNotDisplayed() async throws {
+        let fixture = try BrowserSessionFixture(label: "ErrorThenB")
+        defer { fixture.cleanup() }
+        let scanner = ControlledFolderScanner()
+        let checkpoint = BrowserSessionSuspensionGate(suspendOn: .error)
+        let viewModel = makeViewModel(scanner: scanner, checkpoint: checkpoint, fixture: fixture)
+        let folderA = try fixture.makeFolder("A-error")
+        let folderB = try fixture.makeFolder("B-error")
+
+        let openA = Task { await viewModel.openFolder(folderA) }
+        await scanner.waitForInvocationCount(1)
+        await scanner.fail(SessionTestError.expectedFailure, for: folderA)
+        await checkpoint.waitUntilSuspended()
+
+        let openB = Task { await viewModel.openFolder(folderB) }
+        await scanner.waitForInvocationCount(2)
+        await checkpoint.resume()
+        await scanner.yield(.complete([]), for: folderB)
+        await scanner.finish(folderB)
+        await openB.value
+        await openA.value
+
+        XCTAssertEqual(viewModel.currentFolderURL, folderB)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertFalse(viewModel.isScanningFolder)
+        viewModel.sceneDidDisappear()
+    }
+
+    func testOneHundredOpenCancellationStorm_leavesOnlyLatestConsumer() async throws {
+        let fixture = try BrowserSessionFixture(label: "CancellationStorm")
+        defer { fixture.cleanup() }
+        let scanner = ControlledFolderScanner()
+        let checkpoint = BrowserSessionSuspensionGate()
+        let viewModel = makeViewModel(scanner: scanner, checkpoint: checkpoint, fixture: fixture)
+        var tasks: [Task<Void, Never>] = []
+        var folders: [URL] = []
+
+        for index in 0..<100 {
+            let folder = try fixture.makeFolder("storm-\(index)")
+            folders.append(folder)
+            tasks.append(Task { await viewModel.openFolder(folder) })
+            await scanner.waitForInvocationCount(index + 1)
+        }
+
+        let latestFolder = try XCTUnwrap(folders.last)
+        let latestImage = latestFolder.appendingPathComponent("latest.png")
+        await scanner.yield(.complete([latestImage]), for: latestFolder)
+        await scanner.finish(latestFolder)
+        for task in tasks {
+            await task.value
+        }
+        await scanner.waitForTerminationCount(99)
+
+        XCTAssertEqual(viewModel.currentFolderURL, latestFolder)
+        XCTAssertEqual(viewModel.imageURLs, [latestImage])
+        XCTAssertTrue(viewModel._debugFolderScanSnapshot().isIdle)
+        viewModel.sceneDidDisappear()
+    }
+
+    private func makeViewModel(
+        scanner: ControlledFolderScanner,
+        checkpoint: BrowserSessionSuspensionGate,
+        fixture: BrowserSessionFixture
+    ) -> ImageBrowserViewModel {
+        let cache = CacheManager(maxSizeBytes: 0)
+        let loader = ImageLoader(cacheManager: cache) { _, _ in
+            NSImage(size: NSSize(width: 1, height: 1))
+        }
+        return ImageBrowserViewModel(
+            imageLoader: loader,
+            folderScanner: scanner,
+            recentFoldersStore: fixture.recentStoreHelper.store,
+            cacheManager: cache,
+            beepPlayer: NoopBeepPlayer(),
+            browserSessionCheckpoint: { sessionID, event in
+                await checkpoint.record(sessionID: sessionID, checkpoint: event)
+            }
+        )
+    }
+
+}
+
+private final class BrowserSessionFixture {
+    let recentStoreHelper: IsolatedRecentFoldersStore
+    private let tempDirectory: URL
+
+    init(label: String) throws {
+        tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AIviewBrowserSessionTests_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        recentStoreHelper = IsolatedRecentFoldersStore(label: "BrowserSessionTests-\(label)")
+    }
+
+    func makeFolder(_ name: String) throws -> URL {
+        let url = tempDirectory.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    func cleanup() {
+        try? FileManager.default.removeItem(at: tempDirectory)
+        recentStoreHelper.cleanup()
+    }
+}
+
+private enum SessionTestError: Error, LocalizedError {
+    case expectedFailure
+
+    var errorDescription: String? { "expected scan failure" }
+}
+
+private actor ControlledFolderScanner: FolderScanning {
+    private var continuations: [URL: AsyncThrowingStream<FolderScanEvent, Error>.Continuation] = [:]
+    private var invocationCount = 0
+    private var invocationWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var terminationCount = 0
+    private var terminationWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+    func scan(folderURL: URL) -> AsyncThrowingStream<FolderScanEvent, Error> {
+        let pair = AsyncThrowingStream<FolderScanEvent, Error>.makeStream()
+        continuations[folderURL] = pair.continuation
+        invocationCount += 1
+        resumeInvocationWaiters()
+        pair.continuation.onTermination = { [weak self] _ in
+            Task { await self?.recordTermination(for: folderURL) }
+        }
+        return pair.stream
+    }
+
+    func scanWithSubdirectories(folderURL: URL) async throws -> SubdirectoryScanResult {
+        SubdirectoryScanResult(imageURLs: [], subdirectoryURLs: [])
+    }
+
+    func yield(_ event: FolderScanEvent, for folderURL: URL) {
+        continuations[folderURL]?.yield(event)
+    }
+
+    func finish(_ folderURL: URL) {
+        continuations[folderURL]?.finish()
+        continuations.removeValue(forKey: folderURL)
+    }
+
+    func fail(_ error: Error, for folderURL: URL) {
+        continuations[folderURL]?.finish(throwing: error)
+        continuations.removeValue(forKey: folderURL)
+    }
+
+    func waitForInvocationCount(_ expectedCount: Int) async {
+        if invocationCount >= expectedCount { return }
+        await withCheckedContinuation { continuation in
+            invocationWaiters.append((expectedCount, continuation))
+        }
+    }
+
+    func waitForTerminationCount(_ expectedCount: Int) async {
+        if terminationCount >= expectedCount { return }
+        await withCheckedContinuation { continuation in
+            terminationWaiters.append((expectedCount, continuation))
+        }
+    }
+
+    private func recordTermination(for folderURL: URL) {
+        continuations.removeValue(forKey: folderURL)
+        terminationCount += 1
+        let ready = terminationWaiters.filter { terminationCount >= $0.0 }
+        terminationWaiters.removeAll { terminationCount >= $0.0 }
+        ready.forEach { $0.1.resume() }
+    }
+
+    private func resumeInvocationWaiters() {
+        let ready = invocationWaiters.filter { invocationCount >= $0.0 }
+        invocationWaiters.removeAll { invocationCount >= $0.0 }
+        ready.forEach { $0.1.resume() }
+    }
+}
+
+private actor BrowserSessionSuspensionGate {
+    enum Kind: Hashable {
+        case favorites
+        case first
+        case progress
+        case complete
+        case error
+    }
+
+    private let suspendOn: Kind?
+    private var didSuspend = false
+    private var suspensionWaiters: [CheckedContinuation<Void, Never>] = []
+    private var resumeContinuation: CheckedContinuation<Void, Never>?
+
+    init(suspendOn: Kind? = nil) {
+        self.suspendOn = suspendOn
+    }
+
+    func record(sessionID: BrowserSessionID, checkpoint: BrowserSessionCheckpoint) async {
+        _ = sessionID
+        let kind: Kind
+        switch checkpoint {
+        case .favoritesLoaded:
+            kind = .favorites
+        case .scanEvent(.first):
+            kind = .first
+        case .scanEvent(.progress):
+            kind = .progress
+        case .scanEvent(.complete):
+            kind = .complete
+        case .scanError:
+            kind = .error
+        }
+
+        guard suspendOn == kind, !didSuspend else { return }
+        didSuspend = true
+        let waiters = suspensionWaiters
+        suspensionWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        await withCheckedContinuation { continuation in
+            resumeContinuation = continuation
+        }
+    }
+
+    func waitUntilSuspended() async {
+        if didSuspend { return }
+        await withCheckedContinuation { continuation in
+            suspensionWaiters.append(continuation)
+        }
+    }
+
+    func resume() {
+        resumeContinuation?.resume()
+        resumeContinuation = nil
     }
 }

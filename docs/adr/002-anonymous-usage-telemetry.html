@@ -29,33 +29,35 @@ GitHub の <code>download_count</code> は CI（tap 更新時の sha256 取得�
 計測のために通信を入れることは思想の変更点であり、最小限かつ透明・停止可能である必要がある。</p>
 
 <h2>Decision</h2>
-<p>アプリ起動時に、<strong>匿名の利用 ping を日次で 1 回だけ fire-and-forget 送信</strong>する。
+<p>アプリ起動時に、<strong>仮名識別子を含む利用pingをUTC日ごとに最大1回送信</strong>する。
 送信先は自前ホストの Cloudflare Worker + D1（<code>cloudflare/aiview-metrics/</code>）。</p>
 <ul>
   <li><strong>opt-out（既定 ON）</strong>: 設定「表示 &gt; プライバシー &gt; 匿名の利用統計を送信する」で停止できる。
-    OFF の間は計測目的の通信を一切行わない。</li>
-  <li><strong>送信内容（PII 無し）</strong>: 匿名 install UUID（初回生成しローカル保存）/ アプリ版 / macOS 版 / CPU アーキ（arm64・x86_64）/ ロケール。
+    OFF時はin-flight ping/retryを即cancelし、OFFの間は通常pingを一切送らない。userが明示的に開始するserver deleteだけはOFF中も許可する。</li>
+  <li><strong>送信・保存する項目</strong>: stableでhigh-entropyなrandom install UUIDは匿名ではなく<strong>仮名識別子（pseudonymous identifier）</strong>である。これにアプリ版 / macOS版 / CPUアーキ（arm64・x86_64）/ localeを加える。
     国コードはサーバ側で CF の <code>cf-ipcountry</code> ヘッダから付与（IP は保存しない）。
-    ファイルパス・画像・ユーザー名など個人を特定しうる情報は送らない。</li>
+    file path・画像・prompt・user名など個人的な内容は送らない。</li>
   <li><strong>日次デバウンス</strong>: <code>UserDefaults</code> に最終送信日(UTC)を持ち、同日は再送しない。
-    送信前に楽観的に当日を記録し、多重ウィンドウ/多重起動での重複を防ぐ。</li>
+    process-global coordinatorがin-flight/retry Taskを1個だけ所有し、<code>POST /v1/ping</code>の2xx確認後だけ当日を記録する。transport/429/5xxは初回+2回（1秒、2秒backoff）に限定し、失敗後は次回launchへ残す。</li>
   <li><strong>サーバは install 単位 1 行のみ保持</strong>（イベントログは持たない）。
-    upsert で <code>last_seen</code> と延べ active 日数を更新する。これで<strong>ユニーク install 数・DAU/WAU/MAU・版/OS/アーキ/国分布</strong>が取れる。</li>
-  <li><strong>集計は Worker の <code>/stats</code></strong>（<code>STATS_KEY</code> 保護）が JSON で返す。CF ダッシュボードや追加のトークンスコープ不要で <code>curl</code> だけで確認できる。</li>
+    UUID、アプリ版、macOS版、CPUアーキ、locale、国code、初回/最終送信時刻、active day数を保存し、最終送信から400日を超えた行を日次削除する。</li>
+  <li><strong>削除</strong>: Settingsから旧UUIDを<code>POST /v1/delete</code>でserver削除できる。2xx後だけlocal markerを消して新UUIDを生成し、失敗時は旧UUIDを維持して再試行を提示する。delete開始時は旧pingをcancelし、終了を待ってから送る。</li>
+  <li><strong>集計は Worker の <code>/stats</code></strong>（Bearer <code>STATS_KEY</code> header保護）が JSON で返す。</li>
 </ul>
 
 <h3>エンドポイント</h3>
 <table>
   <tr><th>ルート</th><th>用途</th></tr>
-  <tr><td><code>GET /ping?id=&amp;v=&amp;os=&amp;arch=&amp;lang=</code></td><td>install 行を upsert し <code>204</code></td></tr>
-  <tr><td><code>GET /stats?key=STATS_KEY</code></td><td>集計 JSON（total / new_today / dau,wau,mau / by_version 他）</td></tr>
+  <tr><td><code>POST /v1/ping</code></td><td>strict JSON bodyを検証し、install行をupsertして<code>204</code></td></tr>
+  <tr><td><code>POST /v1/delete</code></td><td>strict JSON bodyのinstall UUIDを冪等削除して<code>204</code></td></tr>
+  <tr><td><code>GET /stats</code></td><td>Authorization Bearer認証済み集計JSON</td></tr>
 </table>
 
 <h2>Consequences</h2>
 <ul>
   <li><strong>易</strong>: ダウンロード数のノイズに頼らず「実利用（起動）ベース」の指標が得られる。無料枠（Worker + D1）で $0。</li>
   <li><strong>受容</strong>: ローカル完結アプリに初めて通信が入る。既定 ON のため、初回リリース時は README / 設定でその旨を明示し、opt-out を確実に提供する。</li>
-  <li><strong>注意</strong>: 送信は fire-and-forget。失敗しても致命ではなく翌アクティブ日に再試行される（当日は再送しない）。</li>
+  <li><strong>注意</strong>: routine pingはbounded retry後も失敗すればmarkerを残さず、次回launchで再試行する。cancellationは障害表示しない。</li>
   <li><strong>運用</strong>: <code>STATS_KEY</code> は Worker の secret。ローカルには <code>cloudflare/aiview-metrics/.stats-key</code>（gitignore）に保管。エンドポイント URL はアプリにコンパイル時定数として埋め込む。</li>
 </ul>
 

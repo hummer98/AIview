@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 /// テスト用ダミー画像生成ユーティリティ
-/// 200枚の画像を高速に生成（Core Graphics使用）
+/// 指定枚数の画像を同期生成（Core Graphics使用）
 /// PNG形式で大きなファイルサイズを生成し、実際のAI生成画像に近い負荷をシミュレート
 enum DummyImageGenerator {
 
@@ -163,6 +163,31 @@ enum DummyImageGenerator {
 
         if fileManager.fileExists(atPath: cacheFolder.path) {
             try fileManager.removeItem(at: cacheFolder)
+        }
+    }
+
+    /// 指定した全originalに対応するper-folder thumbnail cacheが揃っているかを数える。
+    /// UI testは固定sleepではなく、この実file countをcache warm-up完了条件に使う。
+    static func validThumbnailCacheCount(for originalURLs: [URL]) -> Int {
+        return originalURLs.reduce(into: 0) { count, originalURL in
+            let cacheURL = originalURL
+                .deletingLastPathComponent()
+                .appendingPathComponent(".aiview", isDirectory: true)
+                .appendingPathComponent(originalURL.lastPathComponent + ".jpg")
+            guard let originalValues = try? originalURL.resourceValues(
+                forKeys: [.contentModificationDateKey]
+            ),
+                let cacheValues = try? cacheURL.resourceValues(
+                    forKeys: [.contentModificationDateKey, .fileSizeKey]
+                ),
+                let originalModificationDate = originalValues.contentModificationDate,
+                let cacheModificationDate = cacheValues.contentModificationDate,
+                let fileSize = cacheValues.fileSize,
+                fileSize > 0,
+                abs(cacheModificationDate.timeIntervalSince(originalModificationDate)) < 1 else {
+                return
+            }
+            count += 1
         }
     }
 

@@ -31,23 +31,22 @@ enum ThumbnailPriority {
 /// 安全に参照できるキャンセルフラグ。
 /// withTaskCancellationHandler の onCancel で `cancel()` を呼び、
 /// DispatchQueue 内部では `isCancelled` を各工程で参照して早期 return する。
-final class CancelFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _cancelled = false
+final class CancelFlag: Sendable {
+    private let cancelled = OSAllocatedUnfairLock(initialState: false)
 
     func cancel() {
-        lock.withLock { _cancelled = true }
+        cancelled.withLock { $0 = true }
     }
 
     var isCancelled: Bool {
-        lock.withLock { _cancelled }
+        cancelled.withLock { $0 }
     }
 }
 
 /// continuation.resume を最初の呼び出しだけ通すための one-shot フラグ。
 /// BlockOperation 本体 (happy path / early cancel) と completionBlock (本体が一度も
 /// 走らなかった稀少ケースの救済) の両方から resume されうるため、二重 resume を防ぐ。
-final class ResumeGuard: @unchecked Sendable {
+final class ResumeGuard: Sendable {
     private let lock = OSAllocatedUnfairLock<Bool>(initialState: false)
 
     /// 最初の呼び出し時のみ true を返し、以降は false を返す。
@@ -64,7 +63,7 @@ final class ResumeGuard: @unchecked Sendable {
 /// `queuePriority` を動的に書き換える。currentIndex 変化時にウィンドウ内 URL を
 /// `.high`、範囲外を `.normal` に遷移させる。
 /// map 操作は lock 下、queuePriority 書換えは lock 外で行う分割ロック設計。
-final class OperationRegistry: @unchecked Sendable {
+final class OperationRegistry: Sendable {
     private let lock = OSAllocatedUnfairLock<[URL: Operation]>(initialState: [:])
 
     func register(_ op: Operation, for url: URL) {
@@ -111,7 +110,7 @@ final class OperationRegistry: @unchecked Sendable {
 /// - Sendable な final class（内部状態は OperationQueue/Registry/Instrumentation で各々 thread-safe）
 /// - `shared` シングルトンで queue/registry/instrumentation をプロセス全体で共有
 /// - 並列度: `[4, 8]` クランプ（2 コア機での I/O パイプ確保 + 高コア機での MainActor 戻り飽和回避）
-final class ThumbnailGenerator: @unchecked Sendable {
+final class ThumbnailGenerator: Sendable {
     /// アプリ全体で共有する単一インスタンス。
     static let shared = ThumbnailGenerator()
 

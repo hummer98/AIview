@@ -112,11 +112,7 @@ struct SlideshowSettingsDialog: View {
     SlideshowSettingsDialog(
         hasImages: true,
         initialInterval: 3,
-        onStart: { interval in
-            print("Start with interval: \(interval)")
-        },
-        onCancel: {
-            print("Cancelled")
-        }
+        onStart: { _ in },
+        onCancel: {}
     )
 }

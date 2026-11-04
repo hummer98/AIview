@@ -7,24 +7,28 @@ import XCTest
 @MainActor
 final class ReloadIntegrationTests: XCTestCase {
     var viewModel: ImageBrowserViewModel!
-    var appState: AppState!
+    var appServices: AppServices!
+    var windowSession: BrowserWindowSession!
     var tempDirectory: URL!
     var recentStoreHelper: IsolatedRecentFoldersStore!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         recentStoreHelper = IsolatedRecentFoldersStore(label: "ReloadIntegrationTests")
         viewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
-        appState = AppState()
+        appServices = AppServices(recentFoldersStore: recentStoreHelper.store)
+        windowSession = BrowserWindowSession(appServices: appServices, viewModel: viewModel)
 
         // テスト用一時ディレクトリを作成
         tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         viewModel.stopSlideshow()
+        windowSession.stop()
+        windowSession = nil
         viewModel = nil
-        appState = nil
+        appServices = nil
 
         // 一時ディレクトリを削除
         if let tempDir = tempDirectory {
@@ -53,52 +57,6 @@ final class ReloadIntegrationTests: XCTestCase {
         return imageURL
     }
 
-    // MARK: - AppState Trigger Tests
-
-    /// triggerReload()がshouldReloadFolderをtrueに設定することを検証
-    /// Requirements: 2.3
-    func testTriggerReload_setsShouldReloadFolder() {
-        // Given
-        XCTAssertFalse(appState.shouldReloadFolder)
-
-        // When
-        appState.triggerReload()
-
-        // Then
-        XCTAssertTrue(appState.shouldReloadFolder)
-    }
-
-    /// clearReloadRequest()がshouldReloadFolderをfalseに設定することを検証
-    /// Requirements: 2.3
-    func testClearReloadRequest_clearsShouldReloadFolder() {
-        // Given
-        appState.triggerReload()
-        XCTAssertTrue(appState.shouldReloadFolder)
-
-        // When
-        appState.clearReloadRequest()
-
-        // Then
-        XCTAssertFalse(appState.shouldReloadFolder)
-    }
-
-    /// hasCurrentFolderが正しく機能することを検証
-    /// Requirements: 2.4
-    func testHasCurrentFolder_defaultIsFalse() {
-        // Then
-        XCTAssertFalse(appState.hasCurrentFolder)
-    }
-
-    /// hasCurrentFolderを設定できることを検証
-    /// Requirements: 2.4
-    func testHasCurrentFolder_canBeSet() {
-        // When
-        appState.hasCurrentFolder = true
-
-        // Then
-        XCTAssertTrue(appState.hasCurrentFolder)
-    }
-
     // MARK: - Integration Tests
 
     /// フォルダ未選択時にメニュー項目が無効化される条件をテスト
@@ -106,8 +64,8 @@ final class ReloadIntegrationTests: XCTestCase {
     func testMenuDisabledState_whenNoFolderSelected() {
         // Given - フォルダ未選択
 
-        // Then - hasCurrentFolderがfalseなのでメニューは無効
-        XCTAssertFalse(appState.hasCurrentFolder, "フォルダ未選択時はhasCurrentFolderがfalse")
+        // Then - focused scene 自身の availability が false
+        XCTAssertFalse(windowSession.focusedCommands.hasCurrentFolder)
     }
 
     /// サブディレクトリモード有効時のリロード動作を検証
@@ -120,7 +78,6 @@ final class ReloadIntegrationTests: XCTestCase {
         _ = try createTestImage(named: "child_001.png", in: subdir)
 
         await viewModel.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
 
         // サブディレクトリモードを有効化
         await viewModel.enableSubdirectoryMode()
@@ -130,7 +87,6 @@ final class ReloadIntegrationTests: XCTestCase {
 
         // When - リロード
         _ = await viewModel.reloadCurrentFolder()
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then - サブディレクトリモードが維持され、画像数が維持される
         XCTAssertTrue(viewModel.isSubdirectoryMode, "サブディレクトリモードが維持されるべき")
@@ -145,7 +101,6 @@ final class ReloadIntegrationTests: XCTestCase {
         _ = try createTestImage(named: "002.png", in: tempDirectory)
 
         await viewModel.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
 
         // スライドショーを開始して一時停止
         viewModel.startSlideshow(interval: 5)
@@ -156,7 +111,6 @@ final class ReloadIntegrationTests: XCTestCase {
 
         // When - リロード
         _ = await viewModel.reloadCurrentFolder()
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then - スライドショー状態が維持される
         XCTAssertTrue(viewModel.isSlideshowActive, "リロード後もisSlideshowActiveがtrueであるべき")
@@ -170,7 +124,6 @@ final class ReloadIntegrationTests: XCTestCase {
         _ = try createTestImage(named: "002.png", in: tempDirectory)
 
         await viewModel.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
 
         // スライドショーを開始（再生中）
         viewModel.startSlideshow(interval: 5)
@@ -179,7 +132,6 @@ final class ReloadIntegrationTests: XCTestCase {
 
         // When - リロード
         _ = await viewModel.reloadCurrentFolder()
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then - スライドショー状態が維持される
         XCTAssertTrue(viewModel.isSlideshowActive, "リロード後もisSlideshowActiveがtrueであるべき")
@@ -194,37 +146,29 @@ final class ReloadIntegrationTests: XCTestCase {
 
         // When
         await viewModel.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then - ViewModelにcurrentFolderURLが設定される
         XCTAssertNotNil(viewModel.currentFolderURL, "フォルダが設定されるべき")
-        // 注: 実際のView統合ではonChangeでappState.hasCurrentFolderが更新される
+        XCTAssertTrue(windowSession.focusedCommands.hasCurrentFolder)
     }
 
-    /// AppStateのtriggerReload()とViewModelのreloadCurrentFolder()の統合動作
+    /// focused command と ViewModel の reload 統合動作
     /// Requirements: 1.1, 2.3
-    func testAppStateTrigger_invokesViewModelReload() async throws {
+    func testFocusedReload_invokesViewModelReload() async throws {
         // Given
         _ = try createTestImage(named: "001.png", in: tempDirectory)
         await viewModel.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
 
         let initialCount = viewModel.imageURLs.count
 
         // 新しい画像を追加
         _ = try createTestImage(named: "002.png", in: tempDirectory)
 
-        // When - AppStateでトリガー、ViewModelでリロード（View層の動作をシミュレート）
-        appState.triggerReload()
-        XCTAssertTrue(appState.shouldReloadFolder)
-
-        _ = await viewModel.reloadCurrentFolder()
-        appState.clearReloadRequest()
-
-        try await Task.sleep(for: .milliseconds(200))
+        // When - focused scene action からリロード
+        windowSession.focusedCommands.reloadFolder()
+        await windowSession._debugWaitForCurrentOperation()
 
         // Then
-        XCTAssertFalse(appState.shouldReloadFolder, "リクエストがクリアされるべき")
         XCTAssertEqual(viewModel.imageURLs.count, initialCount + 1, "新しい画像が追加されるべき")
     }
 }

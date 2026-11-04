@@ -7,12 +7,8 @@ import AppKit
 final class CacheManagerTests: XCTestCase {
     var sut: CacheManager!
 
-    // 100x100画像 = 40KB (100*100*4bytes)
-    // テスト用に小さいキャッシュサイズ: 5枚分 = 200KB
-    private let testCacheSizeBytes = 200 * 1024
-
     override func setUpWithError() throws {
-        sut = CacheManager(maxSizeBytes: testCacheSizeBytes)
+        sut = makeCache(capacity: 5)
     }
 
     override func tearDownWithError() throws {
@@ -67,8 +63,8 @@ final class CacheManagerTests: XCTestCase {
     }
 
     func testLRUEviction_accessUpdatesRecency() {
-        // Given - Cache with max size 3 (3 images = 120KB)
-        let smallCache = CacheManager(maxSizeBytes: 120 * 1024)
+        // Given - Cache with max size 3 decoded images
+        let smallCache = makeCache(capacity: 3)
 
         let url1 = URL(fileURLWithPath: "/tmp/image1.jpg")
         let url2 = URL(fileURLWithPath: "/tmp/image2.jpg")
@@ -157,8 +153,8 @@ final class CacheManagerTests: XCTestCase {
     }
 
     func testHasCachedImage_doesNotUpdateLRUOrder() {
-        // Given - Cache with max size 3 (3 images = 120KB)
-        let smallCache = CacheManager(maxSizeBytes: 120 * 1024)
+        // Given - Cache with max size 3 decoded images
+        let smallCache = makeCache(capacity: 3)
 
         let url1 = URL(fileURLWithPath: "/tmp/image1.jpg")
         let url2 = URL(fileURLWithPath: "/tmp/image2.jpg")
@@ -213,5 +209,10 @@ final class CacheManagerTests: XCTestCase {
         let image = NSImage(size: size)
         image.addRepresentation(bitmapRep)
         return image
+    }
+
+    private func makeCache(capacity: Int) -> CacheManager {
+        let decodedImageCost = ImageMemoryCost.estimatedSize(of: createTestImage())
+        return CacheManager(maxSizeBytes: decodedImageCost * capacity)
     }
 }

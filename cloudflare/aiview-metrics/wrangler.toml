@@ -1,13 +1,48 @@
 name = "aiview-metrics"
 main = "src/index.ts"
-compatibility_date = "2024-11-01"
+compatibility_date = "2026-08-11"
 workers_dev = true
 minify = true
+
+[vars]
+# v0.9.x の GET /ping は v0.10.0 server-first rollout から90日後に自動停止する。
+LEGACY_PING_SUNSET = "2026-11-09T00:00:00Z"
+
+[triggers]
+# UTC 03:00 に400日を超えたinstall行を削除する。
+crons = ["0 3 * * *"]
 
 # D1: `npx wrangler d1 create aiview-metrics` で作成し database_id を埋める
 [[d1_databases]]
 binding = "DB"
 database_name = "aiview-metrics"
 database_id = "1238af9e-9447-447b-b7d5-a90d507dbd11"
+migrations_dir = "migrations"
+
+# Rate Limiting binding。namespace_id はaccount内でbindingごとに一意な正整数文字列。
+[[ratelimits]]
+name = "PING_IP_RATE_LIMIT"
+namespace_id = "10001"
+simple = { limit = 120, period = 60 }
+
+[[ratelimits]]
+name = "PING_INSTALL_RATE_LIMIT"
+namespace_id = "10002"
+simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "DELETE_IP_RATE_LIMIT"
+namespace_id = "10003"
+simple = { limit = 30, period = 60 }
+
+[[ratelimits]]
+name = "STATS_IP_RATE_LIMIT"
+namespace_id = "10004"
+simple = { limit = 20, period = 60 }
+
+[[ratelimits]]
+name = "LEGACY_PING_IP_RATE_LIMIT"
+namespace_id = "10005"
+simple = { limit = 60, period = 60 }
 
 # STATS_KEY は secret（`npx wrangler secret put STATS_KEY`）。ここには置かない。

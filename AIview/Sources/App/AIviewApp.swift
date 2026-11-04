@@ -5,9 +5,12 @@ import os
 /// macOS の secure state restoration を有効化するための NSApplicationDelegate。
 /// SwiftUI `WindowGroup` は applicationSupportsSecureRestorableState=true を返したときに
 /// 終了時に開いていたウィンドウ群（数・位置・サイズ）を次回起動時に自動復元する。
+/// fixtureを毎回作り直すUI testだけは前testのwindow復元を無効化する。
 final class AIviewAppDelegate: NSObject, NSApplicationDelegate {
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
-        true
+        // UI tests launch a fresh fixture per test. Restoring a previous test's windows would
+        // create multiple sessions that race to open the new fixture.
+        ProcessInfo.processInfo.environment["AIVIEW_UI_TEST_MODE"] != "1"
     }
 }
 
@@ -16,34 +19,25 @@ final class AIviewAppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct AIviewApp: App {
     @NSApplicationDelegateAdaptor(AIviewAppDelegate.self) private var appDelegate
-    @State private var appState = AppState()
+    @State private var appServices = AppServices()
 
     private var isUITestMode: Bool {
         ProcessInfo.processInfo.environment["AIVIEW_UI_TEST_MODE"] == "1"
     }
 
-    /// 旧中央キャッシュディレクトリの削除を一度だけ実行するガード。
-    /// `WindowGroup.onAppear` は複数ウィンドウで複数回呼ばれうるが、
-    /// `static let` で遅延評価される Task はプロセス内で一度しか spawn されない。
-    private static let purgeLegacyTask: Task<Void, Never> = Task.detached(priority: .background) {
-        await AIviewApp.purgeLegacyCentralCache()
-    }
-
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(appState)
+            ContentView(appServices: appServices)
                 .onAppear {
-                    // 起動時に履歴を読み込み
-                    appState.refreshRecentFolders()
+                    appServices.refreshRecentFolders()
 
                     // 旧中央ディスクキャッシュを削除 (task 019: per-folder 方式へ移行)
-                    _ = AIviewApp.purgeLegacyTask
+                    appServices.startLaunchMaintenance()
 
-                    // 匿名利用統計を送信（設定ON かつ本日未送信のときのみ、日次デバウンス）。
+                    // 仮名IDを用いた利用統計を送信（設定ONかつ本日未送信のときのみ）。
                     // UI テスト時は送らない。
                     if !isUITestMode {
-                        TelemetryService.pingIfNeeded()
+                        appServices.telemetryCoordinator.pingIfNeeded()
                     }
 
                     if isUITestMode {
@@ -54,12 +48,11 @@ struct AIviewApp: App {
         }
         .windowToolbarStyle(.unified(showsTitle: true))
         .commands {
-            AppCommands(appState: appState)
+            AppCommands(appServices: appServices)
         }
 
         Settings {
-            SettingsView()
-                .environment(appState)
+            SettingsView(appServices: appServices)
         }
     }
 
@@ -78,33 +71,6 @@ struct AIviewApp: App {
         }
     }
 
-    /// 旧中央ディスクキャッシュ `~/Library/Application Support/AIview/DiskCache/` を削除
-    ///
-    /// task 019 で per-folder `.aiview/` 方式に回帰したため、旧形式のディレクトリは
-    /// 次回起動時に一度だけまとめて回収する。失敗 (ENOENT, 権限、競合) は全て warning で握りつぶす。
-    private static func purgeLegacyCentralCache() async {
-        let fm = FileManager.default
-        guard let appSupport = try? fm.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: false
-        ) else { return }
-
-        let legacyRoot = appSupport.appendingPathComponent("AIview/DiskCache", isDirectory: true)
-        guard fm.fileExists(atPath: legacyRoot.path) else { return }
-
-        do {
-            try fm.removeItem(at: legacyRoot)
-            Logger.app.info(
-                "Removed legacy central disk cache: \(legacyRoot.path, privacy: .public)"
-            )
-        } catch {
-            Logger.app.warning(
-                "Failed to remove legacy central disk cache: \(error.localizedDescription, privacy: .public)"
-            )
-        }
-    }
 }
 
 /// ロギング用のLogger
@@ -120,4 +86,5 @@ extension Logger {
     static let slideshow = Logger(subsystem: subsystem, category: "Slideshow")
     static let metrics = Logger(subsystem: subsystem, category: "Metrics")
     static let telemetry = Logger(subsystem: subsystem, category: "Telemetry")
+    static let navigation = Logger(subsystem: subsystem, category: "Navigation")
 }

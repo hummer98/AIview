@@ -1,4 +1,4 @@
 node_modules/
 .wrangler/
 .stats-key
-package-lock.json
+.dev.vars*

@@ -51,36 +51,38 @@
 
 ### 画像ナビ
 
-`ImageBrowserViewModel.next()` / `previous()` が現在 index を進め、`ImageLoader` に表示優先（P0）でロード依頼を送る。同時に方向を渡してプリフェッチ起動。詳細は [`03-performance-and-caching.md`](03-performance-and-caching.md)。
+`ImageBrowserViewModel.moveToNext()` / `moveToPrevious()` はUI facadeとして`BrowserSessionController`へ委譲する。controllerが現在indexからpending selectionを発行し、`ImageLoader`へ表示優先（P0）でload依頼を送り、同時に方向を渡してprefetchを起動する。詳細は [`03-performance-and-caching.md`](03-performance-and-caching.md)。
 
 ### ファイルパスを入力して開く（⌘⇧O）
 
-メニュー「ファイル > ファイルパスを入力して開く...」で入力ダイアログを表示し、入力された絶対パスを開く。`AppState.showFilePathInput` を View が監視してダイアログを表示し、`ImageBrowserViewModel.openPath(_:)` に渡す。
+メニュー「ファイル > ファイルパスを入力して開く...」は、`FocusedValues`でフォーカス中の`BrowserWindowSession`だけに入力ダイアログを表示し、入力された絶対パスを`ImageBrowserViewModel.openPath(_:)`へ渡す。
 
 - 先頭の `~` はホームディレクトリに展開する。
 - パスがディレクトリならフォルダとして開く（`openFolder`）。
 - パスが画像ファイルなら親フォルダを開き、その画像を選択状態にする（`openFile` → `openFolder(_:initialImageURL:)`。スキャン完了後に `handleScanComplete` で `lastPathComponent` 一致により対象 index へジャンプ）。
 - 存在しないパスは `errorMessage` を設定し、フォルダは開かない。
 
-アプリは非サンドボックス（`com.apple.security.app-sandbox = false`）のため、security-scoped bookmark なしで任意のパスにアクセスできる。
+アプリはDeveloper IDによる非サンドボックス配布のため、sandbox entitlement fileやsecurity-scoped bookmarkを持たず、通常のfile URLで任意のパスにアクセスする。
 
 ### 兄弟フォルダ移動（⌘↑↓）
 
-親フォルダの直下にあるフォルダを `localizedStandardCompare` で並べ、現在フォルダの前後へ遷移。`AppState.requestSiblingFolder(.previous|.next)` 経由で `ViewModel` に伝達。
+親フォルダの直下にあるフォルダを `localizedStandardCompare` で並べ、現在フォルダの前後へ遷移。focused scene actionから対象windowの`BrowserWindowSession`経由で`ViewModel`に伝達する。
 
 ### フォルダリロード（⌘R）
 
-ディレクトリの再走査と現在画像の再ロード。`AppState.triggerReload()` を View が監視。
+ディレクトリの再走査と現在画像の再ロード。focused scene actionが対象windowだけのreloadを開始する。
 
 ### サムネイルキャッシュの削除・再生成（⌘⇧R）
 
-現在フォルダの画像に対応するディスクキャッシュ（`.aiview/<name>.jpg`）を削除し、メモリキャッシュ（フルサイズ・サムネイル）をクリアしてからリロードする。`AppState.triggerClearThumbnailCache()` を View が監視し、`ImageBrowserViewModel.clearThumbnailCacheAndReload()` を呼ぶ。
+現在フォルダの画像に対応するディスクキャッシュ（`.aiview/<name>.jpg`）を削除し、メモリキャッシュ（フルサイズ・サムネイル）をクリアしてからリロードする。focused scene actionが対象windowの`ImageBrowserViewModel.clearThumbnailCacheAndReload()`を呼ぶ。
 
 ディスクキャッシュは mtime のみで hit 判定するため、デコードオプション変更（例: EXIF Orientation 適用の有効化）など元ファイルの mtime が変わらない内容変更は自動失効しない。本コマンドはその手動再生成手段。削除対象は元ファイル単位で算出するため `.aiview/favorites.json` には触れず、お気に入りは保持される。スコープは現在フォルダのみ（中央 index を持たない設計上、全フォルダ一括消去は提供しない。[`04-thumbnail-cache.md`](04-thumbnail-cache.md) 参照）。
 
 ### 最近使用したフォルダ
 
-最大 10 件、`RecentFoldersStore` が UserDefaults に保存。Security-Scoped Bookmark でアクセス権を保持し、再起動後もそのまま開ける。`displayPath` でホームディレクトリは `~` 表示。
+最大10件を`RecentFoldersStore`がplainな`standardizedFileURL.path`としてUserDefaultsへ保存する。履歴順を維持し、正規化後に重複するpathは除去する。旧path/bookmark defaultsは一度だけ移行し、旧bookmark Dataを再解決せず撤去する。移行前valueはrollback用に1 releaseだけbackup keyへ保持し、「履歴をクリア」ではbackupも削除する。
+
+存在しないpathは外付けdiskやnetwork mountが戻る場合に備えて履歴から自動削除しない。選択時にまだ存在しなければ通常の「パスが見つかりません」errorを表示する。`displayPath`でホームディレクトリは`~`表示。
 
 ## お気に入り（5 段階レーティング）
 
@@ -110,10 +112,11 @@
 - **保存**: 常に v2 形式で書く（atomic）。旧形式ファイルは保存時に自動移行する
 - 統合モードの書き込みは read-modify-write で既存の `lastViewedImage` を保全する（お気に入り編集で前回位置を消さない）
 
-### 通常モード vs 統合モード
+### Memory snapshot
 
-- **通常**: 単一フォルダ。`favorites: [String: Int]` を保持
-- **統合**: フィルタモード（`⇧1`〜`⇧5`）でサブディレクトリ走査時に有効化。`aggregatedFavorites: [URL: [String: Int]]` でフォルダ別に管理し、書き込み時は画像が属する元フォルダの `favorites.json` を更新
+disk形式はfolder内のfilename keyを維持するが、閲覧中のmemory stateは通常/統合モードとも1個の`[URL: Int]`を使う。keyは`standardizedFileURL`を適用した完全URLなので、親folderとsubfolderに同名fileがあっても独立する。現在評価、thumbnail badge、通常filter、subdirectory filterはすべて同じsnapshotから派生する。
+
+お気に入りの設定・解除は画像URLから保存先folderを決定し、そのfolderの`favorites.json`をatomic保存する。disk保存に成功した後だけmemory snapshotを更新し、失敗時はUI上の評価・filter結果を変更しない。
 
 ### フィルタの挙動
 
@@ -138,7 +141,7 @@
 - **サブディレクトリ統合モード**（`⇧1`〜`⇧5`）中の移動
 - **プライバシーモード**中の移動
 
-記録は後述の設定トグルに関係なく行う（プライバシーモード中・統合モード中を除く）。実装上、ユーザー移動の `jumpToIndex(recordLastViewed: true)` のみがデバウンスタイマーを仕掛け、内部ジャンプは `recordLastViewed: false` で記録経路を通らない。
+記録は後述の設定トグルに関係なく行う（プライバシーモード中・統合モード中を除く）。実装上、ユーザー移動の `jumpToIndex(recordLastViewed: true)` のみがデバウンスタイマーを仕掛け、内部ジャンプは `recordLastViewed: false` で記録経路を通らない。privacy ONは満了前のdebounce Taskをcancelし、Taskはdisk commit直前にもprivacy/cancellationと現在selectionを再確認する。
 
 ### 復元（確認ダイアログ）
 
@@ -156,7 +159,7 @@
 
 ## スライドショー
 
-`SlideshowTimer` が 1〜60 秒のクランプ付きでタイマーを管理。`pause()` / `resume()` / `reset()` / `updateInterval()` を提供。`reset()` は手動進行（←→）時に呼び、間隔のリセットを実現。
+`SlideshowController`がactive/paused/interval/settingsを所有し、専用`SlideshowTimer`を制御する。timerは1〜60秒のクランプと`pause()` / `resume()` / `reset()` / `updateInterval()`を提供し、`reset()`は手動進行（←→）時に呼ぶ。controllerはimage selectionを所有せず、tick callbackでsession orchestrationへ次画像操作を依頼する。
 
 実行中の特殊挙動:
 - スペースキー = pause + プライバシーモード起動（誰かが入ってきたとき用）
@@ -164,7 +167,9 @@
 
 ## プライバシーモード（Space）
 
-`PrivacyOverlay` が画像と情報パネルを瞬時に黒で覆う。`isPrivacyMode` を toggle するだけのシンプルな実装。
+`PrivacyOverlay` が画像と情報パネルを瞬時に黒で覆う。privacy ONでは、未確定のlast-viewed記録Taskと、AI promptを含むmetadata抽出Taskも同時にcancelし、既に取得したmetadataをUI stateから消去する。privacy中にscanが完了しても前回位置の復元promptは表示しない。
+
+`isPrivacyMode`は各windowのscene-localな一時stateで、`SettingsStore`へ永続化しない。「前回の表示位置を確認する」設定は復元ダイアログの表示可否だけを制御し、privacy modeそのもののON/OFF設定ではない。
 
 ## ズーム（拡大・縮小）
 
@@ -172,11 +177,13 @@
 
 ### 操作
 
-- **トラックパッドのピンチイン/アウト**（`MagnifyGesture`）
+- **トラックパッドのピンチイン/アウト**（`MagnifyGesture`）。ピンチ開始位置（カーソル位置）を固定点として拡縮する
 - **メニュー / ショートカット**（表示メニュー）:
   - `⌘+` 拡大（1.25 倍ステップ） / `⌘−` 縮小
   - `⌘0` 実際のサイズ（100%） / `⌘9` ウィンドウに合わせる（フィット）
+  - `⌘+` / `⌘−` / `⌘0` はカーソルが画像上にあればその位置、なければ中央を固定点とする
 - **拡大時のドラッグでパン**（`DragGesture`）。フィット以下ではパン無効。
+- **拡大時のトラックパッド二本指スクロール / マウスホイールでパン**。SwiftUI（macOS 14）に scrollWheel modifier がないため、透過 AppKit view（`ScrollWheelPanCatcher`）をオーバーレイし、`hitTest` は拡大中かつ scrollWheel イベント時だけ自身を返す（クリック・ドラッグ・ピンチは SwiftUI ジェスチャへ素通し）。`scrollingDelta` はナチュラルスクロール設定を反映済みのため、そのままパン量へ加算する。行単位のホイールは 10pt/行に換算。フィット以下では scroll イベントを捕捉しない。
 
 ### 倍率モデル
 
@@ -185,6 +192,7 @@
 - **実際のサイズ（100%）** は intrinsic な points 表示に一致する倍率 `1/fitScale` で表現する（`fitScale` = フィット時の intrinsic→表示の縮小率）。
 - **倍率の下限** は フィット(1.0) と 実際のサイズ の小さい方。intrinsic がウィンドウより小さい画像は 100%（フィットより小さい）まで縮小でき、大きい画像はフィットが下限（それ以上は縮まない）。
 - **上限** は 20 倍。ただし「実際のサイズ」には常に到達できるよう必要に応じて引き上げる。
+- カーソル位置を固定点とする拡縮は `pan' = a - (to/from)·(a - pan)`（`a` = カーソルの中央基準座標、`ZoomAnchor`）で補正し、その後クランプする。
 - パンオフセットは、拡大した画像がコンテナからはみ出す範囲内にクランプする。ウィンドウリサイズ時も再クランプ。
 
 フィットから外れているときのみ、右上に倍率バッジ（例: `100%`）を表示する。
@@ -195,15 +203,16 @@
 
 ### メニュー連携
 
-`AppState.zoomCommand`（`ZoomCommand` = `.zoomIn` / `.zoomOut` / `.actualSize` / `.fit`）にメニュー/ショートカットがコマンドを set し、`ZoomableImageView` がビュー座標系（コンテナサイズ）で解釈・適用してから消費（nil 化）する。同じコマンドの連打（`⌘+` 連続）でも nil→値の遷移になるよう都度クリアする設計。メニューの有効/無効は `AppState.hasImages` で判定。
+メニュー/ショートカットは`FocusedValues`経由でフォーカス中の`BrowserWindowSession`へ`BrowserZoomRequest(id, command)`を発行し、対象windowの`ZoomableImageView`だけが適用・消費する。UUID identityにより同じコマンドの連打も別イベントとなる。メニューの有効/無効はfocused sceneの`hasImages`で判定する。
 
 ## メタデータ・プロンプト抽出
 
 `MetadataExtractor` actor が以下を順に試行:
 
-1. **PNG tEXt チャンク** — `parameters\0` キーワードを検索、ビッグエンディアンで chunk length を読み取り、本体を UTF-8 デコード
-2. **XMP** — `parameters="..."` を正規表現で抽出
-3. **EXIF** — `kCGImagePropertyExifDateTimeOriginal` / `kCGImagePropertyExifUserComment`
+1. **ImageIO metadata** — 正規化済みPNG properties / XMP tagを先に検索し、EXIFは`kCGImagePropertyExifDateTimeOriginal` / `kCGImagePropertyExifUserComment`から取得
+2. **bounded PNG fallback** — ImageIOが独自keywordを公開しない場合だけ、signatureからchunkを逐次走査。`tEXt` / `iTXt` / `zTXt`の`parameters` chunkだけを読み、UTF-8優先・Latin-1 fallbackでdecodeする
+
+PNG fallbackはraw text chunkとzlib展開後の双方を1 MiBに制限する。metadataと無関係なIDAT/unknown chunkはpayloadをallocateせずseekし、chunk数、keyword delimiter、compression flag/method、offset overflow、CRC領域、IEND終端を検証する。ファイル全体の`Data(contentsOf:)`やbinary全体の`String`化は行わない。ImageIOから受け取るString/Dataにも同じ1 MiB出力上限を適用する。
 
 プロンプトのパース（`parsePrompt`）:
 - `Negative prompt:` の前 → positive prompt
@@ -214,7 +223,7 @@
 
 ## ファイルパスヘッダ
 
-ウィンドウ上部に現在画像のフルパスを表示し、コピーボタンでクリップボードへ。`MainWindowView` 内で実装。
+ウィンドウ上部に現在画像のフルパスを表示し、コピーボタンでクリップボードへ。`BrowserToolbarContent`が実装し、`MainWindowView`はtoolbarの合成だけを行う。
 
 ## サムネイル生成インジケータ（活動時のみ）
 
@@ -233,7 +242,7 @@ archive viewer のミニマルさを保つため、活動していないとき�
 - `AIviewAppDelegate.applicationSupportsSecureRestorableState(_:)` が `true` を返すことで、macOS の secure state restoration が有効化される（`@NSApplicationDelegateAdaptor` で `AIviewApp` に注入）
 - ウィンドウフレーム（位置・サイズ）と `WindowGroup` のウィンドウ数は OS が自動で記録・復元する
 - 各ウィンドウが開いていたフォルダパスは `MainWindowView` の `@SceneStorage("currentFolderPath")` で per-scene に永続化し、`viewModel.currentFolderURL` の変化を `onChange` で書き戻す
-- 復元時は `handleAppear` で `storedFolderPath` を読み、`appState.openRecentFolder(_:)` 経由で開く（既存の bookmark 解決ロジックをそのまま利用）
+- 復元時は`handleAppear`でplain standardized pathの`storedFolderPath`を読み、そのsceneの`BrowserWindowSession.openPath(_:)`で開く
 
 macOS のシステム設定「アプリを終了するとウィンドウを閉じる」がオンの場合は OS 側で復元が抑制される（既定はオフ）。
 
@@ -243,4 +252,4 @@ macOS のシステム設定「アプリを終了するとウィンドウを閉�
 
 ## 開発メニュー（⌘⇧D）
 
-`MetricsCollector.snapshot()` を `formattedLogString()` で `Logger.metrics` に出力。`Console.app` で `subsystem == "com.ridgeroot.AIview"` を確認。
+focused windowの`BrowserWindowSession`が所有する`MetricsCollector.snapshot()`を`formattedLogString()`で`Logger.metrics`へ出力する。window close時は1Hz samplingとactivity pollingをcancelする。`Console.app`で`subsystem == "com.ridgeroot.AIview"`を確認。

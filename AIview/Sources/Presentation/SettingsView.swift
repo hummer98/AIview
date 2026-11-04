@@ -1,11 +1,14 @@
 import SwiftUI
 
 /// 設定ウィンドウのビュー
-/// TabView でキャッシュ設定と診断情報の2タブを提供
+/// TabView で表示設定とキャッシュ設定を提供する。
+/// window-local metrics は focused window の「開発」メニューから取得する。
 struct SettingsView: View {
+    let appServices: AppServices
+
     var body: some View {
         TabView {
-            DisplaySettingsTab()
+            DisplaySettingsTab(appServices: appServices)
                 .tabItem {
                     Label("表示", systemImage: "photo")
                 }
@@ -15,10 +18,6 @@ struct SettingsView: View {
                     Label("キャッシュ", systemImage: "memorychip")
                 }
 
-            DiagnosticsTab()
-                .tabItem {
-                    Label("診断情報", systemImage: "chart.bar.xaxis")
-                }
         }
         .frame(width: 520, height: 480)
     }
@@ -27,13 +26,14 @@ struct SettingsView: View {
 // MARK: - Display Settings Tab
 
 private struct DisplaySettingsTab: View {
-    private let settingsStore = SettingsStore()
+    let appServices: AppServices
 
     @State private var restoreLastViewedConfirmEnabled: Bool
     @State private var analyticsEnabled: Bool
 
-    init() {
-        let store = SettingsStore()
+    init(appServices: AppServices) {
+        self.appServices = appServices
+        let store = appServices.settingsStore
         _restoreLastViewedConfirmEnabled = State(initialValue: store.restoreLastViewedConfirmEnabled)
         _analyticsEnabled = State(initialValue: store.analyticsEnabled)
     }
@@ -46,8 +46,7 @@ private struct DisplaySettingsTab: View {
                     isOn: $restoreLastViewedConfirmEnabled
                 )
                 .onChange(of: restoreLastViewedConfirmEnabled) { _, newValue in
-                    var store = settingsStore
-                    store.restoreLastViewedConfirmEnabled = newValue
+                    appServices.settingsStore.restoreLastViewedConfirmEnabled = newValue
                 }
             } header: {
                 Text("前回の表示位置")
@@ -63,18 +62,49 @@ private struct DisplaySettingsTab: View {
                     isOn: $analyticsEnabled
                 )
                 .onChange(of: analyticsEnabled) { _, newValue in
-                    var store = settingsStore
-                    store.analyticsEnabled = newValue
+                    appServices.telemetryCoordinator.setAnalyticsEnabled(newValue)
+                }
+
+                Button("仮名IDをサーバーから削除してリセット", role: .destructive) {
+                    appServices.telemetryCoordinator.resetAnonymousIdentifier()
+                }
+                .disabled(appServices.telemetryCoordinator.isResettingIdentifier)
+
+                if appServices.telemetryCoordinator.isResettingIdentifier {
+                    ProgressView("仮名IDを削除しています…")
                 }
             } header: {
                 Text("プライバシー")
             } footer: {
-                Text("開発の参考にするため、起動時に匿名の利用統計を1日1回送信します。送信内容はランダムな識別子・アプリのバージョン・macOS のバージョン・CPU 種別・言語設定のみで、ファイルや画像・個人を特定する情報は一切含みません。OFF にすると送信を完全に停止します。")
+                Text("開発の参考にするため、起動時に利用統計を1日1回送信します。送信内容は推測困難な仮名ID、アプリとmacOSのバージョン、CPU種別、言語設定です。サーバーはこれらに国コード、初回/最終送信時刻、利用日数を加えてinstallごとに1行保存し、最終送信から400日後に削除します。OFF中は通常の統計通信を行いません。仮名IDの明示的な削除だけはOFF中でも実行できます。")
                     .foregroundStyle(.secondary)
                     .font(.caption)
             }
         }
         .formStyle(.grouped)
+        .alert(
+            appServices.telemetryCoordinator.resetError?.presentation?.title ?? "仮名IDを削除できませんでした",
+            isPresented: Binding(
+                get: { appServices.telemetryCoordinator.resetError?.presentation != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        appServices.telemetryCoordinator.dismissResetError()
+                    }
+                }
+            )
+        ) {
+            Button("再試行") {
+                appServices.telemetryCoordinator.resetAnonymousIdentifier()
+            }
+            Button("キャンセル", role: .cancel) {
+                appServices.telemetryCoordinator.dismissResetError()
+            }
+        } message: {
+            Text(
+                appServices.telemetryCoordinator.resetError?.presentation?.message
+                    ?? "通信状態を確認して、もう一度お試しください。"
+            )
+        }
     }
 }
 
@@ -129,89 +159,9 @@ private struct CacheSettingsTab: View {
     }
 
     private func saveSettings() {
-        var store = settingsStore
+        let store = settingsStore
         store.fullImageCacheSizeMB = Int(fullImageCacheSizeMB)
         store.thumbnailCacheSizeMB = Int(thumbnailCacheSizeMB)
-    }
-}
-
-// MARK: - Diagnostics Tab
-
-private struct DiagnosticsTab: View {
-    @Environment(AppState.self) private var appState: AppState?
-    @State private var snapshot: MetricsSnapshot?
-    @State private var isLoading = false
-    @State private var copyFeedback: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Button {
-                    Task { await refresh() }
-                } label: {
-                    Label("更新", systemImage: "arrow.clockwise")
-                }
-                .disabled(isLoading)
-
-                Button {
-                    copyJSONToPasteboard()
-                } label: {
-                    Label("JSON をコピー", systemImage: "doc.on.doc")
-                }
-                .disabled(snapshot == nil)
-
-                if let feedback = copyFeedback {
-                    Text(feedback)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-            }
-
-            ScrollView {
-                if let snapshot {
-                    Text(snapshot.formattedLogString())
-                        .font(.system(.caption, design: .monospaced))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                        .padding(8)
-                        .background(Color(nsColor: .textBackgroundColor))
-                        .cornerRadius(6)
-                } else {
-                    Text(isLoading ? "読み込み中..." : "「更新」を押して最新の診断情報を表示")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-        }
-        .padding(16)
-        .task {
-            if snapshot == nil {
-                await refresh()
-            }
-        }
-    }
-
-    private func refresh() async {
-        guard let appState else { return }
-        isLoading = true
-        let new = await appState.metricsCollector.snapshot()
-        snapshot = new
-        isLoading = false
-    }
-
-    private func copyJSONToPasteboard() {
-        guard let snapshot else { return }
-        let json = snapshot.toJSONString()
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(json, forType: .string)
-        copyFeedback = "コピーしました"
-        Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            copyFeedback = nil
-        }
     }
 }
 
@@ -248,5 +198,5 @@ private struct CacheSlider: View {
 }
 
 #Preview {
-    SettingsView()
+    SettingsView(appServices: AppServices())
 }

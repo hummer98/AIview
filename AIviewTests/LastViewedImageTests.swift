@@ -10,6 +10,7 @@ final class LastViewedImageTests: XCTestCase {
     var recentStoreHelper: IsolatedRecentFoldersStore!
     var settingsDefaults: UserDefaults!
     var settingsSuiteName: String!
+    private var viewModels: [ImageBrowserViewModel] = []
 
     override func setUp() async throws {
         recentStoreHelper = IsolatedRecentFoldersStore(label: "LastViewedImageTests")
@@ -22,14 +23,15 @@ final class LastViewedImageTests: XCTestCase {
             .appendingPathComponent("LastViewedImageTests_\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: testFolderURL, withIntermediateDirectories: true)
 
-        let pngData = createMinimalPNG()
-        for i in 1...5 {
-            let fileURL = testFolderURL.appendingPathComponent("test_image_\(String(format: "%02d", i)).png")
-            try pngData.write(to: fileURL)
-        }
+        try generateValidPNGs(
+            named: (1...5).map { "test_image_\(String(format: "%02d", $0)).png" },
+            in: testFolderURL
+        )
     }
 
     override func tearDown() async throws {
+        viewModels.forEach { $0.sceneDidDisappear() }
+        viewModels.removeAll()
         if let testFolderURL { try? FileManager.default.removeItem(at: testFolderURL) }
         recentStoreHelper?.cleanup()
         recentStoreHelper = nil
@@ -40,14 +42,30 @@ final class LastViewedImageTests: XCTestCase {
     // MARK: - Helpers
 
     /// 短いデバウンスと隔離 SettingsStore を持つ ViewModel を生成
-    private func makeViewModel(confirmEnabled: Bool = true) -> ImageBrowserViewModel {
+    private func makeViewModel(
+        confirmEnabled: Bool = true,
+        lastViewedCommitCheckpoint: @escaping @Sendable () async -> Void = {}
+    ) -> ImageBrowserViewModel {
         let settings = SettingsStore(defaults: settingsDefaults)
         settings.restoreLastViewedConfirmEnabled = confirmEnabled
-        return ImageBrowserViewModel(
+        let viewModel = ImageBrowserViewModel(
             recentFoldersStore: recentStoreHelper.store,
             beepPlayer: NoopBeepPlayer(),
             settingsStore: settings,
-            lastViewedRecordDebounce: .milliseconds(50)
+            lastViewedRecordDebounce: .milliseconds(50),
+            lastViewedCommitCheckpoint: lastViewedCommitCheckpoint
+        )
+        viewModels.append(viewModel)
+        return viewModel
+    }
+
+    private func waitUntilLastViewedRecordIsIdle(_ viewModel: ImageBrowserViewModel) async {
+        for _ in 0..<10_000 {
+            if viewModel._debugLastViewedRecordSnapshot().isIdle { return }
+            await Task.yield()
+        }
+        XCTFail(
+            "Last-viewed record task did not become idle: \(viewModel._debugLastViewedRecordSnapshot())"
         )
     }
 
@@ -67,32 +85,20 @@ final class LastViewedImageTests: XCTestCase {
         return try JSONSerialization.jsonObject(with: data) as! [String: Any]
     }
 
-    /// 最小限の有効なPNGファイルを作成
-    private func createMinimalPNG() -> Data {
-        var data = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
-        let ihdr: [UInt8] = [
-            0x00, 0x00, 0x00, 0x0D,
-            0x49, 0x48, 0x44, 0x52,
-            0x00, 0x00, 0x00, 0x01,
-            0x00, 0x00, 0x00, 0x01,
-            0x08, 0x00, 0x00, 0x00, 0x00,
-            0x1D, 0xF1, 0x5C, 0x22
-        ]
-        data.append(contentsOf: ihdr)
-        let idat: [UInt8] = [
-            0x00, 0x00, 0x00, 0x0A,
-            0x49, 0x44, 0x41, 0x54,
-            0x08, 0xD7, 0x63, 0x60, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01,
-            0xE5, 0x27, 0xDE, 0xFC
-        ]
-        data.append(contentsOf: idat)
-        let iend: [UInt8] = [
-            0x00, 0x00, 0x00, 0x00,
-            0x49, 0x45, 0x4E, 0x44,
-            0xAE, 0x42, 0x60, 0x82
-        ]
-        data.append(contentsOf: iend)
-        return data
+    /// ImageIO が実際にデコードできる PNG fixture を、テストの契約名へ配置する。
+    private func generateValidPNGs(named filenames: [String], in folderURL: URL) throws {
+        let generatedURLs = try DummyImageGenerator.generateImages(
+            count: filenames.count,
+            in: folderURL,
+            imageSize: CGSize(width: 32, height: 32)
+        )
+
+        for (sourceURL, filename) in zip(generatedURLs, filenames) {
+            try FileManager.default.moveItem(
+                at: sourceURL,
+                to: folderURL.appendingPathComponent(filename)
+            )
+        }
     }
 
     // MARK: - Migration (AC2)
@@ -187,7 +193,6 @@ final class LastViewedImageTests: XCTestCase {
 
         let viewModel = makeViewModel(confirmEnabled: true)
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 600_000_000)
 
         XCTAssertEqual(viewModel.lastViewedRestorePrompt?.filename, "test_image_03.png")
     }
@@ -201,7 +206,6 @@ final class LastViewedImageTests: XCTestCase {
 
         let viewModel = makeViewModel(confirmEnabled: true)
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 600_000_000)
 
         XCTAssertNotNil(viewModel.lastViewedRestorePrompt)
         await viewModel.confirmRestoreLastViewed()?.value
@@ -227,7 +231,6 @@ final class LastViewedImageTests: XCTestCase {
 
         let viewModel = makeViewModel(confirmEnabled: true)
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 600_000_000)
 
         XCTAssertNotNil(viewModel.lastViewedRestorePrompt)
 
@@ -251,7 +254,6 @@ final class LastViewedImageTests: XCTestCase {
 
         let viewModel = makeViewModel(confirmEnabled: true)
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 600_000_000)
 
         let indexBefore = viewModel.currentIndex
         XCTAssertNotNil(viewModel.lastViewedRestorePrompt)
@@ -274,8 +276,10 @@ final class LastViewedImageTests: XCTestCase {
 
         let viewModel = makeViewModel(confirmEnabled: true)
         await viewModel.openFolder(testFolderURL)
-        // デバウンス満了より十分長く待つ
-        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertTrue(
+            viewModel._debugLastViewedRecordSnapshot().isIdle,
+            "初期表示では遅延記録Task自体を予約しない"
+        )
 
         // 初期表示で記録が上書きされていない（test_image_05 のまま）
         let store = FavoritesStore()
@@ -288,11 +292,13 @@ final class LastViewedImageTests: XCTestCase {
     func testViewModel_InternalJump_DoesNotRecord() async throws {
         let viewModel = makeViewModel(confirmEnabled: false)
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 400_000_000)
 
         // recordLastViewed を省略（既定 false）して内部ジャンプ
         await viewModel.jumpToIndex(2)
-        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(
+            viewModel._debugLastViewedRecordSnapshot().isIdle,
+            "内部ジャンプでは遅延記録Task自体を予約しない"
+        )
 
         let store = FavoritesStore()
         await store.loadFavorites(for: testFolderURL)
@@ -302,11 +308,19 @@ final class LastViewedImageTests: XCTestCase {
 
     /// ユーザー移動（moveToNext）はデバウンス後に記録する（AC1 positive + negative）
     func testViewModel_UserMove_RecordsAfterDebounce() async throws {
-        let viewModel = makeViewModel(confirmEnabled: false)
+        let checkpoint = LastViewedCommitCheckpoint()
+        let viewModel = makeViewModel(
+            confirmEnabled: false,
+            lastViewedCommitCheckpoint: { await checkpoint.suspend() }
+        )
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 400_000_000)
 
         await viewModel.moveToNext() // index 0 -> 1
+        XCTAssertEqual(
+            viewModel._debugLastViewedRecordSnapshot().activeTasks,
+            1,
+            "ユーザー移動は単一のデバウンス記録Taskを所有する"
+        )
 
         // negative: デバウンス満了前は未記録
         let storeBefore = FavoritesStore()
@@ -314,8 +328,15 @@ final class LastViewedImageTests: XCTestCase {
         let lastViewedBefore = await storeBefore.getLastViewedImage()
         XCTAssertNil(lastViewedBefore, "デバウンス満了前は未記録")
 
-        // positive: デバウンス（50ms）満了後は記録
-        try await Task.sleep(nanoseconds: 300_000_000)
+        // positive: 50msデバウンス完了後・commit直前の制御点まで進める
+        await checkpoint.waitUntilEntered()
+        let storeAtCommitBoundary = FavoritesStore()
+        await storeAtCommitBoundary.loadFavorites(for: testFolderURL)
+        let lastViewedAtCommitBoundary = await storeAtCommitBoundary.getLastViewedImage()
+        XCTAssertNil(lastViewedAtCommitBoundary, "commit制御点を解放するまでは未記録")
+
+        await checkpoint.resume()
+        await waitUntilLastViewedRecordIsIdle(viewModel)
         let storeAfter = FavoritesStore()
         await storeAfter.loadFavorites(for: testFolderURL)
         let lastViewedAfter = await storeAfter.getLastViewedImage()
@@ -333,7 +354,6 @@ final class LastViewedImageTests: XCTestCase {
 
         let viewModel = makeViewModel(confirmEnabled: false)
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 600_000_000)
 
         XCTAssertNil(viewModel.lastViewedRestorePrompt, "設定 OFF ではプロンプトを出さない")
     }
@@ -347,7 +367,6 @@ final class LastViewedImageTests: XCTestCase {
 
         let viewModel = makeViewModel(confirmEnabled: true)
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 600_000_000)
 
         XCTAssertNil(viewModel.lastViewedRestorePrompt, "記録画像がフォルダ内に無ければプロンプトを出さない")
     }
@@ -362,7 +381,6 @@ final class LastViewedImageTests: XCTestCase {
 
         let viewModel = makeViewModel(confirmEnabled: true)
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 600_000_000)
 
         XCTAssertNil(viewModel.lastViewedRestorePrompt, "記録が初期位置と同一ならプロンプトを出さない")
     }
@@ -372,7 +390,7 @@ final class LastViewedImageTests: XCTestCase {
         // サブフォルダを作成
         let subFolder = testFolderURL.appendingPathComponent("subfolder")
         try FileManager.default.createDirectory(at: subFolder, withIntermediateDirectories: true)
-        try createMinimalPNG().write(to: subFolder.appendingPathComponent("sub_image.png"))
+        try generateValidPNGs(named: ["sub_image.png"], in: subFolder)
 
         try writeRawFavorites(
             "{\"favorites\":{},\"lastViewedImage\":\"test_image_03.png\"}",
@@ -381,14 +399,40 @@ final class LastViewedImageTests: XCTestCase {
 
         let viewModel = makeViewModel(confirmEnabled: true)
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 400_000_000)
         // プロンプトが出ていたら却下してから統合モードへ
         viewModel.dismissRestoreLastViewed()
 
         await viewModel.enableSubdirectoryMode()
-        try await Task.sleep(nanoseconds: 400_000_000)
 
         XCTAssertTrue(viewModel.isSubdirectoryMode)
         XCTAssertNil(viewModel.lastViewedRestorePrompt, "統合モードではプロンプトを出さない")
+    }
+}
+
+/// last-viewed debounce完了後のdisk commitを固定sleepなしで制御するgate。
+private actor LastViewedCommitCheckpoint {
+    private var entered = false
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func suspend() async {
+        entered = true
+        entryWaiters.forEach { $0.resume() }
+        entryWaiters.removeAll()
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func waitUntilEntered() async {
+        guard !entered else { return }
+        await withCheckedContinuation { continuation in
+            entryWaiters.append(continuation)
+        }
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
     }
 }

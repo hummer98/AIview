@@ -19,7 +19,7 @@ struct FavoritesFile: Codable {
 /// お気に入り情報の永続化管理
 /// フォルダごとのお気に入り情報（ファイル名→レベル1〜5）を管理
 /// Requirements: 2.1, 2.2, 2.3, 2.4
-actor FavoritesStore {
+actor FavoritesStore: FavoritesStoring {
     /// お気に入りデータのファイル名
     private let favoritesFileName = "favorites.json"
 
@@ -29,14 +29,14 @@ actor FavoritesStore {
     /// 現在のフォルダURL
     private var currentFolderURL: URL?
 
-    /// メモリ上のお気に入りデータ（ファイル名→レベル）
-    private var favorites: [String: Int] = [:]
+    /// メモリ上のお気に入りデータ。通常/統合モードとも source はこの1個だけ。
+    private var favoriteLevelsByURL: [URL: Int] = [:]
+
+    /// 現在 snapshot に含まれるフォルダ。互換 API の nested dictionary 再構築に使う。
+    private var loadedFolderURLs: [URL] = []
 
     /// 現在フォルダの「最後に表示していた画像」ファイル名（非統合モードのみ有効）
     private var lastViewedImage: String?
-
-    /// 統合されたお気に入りデータ（フォルダURL→ファイル名→レベル）
-    private var aggregatedFavorites: [URL: [String: Int]] = [:]
 
     /// 現在統合モードかどうか
     private var isAggregatedMode: Bool = false
@@ -48,25 +48,35 @@ actor FavoritesStore {
     /// 指定フォルダのお気に入りを読み込み（統合モードを解除）
     /// - Parameter folderURL: 対象フォルダのURL
     func loadFavorites(for folderURL: URL) {
-        currentFolderURL = folderURL
-        favorites = [:]
-        lastViewedImage = nil
+        _ = loadSnapshot(for: folderURL)
+    }
 
-        // 統合モードを解除
+    /// 単一フォルダを完全 URL key の snapshot として読み込む。
+    func loadSnapshot(for folderURL: URL) -> FavoriteFolderSnapshot {
+        let normalizedFolder = FavoriteURLKey.normalize(folderURL)
+        currentFolderURL = normalizedFolder
         isAggregatedMode = false
-        aggregatedFavorites = [:]
+        loadedFolderURLs = [normalizedFolder]
 
-        let favoritesURL = favoritesFileURL(for: folderURL)
-
-        guard fileManager.fileExists(atPath: favoritesURL.path) else {
+        let favoritesURL = favoritesFileURL(for: normalizedFolder)
+        let file: FavoritesFile
+        if fileManager.fileExists(atPath: favoritesURL.path) {
+            file = Self.loadFile(at: favoritesURL)
+        } else {
             Logger.favorites.debug("No favorites file found, starting fresh")
-            return
+            file = FavoritesFile()
         }
 
-        let file = Self.loadFile(at: favoritesURL)
-        favorites = file.favorites
+        favoriteLevelsByURL = FavoriteURLKey.snapshot(
+            folderURL: normalizedFolder,
+            favorites: file.favorites
+        )
         lastViewedImage = file.lastViewedImage
-        Logger.favorites.info("Loaded \(self.favorites.count, privacy: .public) favorites")
+        Logger.favorites.info("Loaded \(self.favoriteLevelsByURL.count, privacy: .public) favorites")
+        return FavoriteFolderSnapshot(
+            levelsByURL: favoriteLevelsByURL,
+            lastViewedImage: lastViewedImage
+        )
     }
 
     /// お気に入りレベルを設定（1-5）
@@ -79,87 +89,49 @@ actor FavoritesStore {
             return
         }
 
-        let filename = url.lastPathComponent
+        let key = FavoriteURLKey.normalize(url)
+        let folderURL = FavoriteURLKey.normalize(key.deletingLastPathComponent())
+        let filename = key.lastPathComponent
+        var candidate = favoriteCandidateForFolder(folderURL)
+        candidate[filename] = level
 
-        if isAggregatedMode {
-            // 統合モード: 画像が属するフォルダに保存
-            let rawFolderURL = url.deletingLastPathComponent()
-            let rawPath = rawFolderURL.path
-            // パス文字列でマッチング
-            var matchedKey: URL?
-            for key in aggregatedFavorites.keys {
-                if key.path == rawPath {
-                    matchedKey = key
-                    break
-                }
-            }
-            let folderURL = matchedKey ?? rawFolderURL
-            if aggregatedFavorites[folderURL] == nil {
-                aggregatedFavorites[folderURL] = [:]
-            }
-            aggregatedFavorites[folderURL]?[filename] = level
-            try saveToDisk(folderURL: folderURL, favorites: aggregatedFavorites[folderURL] ?? [:])
-        } else {
-            favorites[filename] = level
-            try saveToDisk()
-        }
+        // disk 成功を transaction の境界にし、成功前は memory snapshot を変更しない。
+        try saveToDisk(folderURL: folderURL, favorites: candidate)
+        favoriteLevelsByURL[key] = level
+        appendLoadedFolderIfNeeded(folderURL)
 
-        Logger.favorites.debug("Set favorite: \(filename, privacy: .public) = \(level, privacy: .public)")
+        Logger.favorites.debug("Set favorite: \(filename, privacy: .private) = \(level, privacy: .public)")
     }
 
     /// お気に入りを解除
     /// - Parameter url: 画像のURL
     func removeFavorite(for url: URL) throws {
-        let filename = url.lastPathComponent
+        let key = FavoriteURLKey.normalize(url)
+        let folderURL = FavoriteURLKey.normalize(key.deletingLastPathComponent())
+        let filename = key.lastPathComponent
+        var candidate = favoriteCandidateForFolder(folderURL)
+        candidate.removeValue(forKey: filename)
 
-        if isAggregatedMode {
-            // 統合モード: 画像が属するフォルダから削除
-            let rawFolderURL = url.deletingLastPathComponent()
-            let rawPath = rawFolderURL.path
-            // パス文字列でマッチング
-            var matchedKey: URL?
-            for key in aggregatedFavorites.keys {
-                if key.path == rawPath {
-                    matchedKey = key
-                    break
-                }
-            }
-            let folderURL = matchedKey ?? rawFolderURL
-            aggregatedFavorites[folderURL]?.removeValue(forKey: filename)
-            try saveToDisk(folderURL: folderURL, favorites: aggregatedFavorites[folderURL] ?? [:])
-        } else {
-            favorites.removeValue(forKey: filename)
-            try saveToDisk()
-        }
+        // disk 成功を transaction の境界にし、成功前は memory snapshot を変更しない。
+        try saveToDisk(folderURL: folderURL, favorites: candidate)
+        favoriteLevelsByURL.removeValue(forKey: key)
+        appendLoadedFolderIfNeeded(folderURL)
 
-        Logger.favorites.debug("Removed favorite: \(filename, privacy: .public)")
+        Logger.favorites.debug("Removed favorite: \(filename, privacy: .private)")
     }
 
     /// 指定ファイルのお気に入りレベルを取得（未設定は0）
     /// - Parameter url: 画像のURL
     /// - Returns: お気に入りレベル（0は未設定）
     func getFavoriteLevel(for url: URL) -> Int {
-        let filename = url.lastPathComponent
-
-        if isAggregatedMode {
-            // 統合モード: 画像が属するフォルダから取得
-            let folderPath = url.deletingLastPathComponent().path
-            // パス文字列でマッチング
-            for (key, favs) in aggregatedFavorites {
-                if key.path == folderPath {
-                    return favs[filename] ?? 0
-                }
-            }
-            return 0
-        } else {
-            return favorites[filename] ?? 0
-        }
+        favoriteLevelsByURL[FavoriteURLKey.normalize(url)] ?? 0
     }
 
     /// 全お気に入りデータを取得
     /// - Returns: ファイル名とレベルのマッピング
     func getAllFavorites() -> [String: Int] {
-        return favorites
+        guard let currentFolderURL else { return [:] }
+        return favoritesForFolder(currentFolderURL)
     }
 
     // MARK: - Last Viewed Image
@@ -181,17 +153,26 @@ actor FavoritesStore {
         guard !isAggregatedMode else { return }
 
         // 記録対象フォルダが現在フォルダと一致しなければ破棄（古いフォルダ向け遅延書込を弾く）
-        guard let currentFolderURL, currentFolderURL.path == folderURL.path else {
+        let normalizedFolder = FavoriteURLKey.normalize(folderURL)
+        guard let currentFolderURL, currentFolderURL == normalizedFolder else {
             Logger.favorites.debug("setLastViewedImage skipped: folder mismatch")
             return
         }
 
-        lastViewedImage = filename
         do {
-            try saveToDisk()
-            Logger.favorites.debug("Recorded lastViewedImage: \(filename, privacy: .public)")
+            // privacy mode は owner Task を cancel する。actor 待機中に cancel された場合も
+            // disk commit 直前で破棄する。
+            guard !Task.isCancelled else { return }
+            let file = FavoritesFile(
+                favorites: favoritesForFolder(normalizedFolder),
+                lastViewedImage: filename
+            )
+            guard !Task.isCancelled else { return }
+            try writeFile(file, to: normalizedFolder)
+            lastViewedImage = filename
+            Logger.favorites.debug("Recorded last-viewed image")
         } catch {
-            Logger.favorites.warning("Failed to record lastViewedImage: \(error.localizedDescription, privacy: .public)")
+            Logger.favorites.warning("Failed to record last-viewed image: \(error.localizedDescription, privacy: .private)")
         }
     }
 
@@ -201,44 +182,51 @@ actor FavoritesStore {
     /// - Parameter folderURLs: 読み込み対象のフォルダURL配列
     /// - Returns: フォルダURL→（ファイル名→レベル）のマッピング
     func loadAggregatedFavorites(for folderURLs: [URL]) async -> [URL: [String: Int]] {
-        isAggregatedMode = true
-        aggregatedFavorites = [:]
-
-        // 並列読み込みせずシリアルに処理（actorの制約を避けるため）
-        for folderURL in folderURLs {
-            let favorites = loadFavoritesFromDisk(for: folderURL)
-            aggregatedFavorites[folderURL] = favorites
-        }
-
-        let totalCount = aggregatedFavorites.values.reduce(0) { $0 + $1.count }
+        _ = loadSnapshot(for: folderURLs)
+        let aggregatedFavorites = getAggregatedFavorites()
+        let totalCount = favoriteLevelsByURL.count
         Logger.favorites.info("Loaded aggregated favorites: \(totalCount, privacy: .public) items from \(folderURLs.count, privacy: .public) folders")
 
         return aggregatedFavorites
     }
 
+    /// 複数フォルダのお気に入りを完全 URL key の単一 snapshot に読み込む。
+    func loadSnapshot(for folderURLs: [URL]) -> [URL: Int] {
+        isAggregatedMode = true
+        lastViewedImage = nil
+        var seenFolders: Set<URL> = []
+        loadedFolderURLs = folderURLs
+            .map(FavoriteURLKey.normalize)
+            .filter { seenFolders.insert($0).inserted }
+        favoriteLevelsByURL = [:]
+
+        for folderURL in loadedFolderURLs {
+            let favorites = loadFavoritesFromDisk(for: folderURL)
+            favoriteLevelsByURL.merge(
+                FavoriteURLKey.snapshot(folderURL: folderURL, favorites: favorites),
+                uniquingKeysWith: { _, new in new }
+            )
+        }
+        return favoriteLevelsByURL
+    }
+
     /// 統合されたお気に入りデータを取得
     /// - Returns: フォルダURL→（ファイル名→レベル）のマッピング
     func getAggregatedFavorites() -> [URL: [String: Int]] {
-        return aggregatedFavorites
+        loadedFolderURLs.reduce(into: [:]) { result, folderURL in
+            result[folderURL] = favoritesForFolder(folderURL)
+        }
     }
 
     /// 指定レベル以上のお気に入りファイルのフルパスURLを取得
     /// - Parameter minimumLevel: 最低お気に入りレベル（1-5）
     /// - Returns: 条件を満たすファイルのURL配列（存在確認済み）
     func getFavoriteFileURLs(minimumLevel: Int) -> [URL] {
-        var result: [URL] = []
-
-        for (folderURL, favorites) in aggregatedFavorites {
-            for (filename, level) in favorites where level >= minimumLevel {
-                let fileURL = folderURL.appendingPathComponent(filename)
-                // ファイル存在確認
-                if FileManager.default.fileExists(atPath: fileURL.path) {
-                    result.append(fileURL)
-                }
-            }
+        favoriteLevelsByURL.compactMap { url, level in
+            guard level >= minimumLevel,
+                  FileManager.default.fileExists(atPath: url.path) else { return nil }
+            return url
         }
-
-        return result
     }
 
     // MARK: - Private Methods
@@ -258,6 +246,31 @@ actor FavoritesStore {
         return Self.loadFile(at: favoritesURL).favorites
     }
 
+    private func favoritesForFolder(_ folderURL: URL) -> [String: Int] {
+        let normalizedFolder = FavoriteURLKey.normalize(folderURL)
+        return favoriteLevelsByURL.reduce(into: [:]) { result, entry in
+            let entryFolder = FavoriteURLKey.normalize(entry.key.deletingLastPathComponent())
+            if entryFolder == normalizedFolder {
+                result[entry.key.lastPathComponent] = entry.value
+            }
+        }
+    }
+
+    private func favoriteCandidateForFolder(_ folderURL: URL) -> [String: Int] {
+        let normalizedFolder = FavoriteURLKey.normalize(folderURL)
+        if loadedFolderURLs.contains(normalizedFolder) {
+            return favoritesForFolder(normalizedFolder)
+        }
+        return loadFavoritesFromDisk(for: normalizedFolder)
+    }
+
+    private func appendLoadedFolderIfNeeded(_ folderURL: URL) {
+        let normalizedFolder = FavoriteURLKey.normalize(folderURL)
+        if !loadedFolderURLs.contains(normalizedFolder) {
+            loadedFolderURLs.append(normalizedFolder)
+        }
+    }
+
     /// favorites.json を v2 / legacy 両形式から読み込む共通ロジック（ADR 001）。
     /// まず v2 (`FavoritesFile`) としてデコードを試み、失敗したら legacy `[String: Int]` として
     /// 読み `favorites` に充てる（`lastViewedImage` は nil）。
@@ -274,7 +287,7 @@ actor FavoritesStore {
             let legacy = try JSONDecoder().decode([String: Int].self, from: data)
             return FavoritesFile(favorites: legacy, lastViewedImage: nil)
         } catch {
-            Logger.favorites.warning("Failed to load favorites file: \(error.localizedDescription, privacy: .public)")
+            Logger.favorites.warning("Failed to load favorites file: \(error.localizedDescription, privacy: .private)")
             return FavoritesFile()
         }
     }
@@ -283,17 +296,6 @@ actor FavoritesStore {
         return folderURL
             .appendingPathComponent(cacheDirectoryName)
             .appendingPathComponent(favoritesFileName)
-    }
-
-    /// 現在フォルダ（非統合モード）の favorites + lastViewedImage を v2 で保存
-    private func saveToDisk() throws {
-        guard let folderURL = currentFolderURL else {
-            Logger.favorites.error("No folder URL set")
-            return
-        }
-
-        let file = FavoritesFile(favorites: favorites, lastViewedImage: lastViewedImage)
-        try writeFile(file, to: folderURL)
     }
 
     /// 指定フォルダにお気に入りデータを保存（統合モード用）。
@@ -316,7 +318,7 @@ actor FavoritesStore {
         // .aiviewフォルダを作成
         if !fileManager.fileExists(atPath: cacheDir.path) {
             try fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-            Logger.favorites.debug("Created .aiview directory for \(folderURL.lastPathComponent, privacy: .public)")
+            Logger.favorites.debug("Created .aiview directory")
         }
 
         let favoritesURL = cacheDir.appendingPathComponent(favoritesFileName)

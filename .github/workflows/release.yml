@@ -23,15 +23,20 @@ defaults:
     shell: bash -euo pipefail {0}
 
 env:
-  XCODE_VERSION: '26.3'
+  XCODE_VERSION: '26.6'
 
 jobs:
+  quality:
+    uses: ./.github/workflows/ci.yml
+
   release:
-    if: github.event_name == 'push'
-    runs-on: macos-15
+    if: github.event_name == 'push' && needs.quality.result == 'success'
+    needs: quality
+    runs-on: macos-26
+    timeout-minutes: 90
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Resolve & validate version
         run: |
@@ -43,12 +48,14 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
+        uses: maxim-lobanov/setup-xcode@1242409711ff5721add51979e9e11e23ebb7e5a4 # v1
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
-      - name: Log Xcode version
-        run: xcodebuild -version
+      - name: Verify Xcode version
+        run: |
+          xcodebuild -version
+          test "$(xcodebuild -version | awk 'NR == 1 { print $2 }')" = "$XCODE_VERSION"
 
       - name: Restore App Store Connect API key
         env:
@@ -68,7 +75,11 @@ jobs:
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | xargs)
+          existing_keychains=()
+          while IFS= read -r keychain; do
+            existing_keychains+=("${keychain//\"/}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "${existing_keychains[@]}"
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
       - name: Import Developer ID certificate
@@ -117,7 +128,7 @@ jobs:
         run: ls -la dist/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ github.ref_name }}
           draft: false
@@ -138,11 +149,13 @@ jobs:
           rm -f AIview/Config/Developer.xcconfig
 
   release-dry-run:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: macos-15
+    if: github.event_name == 'workflow_dispatch' && needs.quality.result == 'success'
+    needs: quality
+    runs-on: macos-26
+    timeout-minutes: 90
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Resolve & validate version
         run: |
@@ -154,12 +167,14 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
+        uses: maxim-lobanov/setup-xcode@1242409711ff5721add51979e9e11e23ebb7e5a4 # v1
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
-      - name: Log Xcode version
-        run: xcodebuild -version
+      - name: Verify Xcode version
+        run: |
+          xcodebuild -version
+          test "$(xcodebuild -version | awk 'NR == 1 { print $2 }')" = "$XCODE_VERSION"
 
       - name: Restore App Store Connect API key
         env:
@@ -179,7 +194,11 @@ jobs:
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | xargs)
+          existing_keychains=()
+          while IFS= read -r keychain; do
+            existing_keychains+=("${keychain//\"/}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "${existing_keychains[@]}"
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
       - name: Import Developer ID certificate
@@ -228,7 +247,7 @@ jobs:
         run: ls -la dist/
 
       - name: Upload dist artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dist-dryrun-${{ env.VERSION }}
           path: dist/

@@ -253,6 +253,33 @@ final class MetricsTests: XCTestCase {
     }
 
     @MainActor
+    func testMetricsCollector_snapshotIncludesDiskWriteFailures() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MetricsWriteFailure_\(UUID().uuidString)")
+        try Data([0x01]).write(to: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("image.png")
+        let diskStore = DiskCacheStore()
+
+        do {
+            try await diskStore.storeThumbnail(
+                Data([0x02]),
+                originalURL: source,
+                modificationDate: .distantPast
+            )
+            XCTFail("write must fail below a regular file")
+        } catch {
+            // Expected; the store records observability before propagating.
+        }
+
+        let collector = MetricsCollector()
+        collector.bind(diskCacheStore: diskStore)
+        let snapshot = await collector.snapshot()
+        XCTAssertEqual(snapshot.diskIO.writeFailureCount, 1)
+        XCTAssertEqual(snapshot.diskIO.writeFailureWarningCount, 1)
+    }
+
+    @MainActor
     func testMetricsCollector_snapshot_worksWhenDependenciesAreNil() async {
         let collector = MetricsCollector()
         let snapshot = await collector.snapshot()
@@ -280,6 +307,8 @@ final class MetricsTests: XCTestCase {
         XCTAssertEqual(decoded.readCount, 3)
         XCTAssertEqual(decoded.writeCount, 4)
         XCTAssertEqual(decoded.evictCount, 0)
+        XCTAssertEqual(decoded.writeFailureCount, 0)
+        XCTAssertEqual(decoded.writeFailureWarningCount, 0)
     }
 
     func testDiskCacheStateSnapshot_empty_hasZeroFields() {
@@ -300,6 +329,7 @@ final class MetricsTests: XCTestCase {
         XCTAssertTrue(text.contains("Full-size memory"))
         XCTAssertTrue(text.contains("Thumbnail memory"))
         XCTAssertTrue(text.contains("Thumbnail queue"))
+        XCTAssertTrue(text.contains("Disk cache writes"))
         XCTAssertTrue(text.contains("Prefetch"))
     }
 

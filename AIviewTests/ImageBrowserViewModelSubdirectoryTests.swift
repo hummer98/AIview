@@ -10,7 +10,7 @@ final class ImageBrowserViewModelSubdirectoryTests: XCTestCase {
     var tempDirectory: URL!
     var recentStoreHelper: IsolatedRecentFoldersStore!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         recentStoreHelper = IsolatedRecentFoldersStore(label: "SubdirectoryTests")
         sut = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
         tempDirectory = FileManager.default.temporaryDirectory
@@ -18,8 +18,8 @@ final class ImageBrowserViewModelSubdirectoryTests: XCTestCase {
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
     }
 
-    override func tearDownWithError() throws {
-        sut.stopSlideshow()
+    override func tearDown() async throws {
+        sut.sceneDidDisappear()
         try? FileManager.default.removeItem(at: tempDirectory)
         sut = nil
         recentStoreHelper?.cleanup()
@@ -84,11 +84,8 @@ final class ImageBrowserViewModelSubdirectoryTests: XCTestCase {
 
         // When
         await sut.openFolder(tempDirectory)
-        // openFolderはストリーミングAPIを使用するため、スキャン完了を待つ
-        try await Task.sleep(nanoseconds: 100_000_000)
         let parentImageCountBeforeMode = sut.imageURLs.count
         await sut.enableSubdirectoryMode()
-        // enableSubdirectoryModeは直接戻り値APIを使用するため、待機不要
 
         // Then
         XCTAssertEqual(sut.parentFolderImageURLs.count, parentImageCountBeforeMode)
@@ -109,10 +106,7 @@ final class ImageBrowserViewModelSubdirectoryTests: XCTestCase {
 
         // When
         await sut.openFolder(tempDirectory)
-        // openFolderはストリーミングAPIを使用するため、スキャン完了を待つ
-        try await Task.sleep(nanoseconds: 100_000_000)
         await sut.enableSubdirectoryMode()
-        // enableSubdirectoryModeは直接戻り値APIを使用するため、待機不要
 
         // Then - サブディレクトリモードが有効になっていること
         XCTAssertTrue(sut.isSubdirectoryMode, "サブディレクトリモードが有効であること")
@@ -152,21 +146,17 @@ final class ImageBrowserViewModelSubdirectoryTests: XCTestCase {
         try createTestImage(at: subDir, name: "sub.jpg")
 
         await sut.openFolder(tempDirectory)
-        // openFolderはストリーミングAPIを使用するため、スキャン完了を待つ
-        try await Task.sleep(nanoseconds: 100_000_000)
 
         // サブディレクトリモード有効化前の画像数を記録
         let parentOnlyCount = sut.imageURLs.count
 
         await sut.enableSubdirectoryMode()
-        // enableSubdirectoryModeは直接戻り値APIを使用するため、待機不要
 
         // サブディレクトリモード時は画像数が増える
         XCTAssertTrue(sut.imageURLs.count > parentOnlyCount, "サブディレクトリモードで画像が増えること")
 
         // When
         await sut.disableSubdirectoryMode()
-        // disableSubdirectoryModeは同期的に状態をリセットするため、待機不要
 
         // Then
         XCTAssertFalse(sut.isSubdirectoryMode)
@@ -188,17 +178,13 @@ final class ImageBrowserViewModelSubdirectoryTests: XCTestCase {
         try createFavoritesFile(at: subDir, favorites: ["sub.jpg": 4])
 
         await sut.openFolder(tempDirectory)
-        // openFolderはストリーミングAPIを使用するため、スキャン完了を待つ
-        try await Task.sleep(nanoseconds: 100_000_000)
         // サブディレクトリモード＋フィルターを有効化
         await sut.setFilterLevelWithSubdirectories(4)
-        // setFilterLevelWithSubdirectoriesは直接戻り値APIを使用するため、待機不要
         XCTAssertTrue(sut.isFiltering)
         XCTAssertTrue(sut.isSubdirectoryMode)
 
         // When
         await sut.disableSubdirectoryMode()
-        // disableSubdirectoryModeは同期的に状態をリセットするため、待機不要
 
         // Then
         XCTAssertFalse(sut.isFiltering)
@@ -249,12 +235,9 @@ final class ImageBrowserViewModelSubdirectoryTests: XCTestCase {
         try createFavoritesFile(at: subDir, favorites: ["sub.jpg": 4])
 
         await sut.openFolder(tempDirectory)
-        // openFolderはストリーミングAPIを使用するため、スキャン完了を待つ
-        try await Task.sleep(nanoseconds: 100_000_000)
 
         // When
         await sut.setFilterLevelWithSubdirectories(5)
-        // setFilterLevelWithSubdirectoriesは直接戻り値APIを使用するため、待機不要
 
         // Then
         XCTAssertTrue(sut.isSubdirectoryMode)
@@ -268,15 +251,11 @@ final class ImageBrowserViewModelSubdirectoryTests: XCTestCase {
         try createFavoritesFile(at: tempDirectory, favorites: ["parent.jpg": 5])
 
         await sut.openFolder(tempDirectory)
-        // openFolderはストリーミングAPIを使用するため、スキャン完了を待つ
-        try await Task.sleep(nanoseconds: 100_000_000)
         await sut.setFilterLevelWithSubdirectories(5)
-        // setFilterLevelWithSubdirectoriesは直接戻り値APIを使用するため、待機不要
         XCTAssertTrue(sut.isSubdirectoryMode)
 
         // When
         await sut.clearFilterWithSubdirectories()
-        // clearFilterWithSubdirectoriesは同期的に状態をリセットするため、待機不要
 
         // Then
         XCTAssertFalse(sut.isSubdirectoryMode)

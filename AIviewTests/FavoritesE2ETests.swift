@@ -19,62 +19,41 @@ final class FavoritesE2ETests: XCTestCase {
         try FileManager.default.createDirectory(at: testFolderURL, withIntermediateDirectories: true)
 
         // テスト用画像ファイルを作成（5枚）
-        // シンプルなPNGヘッダー + 最小限のIHDR/IENDチャンク
+        // CRCとIDATを含む、ImageIOでdecode可能な1x1 PNGを使う。
         let pngData = createMinimalPNG()
         for i in 1...5 {
             let fileURL = testFolderURL.appendingPathComponent("test_image_\(String(format: "%02d", i)).png")
             try pngData.write(to: fileURL)
         }
 
-        viewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
+        viewModel = ImageBrowserViewModel(
+            recentFoldersStore: recentStoreHelper.store,
+            beepPlayer: NoopBeepPlayer(),
+            backgroundImageWorkEnabled: false
+        )
     }
 
     override func tearDown() async throws {
+        viewModel?.sceneDidDisappear()
+        viewModel = nil
         if let testFolderURL = testFolderURL {
             try? FileManager.default.removeItem(at: testFolderURL)
         }
-        viewModel = nil
         recentStoreHelper?.cleanup()
         recentStoreHelper = nil
     }
 
     // MARK: - Helper Methods
 
-    /// 最小限の有効なPNGファイルを作成
+    /// ImageIOで実際にdecodeできる1x1 PNGを作成する。
+    /// Headerだけの擬似fixtureではload completion/state invariantを検証できないため、
+    /// CRCを含めて検証済みのPNG byte列を使う。
     private func createMinimalPNG() -> Data {
-        // PNG signature
-        var data = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
-
-        // IHDR chunk (1x1 pixel, 8-bit grayscale)
-        let ihdr: [UInt8] = [
-            0x00, 0x00, 0x00, 0x0D,  // length
-            0x49, 0x48, 0x44, 0x52,  // "IHDR"
-            0x00, 0x00, 0x00, 0x01,  // width = 1
-            0x00, 0x00, 0x00, 0x01,  // height = 1
-            0x08,                    // bit depth = 8
-            0x00,                    // color type = grayscale
-            0x00, 0x00, 0x00,        // compression, filter, interlace
-            0x1D, 0xF1, 0x5C, 0x22   // CRC
-        ]
-        data.append(contentsOf: ihdr)
-
-        // IDAT chunk (minimal compressed data for 1x1 grayscale)
-        let idat: [UInt8] = [
-            0x00, 0x00, 0x00, 0x0A,  // length
-            0x49, 0x44, 0x41, 0x54,  // "IDAT"
-            0x08, 0xD7, 0x63, 0x60, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01,  // compressed data
-            0xE5, 0x27, 0xDE, 0xFC   // CRC
-        ]
-        data.append(contentsOf: idat)
-
-        // IEND chunk
-        let iend: [UInt8] = [
-            0x00, 0x00, 0x00, 0x00,  // length
-            0x49, 0x45, 0x4E, 0x44,  // "IEND"
-            0xAE, 0x42, 0x60, 0x82   // CRC
-        ]
-        data.append(contentsOf: iend)
-
+        let encoded = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        guard let data = Data(base64Encoded: encoded) else {
+            XCTFail("PNG fixtureのdecodeに失敗")
+            return Data()
+        }
         return data
     }
 
@@ -85,9 +64,6 @@ final class FavoritesE2ETests: XCTestCase {
     func testE2E_OpenFolder_SetFavorites_PersistAndReload() async throws {
         // Given - フォルダを開く
         await viewModel.openFolder(testFolderURL)
-
-        // フォルダスキャン完了を待つ
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         XCTAssertEqual(viewModel.imageURLs.count, 5, "5枚の画像が読み込まれるべき")
         XCTAssertFalse(viewModel.isFiltering, "初期状態はフィルタなし")
@@ -127,9 +103,12 @@ final class FavoritesE2ETests: XCTestCase {
         XCTAssertEqual(viewModel.currentFavoriteLevel, 0)
 
         // 新しいViewModelで再読み込み
-        let newViewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
+        let newViewModel = ImageBrowserViewModel(
+            recentFoldersStore: recentStoreHelper.store,
+            beepPlayer: NoopBeepPlayer(),
+            backgroundImageWorkEnabled: false
+        )
         await newViewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // Then - 永続化されたデータが読み込まれること
         await newViewModel.jumpToIndex(0)
@@ -147,7 +126,6 @@ final class FavoritesE2ETests: XCTestCase {
     func testE2E_SetFavorite_ThenRemove() async throws {
         // Given
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         await viewModel.jumpToIndex(0)
         try await viewModel.setFavoriteLevel(5)
@@ -160,9 +138,12 @@ final class FavoritesE2ETests: XCTestCase {
         XCTAssertEqual(viewModel.currentFavoriteLevel, 0)
 
         // 再読み込み後も解除されていること
-        let newViewModel = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
+        let newViewModel = ImageBrowserViewModel(
+            recentFoldersStore: recentStoreHelper.store,
+            beepPlayer: NoopBeepPlayer(),
+            backgroundImageWorkEnabled: false
+        )
         await newViewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         await newViewModel.jumpToIndex(0)
         XCTAssertEqual(newViewModel.currentFavoriteLevel, 0)
@@ -175,7 +156,6 @@ final class FavoritesE2ETests: XCTestCase {
     func testE2E_Filtering_NavigationWithinFiltered() async throws {
         // Given - フォルダを開いてお気に入りを設定
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // 画像1,3,5にレベル5、画像2にレベル3を設定
         await viewModel.jumpToIndex(0)
@@ -194,7 +174,7 @@ final class FavoritesE2ETests: XCTestCase {
         await viewModel.jumpToIndex(0)
 
         // When - レベル5でフィルタリング
-        viewModel.setFilterLevel(5)
+        await viewModel.setFilterLevel(5)
 
         // Then - フィルタリング状態確認
         XCTAssertTrue(viewModel.isFiltering)
@@ -228,7 +208,6 @@ final class FavoritesE2ETests: XCTestCase {
     func testE2E_Filtering_JumpsToFirstMatchWhenCurrentImageNotInFilter() async throws {
         // Given - フォルダを開いてお気に入りを設定
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // 画像1(idx0),画像3(idx2),画像5(idx4)にレベル5を設定
         await viewModel.jumpToIndex(0)
@@ -247,9 +226,7 @@ final class FavoritesE2ETests: XCTestCase {
         XCTAssertNotNil(nonFavoriteURL)
 
         // When - レベル5でフィルタリング
-        viewModel.setFilterLevel(5)
-        // jumpToIndexはTaskで非同期実行されるので待つ
-        try await Task.sleep(nanoseconds: 200_000_000)
+        await viewModel.setFilterLevel(5)
 
         // Then - 最初の該当画像(idx0)にジャンプしている
         XCTAssertEqual(viewModel.currentIndex, 0, "フィルタ対象外の画像からは最初の該当画像にジャンプすべき")
@@ -273,7 +250,6 @@ final class FavoritesE2ETests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fourImageFolder) }
 
         await viewModel.openFolder(fourImageFolder)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         XCTAssertEqual(viewModel.imageURLs.count, 4)
 
@@ -289,8 +265,7 @@ final class FavoritesE2ETests: XCTestCase {
         XCTAssertEqual(viewModel.currentIndex, 0)
 
         // When - レベル5でフィルタリング
-        viewModel.setFilterLevel(5)
-        try await Task.sleep(nanoseconds: 200_000_000)
+        await viewModel.setFilterLevel(5)
 
         // Then - 最初のお気に入り画像c(idx2)にジャンプしている
         XCTAssertEqual(viewModel.currentIndex, 2, "お気に入りの最初の画像cにジャンプすべき")
@@ -301,7 +276,6 @@ final class FavoritesE2ETests: XCTestCase {
     func testE2E_Filtering_StaysAtCurrentImageWhenInFilter() async throws {
         // Given - フォルダを開いてお気に入りを設定
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // 画像1(idx0),画像3(idx2)にレベル5を設定
         await viewModel.jumpToIndex(0)
@@ -316,8 +290,7 @@ final class FavoritesE2ETests: XCTestCase {
         let favoriteURL = viewModel.currentImageURL
 
         // When - レベル5でフィルタリング
-        viewModel.setFilterLevel(5)
-        try await Task.sleep(nanoseconds: 200_000_000)
+        await viewModel.setFilterLevel(5)
 
         // Then - 現在位置を維持している
         XCTAssertEqual(viewModel.currentIndex, 2, "フィルタ対象の画像にいる場合は位置を維持すべき")
@@ -329,10 +302,9 @@ final class FavoritesE2ETests: XCTestCase {
     func testE2E_Filtering_EmptyResult() async throws {
         // Given - お気に入りなしでフォルダを開く
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // When - レベル1以上でフィルタリング
-        viewModel.setFilterLevel(1)
+        await viewModel.setFilterLevel(1)
 
         // Then - フィルタ結果が空
         XCTAssertTrue(viewModel.isFiltering)
@@ -346,7 +318,6 @@ final class FavoritesE2ETests: XCTestCase {
     func testE2E_ChangesFavoriteWhileFiltering() async throws {
         // Given
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // 画像1,2にレベル5を設定
         await viewModel.jumpToIndex(0)
@@ -355,7 +326,7 @@ final class FavoritesE2ETests: XCTestCase {
         try await viewModel.setFavoriteLevel(5)
 
         // レベル5でフィルタリング
-        viewModel.setFilterLevel(5)
+        await viewModel.setFilterLevel(5)
         XCTAssertEqual(viewModel.filteredCount, 2)
 
         // When - 画像3にレベル5を追加
@@ -372,7 +343,6 @@ final class FavoritesE2ETests: XCTestCase {
     func testE2E_StatusText() async throws {
         // Given
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // 初期状態
         XCTAssertEqual(viewModel.imageCountText, "1 / 5")
@@ -388,7 +358,7 @@ final class FavoritesE2ETests: XCTestCase {
         await viewModel.jumpToIndex(0)
 
         // When - フィルタリング開始
-        viewModel.setFilterLevel(3)
+        await viewModel.setFilterLevel(3)
 
         // Then - フィルタ状態のステータス（現在位置はインデックス0、フィルタ後は1番目）
         XCTAssertEqual(viewModel.filterStatusText, "★3+ : 1 / 2枚")
@@ -423,9 +393,7 @@ final class FavoritesE2ETests: XCTestCase {
 
         // When - フォルダを開いてサブフォルダ付きフィルタを適用
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
         await viewModel.setFilterLevelWithSubdirectories(5)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // Then - サブディレクトリモードが有効
         XCTAssertTrue(viewModel.isSubdirectoryMode, "サブディレクトリモードが有効であること")
@@ -463,9 +431,7 @@ final class FavoritesE2ETests: XCTestCase {
 
         // When - フォルダを開いてフィルタ適用
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
         await viewModel.setFilterLevelWithSubdirectories(4)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // Then - 4枚がフィルタ対象
         XCTAssertEqual(viewModel.filteredCount, 4, "レベル4以上の画像は4枚")
@@ -502,7 +468,6 @@ final class FavoritesE2ETests: XCTestCase {
         try createFavoritesFile(at: subFolder, favorites: ["sub_image.png": 5])
 
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 800_000_000)
 
         // 親フォルダの画像数を記録
         let parentImageCount = viewModel.imageURLs.count
@@ -510,7 +475,6 @@ final class FavoritesE2ETests: XCTestCase {
 
         // サブフォルダ付きフィルタを適用
         await viewModel.setFilterLevelWithSubdirectories(5)
-        try await Task.sleep(nanoseconds: 800_000_000)
 
         XCTAssertTrue(viewModel.isSubdirectoryMode)
         // setFilterLevelWithSubdirectoriesはお気に入りファイルのみを取得するため、
@@ -523,7 +487,6 @@ final class FavoritesE2ETests: XCTestCase {
 
         // When - フィルタを解除
         await viewModel.clearFilterWithSubdirectories()
-        try await Task.sleep(nanoseconds: 800_000_000)
 
         // Then - 親フォルダのみに戻る
         XCTAssertFalse(viewModel.isSubdirectoryMode, "サブディレクトリモードが解除")
@@ -551,11 +514,9 @@ final class FavoritesE2ETests: XCTestCase {
         try createFavoritesFile(at: testFolderURL, favorites: ["test_image_01.png": 5])
 
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 800_000_000)
 
         // 通常のサブディレクトリモードを有効化（全画像を含む）
         await viewModel.enableSubdirectoryMode()
-        try await Task.sleep(nanoseconds: 800_000_000)
 
         XCTAssertTrue(viewModel.isSubdirectoryMode, "サブディレクトリモードが有効")
 
@@ -564,7 +525,7 @@ final class FavoritesE2ETests: XCTestCase {
         XCTAssertNotNil(subImageURL, "サブフォルダの画像がimageURLsに含まれる")
 
         // フィルタを適用
-        viewModel.setFilterLevel(5)
+        await viewModel.setFilterLevel(5)
         XCTAssertEqual(viewModel.filteredCount, 1, "初期状態でレベル5は1枚")
 
         // When - サブフォルダの画像にお気に入りを設定
@@ -604,9 +565,7 @@ final class FavoritesE2ETests: XCTestCase {
 
         // When
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
         await viewModel.setFilterLevelWithSubdirectories(5)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // Then - 親フォルダと全サブフォルダの画像がフィルタに含まれる
         XCTAssertEqual(viewModel.filteredCount, 4, "親 + 3つのサブフォルダから4枚の画像")
@@ -631,11 +590,9 @@ final class FavoritesE2ETests: XCTestCase {
         // お気に入りは設定しない
 
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // When - フィルタを適用
         await viewModel.setFilterLevelWithSubdirectories(1)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // Then - 結果が空
         XCTAssertTrue(viewModel.isFiltering)
@@ -655,7 +612,6 @@ final class FavoritesE2ETests: XCTestCase {
         ])
 
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // test_image_04 を表示（フィルタ後の先頭ではない）
         await viewModel.jumpToIndex(3)
@@ -663,7 +619,6 @@ final class FavoritesE2ETests: XCTestCase {
 
         // When - サブディレクトリ付きフィルタ適用
         await viewModel.setFilterLevelWithSubdirectories(5)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // Then - 現在画像が維持される（フィルタ後先頭の test_image_02 ではない）
         XCTAssertTrue(viewModel.isFiltering, "フィルタリング中であること")
@@ -680,14 +635,12 @@ final class FavoritesE2ETests: XCTestCase {
         try createFavoritesFile(at: testFolderURL, favorites: ["test_image_03.png": 5])
 
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // 現在画像は test_image_01 (index 0)
         XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_01.png")
 
         // When - フィルタ適用
         await viewModel.setFilterLevelWithSubdirectories(5)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // Then - 先頭（唯一のお気に入り）に移動
         XCTAssertEqual(viewModel.currentIndex, 0)
@@ -700,11 +653,9 @@ final class FavoritesE2ETests: XCTestCase {
     func testE2E_FilterOnWithSubdirectories_EmptyFavorites() async throws {
         // Given - お気に入りなし
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // When - フィルタ適用
         await viewModel.setFilterLevelWithSubdirectories(5)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // Then - クラッシュせず、空状態が示される
         XCTAssertTrue(viewModel.isFilterEmpty, "フィルタ結果が空")
@@ -718,16 +669,13 @@ final class FavoritesE2ETests: XCTestCase {
         try createFavoritesFile(at: testFolderURL, favorites: ["test_image_02.png": 5])
 
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         await viewModel.jumpToIndex(1) // test_image_02
         await viewModel.setFilterLevelWithSubdirectories(5)
-        try await Task.sleep(nanoseconds: 500_000_000)
         XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_02.png")
 
         // When - フィルタ解除
         await viewModel.clearFilterWithSubdirectories()
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // Then - 親リスト内で test_image_02 の index に復元
         XCTAssertFalse(viewModel.isFiltering)
@@ -751,11 +699,9 @@ final class FavoritesE2ETests: XCTestCase {
         try createFavoritesFile(at: subFolder, favorites: ["zz_sub.png": 5])
 
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // フィルタ適用
         await viewModel.setFilterLevelWithSubdirectories(5)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // サブフォルダ画像 (zz_sub) に移動
         guard let subIdx = viewModel.imageURLs.firstIndex(where: {
@@ -769,7 +715,6 @@ final class FavoritesE2ETests: XCTestCase {
 
         // When - フィルタ解除
         await viewModel.clearFilterWithSubdirectories()
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // Then - 親リスト先頭へフォールバック
         XCTAssertEqual(viewModel.currentIndex, 0, "親リスト先頭にフォールバック")
@@ -788,10 +733,8 @@ final class FavoritesE2ETests: XCTestCase {
         try pngData.write(to: subFolder.appendingPathComponent("sub_image.png"))
 
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         await viewModel.enableSubdirectoryMode()
-        try await Task.sleep(nanoseconds: 300_000_000)
 
         // 親画像 test_image_02 に移動
         guard let bIdx = viewModel.imageURLs.firstIndex(where: {
@@ -805,7 +748,6 @@ final class FavoritesE2ETests: XCTestCase {
 
         // When - サブディレクトリモード解除
         await viewModel.disableSubdirectoryMode()
-        try await Task.sleep(nanoseconds: 300_000_000)
 
         // Then - test_image_02 の位置に復元
         XCTAssertFalse(viewModel.isSubdirectoryMode)
@@ -824,10 +766,8 @@ final class FavoritesE2ETests: XCTestCase {
         try pngData.write(to: subFolder.appendingPathComponent("zz_sub.png"))
 
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         await viewModel.enableSubdirectoryMode()
-        try await Task.sleep(nanoseconds: 300_000_000)
 
         // サブフォルダ画像に移動
         guard let subIdx = viewModel.imageURLs.firstIndex(where: {
@@ -841,7 +781,6 @@ final class FavoritesE2ETests: XCTestCase {
 
         // When - モード解除
         await viewModel.disableSubdirectoryMode()
-        try await Task.sleep(nanoseconds: 300_000_000)
 
         // Then - 親リスト先頭へフォールバック
         XCTAssertFalse(viewModel.isSubdirectoryMode)
@@ -857,20 +796,17 @@ final class FavoritesE2ETests: XCTestCase {
         try createFavoritesFile(at: testFolderURL, favorites: ["test_image_02.png": 5])
 
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // test_image_02 を表示
         await viewModel.jumpToIndex(1)
 
         // 1回目のフィルタ適用
         await viewModel.setFilterLevelWithSubdirectories(5)
-        try await Task.sleep(nanoseconds: 500_000_000)
         XCTAssertTrue(viewModel.isFiltering)
         XCTAssertEqual(viewModel.currentImageURL?.lastPathComponent, "test_image_02.png")
 
         // When - 同じレベルで再度呼び出し（トグル解除）
         await viewModel.setFilterLevelWithSubdirectories(5)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // Then - 解除され、親リストの test_image_02 の位置に復元
         XCTAssertNil(viewModel.filterLevel)
@@ -884,15 +820,13 @@ final class FavoritesE2ETests: XCTestCase {
     func testE2E_FilterLevelNonSubdir_Regression_CurrentIndexPreserved() async throws {
         // Given
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // 画像3 にレベル5を設定
         await viewModel.jumpToIndex(2)
         try await viewModel.setFavoriteLevel(5)
 
         // When - 同じレベルでフィルタ（index 2 はフィルタ対象）
-        viewModel.setFilterLevel(5)
-        try await Task.sleep(nanoseconds: 200_000_000)
+        await viewModel.setFilterLevel(5)
 
         // Then - 現在 index 2 は維持
         XCTAssertTrue(viewModel.isFiltering)
@@ -904,7 +838,6 @@ final class FavoritesE2ETests: XCTestCase {
     func testE2E_FilterLevelNonSubdir_Regression_JumpToFirstWhenNotInFilter() async throws {
         // Given
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         // index 2, 4 にレベル5
         await viewModel.jumpToIndex(2)
@@ -916,8 +849,7 @@ final class FavoritesE2ETests: XCTestCase {
         await viewModel.jumpToIndex(0)
 
         // When
-        viewModel.setFilterLevel(5)
-        try await Task.sleep(nanoseconds: 200_000_000)
+        await viewModel.setFilterLevel(5)
 
         // Then - 最初の該当 index（2）へ
         XCTAssertTrue(viewModel.isFiltering)
@@ -929,15 +861,13 @@ final class FavoritesE2ETests: XCTestCase {
     func testE2E_ClearFilterNonSubdir_PreservesCurrentIndex() async throws {
         // Given
         await viewModel.openFolder(testFolderURL)
-        try await Task.sleep(nanoseconds: 500_000_000)
 
         await viewModel.jumpToIndex(2)
         try await viewModel.setFavoriteLevel(5)
         await viewModel.jumpToIndex(3)
         try await viewModel.setFavoriteLevel(5)
 
-        viewModel.setFilterLevel(5)
-        try await Task.sleep(nanoseconds: 200_000_000)
+        await viewModel.setFilterLevel(5)
 
         // 現在 index がフィルタ対象であることを確認
         let beforeIndex = viewModel.currentIndex

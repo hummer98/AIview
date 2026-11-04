@@ -4,7 +4,7 @@ import os
 /// 専用 DispatchQueue の同時実行数を計測する軽量カウンタ。
 /// `enter()` / `leave()` を `thumbnailQueue.async { ... }` の前後で呼ぶ運用を想定。
 /// 内部状態は `OSAllocatedUnfairLock` で保護されており、競合なしで 20-30ns オーダーのコスト。
-final class QueueInstrumentation: @unchecked Sendable {
+final class QueueInstrumentation: Sendable {
     private struct State {
         var inFlight: Int = 0
         var peak: Int = 0

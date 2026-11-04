@@ -1,3 +1,4 @@
+import Compression
 import Foundation
 import ImageIO
 import os
@@ -37,10 +38,305 @@ struct PromptParseResult {
     let negativePrompt: String?
 }
 
+/// PNG の prompt metadata を、ファイル全体をメモリへ載せずに走査する parser。
+///
+/// PNG chunk は `[length: 4][type: 4][payload: length][CRC: 4]` の順に並ぶ。
+/// metadata と無関係な chunk は seek だけで飛ばし、text chunk も keyword の確認までは
+/// 最大 80 byte しか読まない。`parameters` chunk だけを 1 MiB 上限で decode する。
+enum PNGMetadataParserError: Error, Equatable {
+    case invalidSignature
+    case truncated
+    case invalidChunkType
+    case invalidChunkLength
+    case tooManyChunks
+    case oversizedTextChunk
+    case invalidTextChunk
+    case unsupportedCompression
+    case decompressionFailed
+}
+
+struct PNGMetadataParseResult: Equatable {
+    let parameters: String?
+    let bytesRead: Int
+}
+
+struct PNGMetadataParser {
+    static let maximumTextBytes = 1024 * 1024
+    static let maximumChunkCount = 100_000
+
+    private static let signature = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+    private static let maximumKeywordBytes = 79
+    private static let textChunkTypes: Set<String> = ["tEXt", "iTXt", "zTXt"]
+
+    static func parameters(from url: URL) throws -> String? {
+        try parse(url: url).parameters
+    }
+
+    /// `bytesRead` は bounded-read test 専用の internal seam。本番 API には公開しない。
+    static func parse(url: URL, maximumChunkCount: Int = Self.maximumChunkCount) throws -> PNGMetadataParseResult {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+
+        let fileLength = try handle.seekToEnd()
+        try handle.seek(toOffset: 0)
+        var reader = PNGFileReader(handle: handle, fileLength: fileLength)
+
+        guard try reader.readExactly(signature.count) == signature else {
+            throw PNGMetadataParserError.invalidSignature
+        }
+
+        var chunkCount = 0
+        var parameters: String?
+        while reader.offset < fileLength {
+            chunkCount += 1
+            guard chunkCount <= maximumChunkCount else {
+                throw PNGMetadataParserError.tooManyChunks
+            }
+
+            let header = try reader.readExactly(8)
+            let chunkLength = UInt64(Self.uint32(from: header, offset: 0))
+            let typeData = header.subdata(in: 4..<8)
+            guard typeData.allSatisfy(Self.isASCIILetter),
+                  let chunkType = String(data: typeData, encoding: .ascii) else {
+                throw PNGMetadataParserError.invalidChunkType
+            }
+
+            let payloadStart = reader.offset
+            let payloadEnd = try Self.checkedAdd(payloadStart, chunkLength)
+            let chunkEnd = try Self.checkedAdd(payloadEnd, 4)
+            guard chunkEnd <= fileLength else {
+                throw PNGMetadataParserError.truncated
+            }
+
+            if chunkType == "IEND" {
+                guard chunkLength == 0 else {
+                    throw PNGMetadataParserError.invalidChunkLength
+                }
+                try reader.seek(to: chunkEnd)
+                return PNGMetadataParseResult(parameters: parameters, bytesRead: reader.bytesRead)
+            }
+
+            if textChunkTypes.contains(chunkType) {
+                let prefixLength = min(Int(chunkLength), maximumKeywordBytes + 1)
+                guard prefixLength > 0 else {
+                    throw PNGMetadataParserError.invalidTextChunk
+                }
+                let keywordPrefix = try reader.readExactly(prefixLength)
+                guard let delimiter = keywordPrefix.firstIndex(of: 0) else {
+                    throw PNGMetadataParserError.invalidTextChunk
+                }
+
+                let keywordBytes = keywordPrefix[..<delimiter]
+                guard !keywordBytes.isEmpty,
+                      keywordBytes.count <= maximumKeywordBytes,
+                      let keyword = String(data: keywordBytes, encoding: .isoLatin1) else {
+                    throw PNGMetadataParserError.invalidTextChunk
+                }
+
+                guard keyword.caseInsensitiveCompare("parameters") == .orderedSame else {
+                    try reader.seek(to: chunkEnd)
+                    continue
+                }
+
+                guard chunkLength <= UInt64(maximumTextBytes) else {
+                    throw PNGMetadataParserError.oversizedTextChunk
+                }
+
+                let remainingLength = Int(chunkLength) - keywordPrefix.count
+                let remaining = try reader.readExactly(remainingLength)
+                var payload = Data(keywordPrefix)
+                payload.append(remaining)
+                let decodedParameters = try decodeParameters(payload: payload, type: chunkType)
+                if parameters == nil {
+                    parameters = decodedParameters
+                }
+                try reader.seek(to: chunkEnd)
+                continue
+            }
+
+            // IDAT と unknown chunk は payload を allocate せず、CRC の後まで seek する。
+            try reader.seek(to: chunkEnd)
+        }
+
+        // PNG は IEND で終端しなければならない。
+        throw PNGMetadataParserError.truncated
+    }
+
+    private static func decodeParameters(payload: Data, type: String) throws -> String {
+        guard let keywordEnd = payload.firstIndex(of: 0) else {
+            throw PNGMetadataParserError.invalidTextChunk
+        }
+        let contentStart = payload.index(after: keywordEnd)
+
+        let decoded: Data
+        switch type {
+        case "tEXt":
+            decoded = Data(payload[contentStart...])
+        case "zTXt":
+            guard contentStart < payload.endIndex else {
+                throw PNGMetadataParserError.invalidTextChunk
+            }
+            guard payload[contentStart] == 0 else {
+                throw PNGMetadataParserError.unsupportedCompression
+            }
+            let compressedStart = payload.index(after: contentStart)
+            decoded = try decompress(Data(payload[compressedStart...]))
+        case "iTXt":
+            decoded = try decodeInternationalText(payload: payload, contentStart: contentStart)
+        default:
+            throw PNGMetadataParserError.invalidChunkType
+        }
+
+        guard decoded.count <= maximumTextBytes,
+              let string = String(data: decoded, encoding: .utf8)
+                ?? String(data: decoded, encoding: .isoLatin1) else {
+            throw PNGMetadataParserError.invalidTextChunk
+        }
+        return string
+    }
+
+    private static func decodeInternationalText(payload: Data, contentStart: Data.Index) throws -> Data {
+        guard contentStart < payload.endIndex else {
+            throw PNGMetadataParserError.invalidTextChunk
+        }
+
+        let compressionFlag = payload[contentStart]
+        let methodIndex = payload.index(after: contentStart)
+        guard methodIndex < payload.endIndex else {
+            throw PNGMetadataParserError.invalidTextChunk
+        }
+        let compressionMethod = payload[methodIndex]
+        guard compressionFlag == 0 || compressionFlag == 1 else {
+            throw PNGMetadataParserError.invalidTextChunk
+        }
+        guard compressionMethod == 0 else {
+            throw PNGMetadataParserError.unsupportedCompression
+        }
+
+        let languageStart = payload.index(after: methodIndex)
+        guard let languageEnd = payload[languageStart...].firstIndex(of: 0) else {
+            throw PNGMetadataParserError.invalidTextChunk
+        }
+        let translatedKeywordStart = payload.index(after: languageEnd)
+        guard let translatedKeywordEnd = payload[translatedKeywordStart...].firstIndex(of: 0) else {
+            throw PNGMetadataParserError.invalidTextChunk
+        }
+        let textStart = payload.index(after: translatedKeywordEnd)
+        let text = Data(payload[textStart...])
+
+        return compressionFlag == 1 ? try decompress(text) : text
+    }
+
+    private static func decompress(_ input: Data) throws -> Data {
+        guard !input.isEmpty else {
+            throw PNGMetadataParserError.decompressionFailed
+        }
+
+        var output = [UInt8](repeating: 0, count: maximumTextBytes + 1)
+        let decodedCount = input.withUnsafeBytes { source in
+            output.withUnsafeMutableBytes { destination in
+                guard let sourceBase = source.bindMemory(to: UInt8.self).baseAddress,
+                      let destinationBase = destination.bindMemory(to: UInt8.self).baseAddress else {
+                    return 0
+                }
+                return compression_decode_buffer(
+                    destinationBase,
+                    destination.count,
+                    sourceBase,
+                    source.count,
+                    nil,
+                    COMPRESSION_ZLIB
+                )
+            }
+        }
+
+        guard decodedCount > 0 else {
+            throw PNGMetadataParserError.decompressionFailed
+        }
+        guard decodedCount <= maximumTextBytes else {
+            throw PNGMetadataParserError.oversizedTextChunk
+        }
+        return Data(output.prefix(decodedCount))
+    }
+
+    private static func checkedAdd(_ lhs: UInt64, _ rhs: UInt64) throws -> UInt64 {
+        let (result, overflow) = lhs.addingReportingOverflow(rhs)
+        guard !overflow else {
+            throw PNGMetadataParserError.invalidChunkLength
+        }
+        return result
+    }
+
+    private static func uint32(from data: Data, offset: Int) -> UInt32 {
+        UInt32(data[offset]) << 24
+            | UInt32(data[offset + 1]) << 16
+            | UInt32(data[offset + 2]) << 8
+            | UInt32(data[offset + 3])
+    }
+
+    private static func isASCIILetter(_ byte: UInt8) -> Bool {
+        (65...90).contains(byte) || (97...122).contains(byte)
+    }
+}
+
+private struct PNGFileReader {
+    let handle: FileHandle
+    let fileLength: UInt64
+    private(set) var offset: UInt64 = 0
+    private(set) var bytesRead = 0
+
+    mutating func readExactly(_ count: Int) throws -> Data {
+        guard count >= 0 else {
+            throw PNGMetadataParserError.invalidChunkLength
+        }
+        let requestedEnd = try checkedAdd(offset, UInt64(count))
+        guard requestedEnd <= fileLength else {
+            throw PNGMetadataParserError.truncated
+        }
+        guard count > 0 else { return Data() }
+
+        var data = Data()
+        data.reserveCapacity(count)
+        while data.count < count {
+            let part = try handle.read(upToCount: count - data.count) ?? Data()
+            guard !part.isEmpty else {
+                throw PNGMetadataParserError.truncated
+            }
+            data.append(part)
+            offset += UInt64(part.count)
+            bytesRead += part.count
+        }
+        assert(offset == requestedEnd)
+        return data
+    }
+
+    mutating func seek(to newOffset: UInt64) throws {
+        guard newOffset >= offset, newOffset <= fileLength else {
+            throw PNGMetadataParserError.invalidChunkLength
+        }
+        try handle.seek(toOffset: newOffset)
+        offset = newOffset
+    }
+
+    private func checkedAdd(_ lhs: UInt64, _ rhs: UInt64) throws -> UInt64 {
+        let (result, overflow) = lhs.addingReportingOverflow(rhs)
+        guard !overflow else {
+            throw PNGMetadataParserError.invalidChunkLength
+        }
+        return result
+    }
+}
+
+/// ViewModel からメタデータ取得を差し替え可能にする actor 境界。
+/// 制御可能な suspension point を持つ test double で stale completion を再現できる。
+protocol MetadataExtracting: Actor {
+    func extractMetadata(from url: URL) async throws -> ImageMetadata
+}
+
 /// メタデータ抽出器
 /// EXIF/PNG tEXt/XMPからのメタデータ抽出
 /// Requirements: 5.2-5.6
-actor MetadataExtractor {
+actor MetadataExtractor: MetadataExtracting {
     // MARK: - Public Methods
 
     /// 画像からメタデータを抽出
@@ -144,18 +440,18 @@ actor MetadataExtractor {
     private func extractPromptInfo(from url: URL) throws -> (prompt: String?, negativePrompt: String?, additionalInfo: [String: String]) {
         var additionalInfo: [String: String] = [:]
 
-        // PNG tEXtチャンクを検索
-        if url.pathExtension.lowercased() == "png" {
-            if let parameters = try? extractFromPNGTextChunk(url: url) {
-                let result = parsePrompt(from: parameters)
-                return (result.prompt, result.negativePrompt, additionalInfo)
-            }
+        // EXIF/XMP/PNG properties は、ImageIO が認識できる metadata を最優先する。
+        if let parameters = extractParametersUsingImageIO(from: url) {
+            let result = parsePrompt(from: parameters)
+            return (result.prompt, result.negativePrompt, additionalInfo)
+        }
 
-            // XMPにフォールバック
-            if let parameters = try? extractFromXMP(url: url) {
-                let result = parsePrompt(from: parameters)
-                return (result.prompt, result.negativePrompt, additionalInfo)
-            }
+        // Stable Diffusion の独自 `parameters` keyword が ImageIO で公開されない PNG は、
+        // bounded chunk parser へフォールバックする。
+        if url.pathExtension.lowercased() == "png",
+           let parameters = try? PNGMetadataParser.parameters(from: url) {
+            let result = parsePrompt(from: parameters)
+            return (result.prompt, result.negativePrompt, additionalInfo)
         }
 
         // 他の形式のメタデータ（EXIF等）
@@ -166,75 +462,77 @@ actor MetadataExtractor {
         return (nil, nil, additionalInfo)
     }
 
-    /// PNG tEXtチャンクからパラメータを抽出
-    private func extractFromPNGTextChunk(url: URL) throws -> String? {
-        let data = try Data(contentsOf: url)
-
-        // "parameters\x00" を検索（tEXtチャンクのキーワード）
-        let searchPattern = "parameters\0"
-        guard let searchData = searchPattern.data(using: .utf8) else {
+    /// ImageIO が正規化した properties / XMP tag を検索する。
+    /// 戻り値は PNG fallback と同じ 1 MiB 上限を適用する。
+    private func extractParametersUsingImageIO(from url: URL) -> String? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             return nil
         }
 
-        guard let range = data.range(of: searchData) else {
+        if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as NSDictionary? {
+            var visitedNodes = 0
+            if let value = Self.parametersValue(in: properties, depth: 0, visitedNodes: &visitedNodes) {
+                return value
+            }
+        }
+
+        guard let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil) else {
             return nil
         }
 
-        // tEXtチャンクの構造を解析してチャンク長を取得
-        // チャンク構造: [4バイト長][4バイト種別][データ][4バイトCRC]
-        // "parameters\0"の前に"tEXt"(4バイト)があり、その前に長さ(4バイト)がある
-        let tEXtKeyword = Data([0x74, 0x45, 0x58, 0x74]) // "tEXt"
-        guard let tEXtRange = data.range(of: tEXtKeyword, options: [], in: 0..<range.lowerBound) else {
-            return nil
+        var result: String?
+        let options = [kCGImageMetadataEnumerateRecursively: kCFBooleanTrue] as CFDictionary
+        CGImageMetadataEnumerateTagsUsingBlock(metadata, nil, options) { _, tag in
+            guard result == nil,
+                  let name = CGImageMetadataTagCopyName(tag) as String?,
+                  name.caseInsensitiveCompare("parameters") == .orderedSame,
+                  let value = CGImageMetadataTagCopyValue(tag),
+                  let bounded = Self.boundedString(from: value) else {
+                return result == nil
+            }
+            result = bounded
+            return false
         }
-
-        // チャンク長を取得（tEXtの4バイト前にビッグエンディアンで格納）
-        let lengthStart = tEXtRange.lowerBound - 4
-        guard lengthStart >= 0 else { return nil }
-
-        // ビッグエンディアンで4バイトを読み取り（アライメント問題を回避）
-        let chunkLength = UInt32(data[lengthStart]) << 24
-            | UInt32(data[lengthStart + 1]) << 16
-            | UInt32(data[lengthStart + 2]) << 8
-            | UInt32(data[lengthStart + 3])
-
-        // パラメータの開始位置
-        let startIndex = range.upperBound
-
-        // チャンクデータの終了位置を計算
-        // tEXtの直後からchunkLength分がデータ
-        let chunkDataEnd = tEXtRange.upperBound + Int(chunkLength)
-        let endIndex = min(chunkDataEnd, data.count)
-
-        let parameterData = data[startIndex..<endIndex]
-        guard let parameters = String(data: parameterData, encoding: .utf8) else {
-            return nil
-        }
-
-        Logger.metadata.debug("Found PNG tEXt parameters: \(parameters.prefix(100), privacy: .public)...")
-        return parameters
+        return result
     }
 
-    /// XMPメタデータからパラメータを抽出
-    private func extractFromXMP(url: URL) throws -> String? {
-        let data = try Data(contentsOf: url)
+    private static func parametersValue(
+        in dictionary: NSDictionary,
+        depth: Int,
+        visitedNodes: inout Int
+    ) -> String? {
+        guard depth <= 8, visitedNodes <= 1024 else { return nil }
+        visitedNodes += 1
 
-        // <x:xmpmeta>...</x:xmpmeta> を検索
-        guard let dataString = String(data: data, encoding: .utf8) else {
-            return nil
+        for (rawKey, rawValue) in dictionary {
+            let key = String(describing: rawKey)
+            if key.caseInsensitiveCompare("parameters") == .orderedSame,
+               let value = boundedString(from: rawValue) {
+                return value
+            }
+            if let child = rawValue as? NSDictionary,
+               let value = parametersValue(in: child, depth: depth + 1, visitedNodes: &visitedNodes) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func boundedString(from value: Any) -> String? {
+        let string: String?
+        if let candidate = value as? String {
+            string = candidate
+        } else if let data = value as? Data, data.count <= PNGMetadataParser.maximumTextBytes {
+            string = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+        } else {
+            string = nil
         }
 
-        // parameters="..." を検索
-        let pattern = #"parameters=\"([^\"]*)\""#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
-              let match = regex.firstMatch(in: dataString, options: [], range: NSRange(dataString.startIndex..., in: dataString)),
-              let range = Range(match.range(at: 1), in: dataString) else {
+        guard let string,
+              string.utf8.count <= PNGMetadataParser.maximumTextBytes else {
             return nil
         }
-
-        let parameters = String(dataString[range])
-        Logger.metadata.debug("Found XMP parameters: \(parameters.prefix(100), privacy: .public)...")
-        return parameters
+        return string
     }
 
     /// EXIF情報を抽出

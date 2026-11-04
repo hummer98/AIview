@@ -1,20 +1,100 @@
 import Foundation
 import os
 
+private final class SlideshowTaskOwner: Sendable {
+    struct Snapshot: Equatable, Sendable {
+        let activeTasks: Int
+        let generation: UUID?
+    }
+
+    private struct State {
+        var task: Task<Void, Never>?
+        var generation: UUID?
+    }
+
+    private let lock = OSAllocatedUnfairLock(initialState: State())
+
+    func begin() -> UUID {
+        cancel()
+        return lock.withLock { state in
+            let generation = UUID()
+            state.generation = generation
+            return generation
+        }
+    }
+
+    func install(_ task: Task<Void, Never>, generation: UUID) {
+        let accepted = lock.withLock { state in
+            guard state.generation == generation else { return false }
+            state.task = task
+            return true
+        }
+        if !accepted { task.cancel() }
+    }
+
+    func finish(generation: UUID) {
+        lock.withLock { state in
+            guard state.generation == generation else { return }
+            state.task = nil
+            state.generation = nil
+        }
+    }
+
+    func cancel() {
+        let task = lock.withLock { state in
+            let task = state.task
+            state.task = nil
+            state.generation = nil
+            return task
+        }
+        task?.cancel()
+    }
+
+    func snapshot() -> Snapshot {
+        lock.withLock { state in
+            Snapshot(activeTasks: state.generation == nil ? 0 : 1, generation: state.generation)
+        }
+    }
+
+    deinit {
+        cancel()
+    }
+}
+
 /// スライドショーの自動進行タイマー管理
 /// Requirements: 2.1, 4.1, 4.2, 6.3
 @MainActor
 final class SlideshowTimer {
+    typealias Sleeper = @Sendable (Duration) async throws -> Void
+
+    struct TaskSnapshot: Equatable, Sendable {
+        let activeTasks: Int
+        let generation: UUID?
+
+        var isIdle: Bool { activeTasks == 0 && generation == nil }
+    }
+
     // MARK: - Properties
 
-    private var timerTask: Task<Void, Never>?
+    private let taskOwner = SlideshowTaskOwner()
     private var isPaused: Bool = false
     private var currentInterval: Int = 3
-    private var onTickHandler: (() -> Void)?
+    private var onTickHandler: (@MainActor () async -> Void)?
+    private let sleeper: Sleeper
 
     /// タイマーが実行中かどうか
     var isRunning: Bool {
-        timerTask != nil && !isPaused
+        taskOwner.snapshot().activeTasks > 0 && !isPaused
+    }
+
+    init(sleeper: Sleeper? = nil) {
+        self.sleeper = sleeper ?? { @Sendable duration in
+            try await Task.sleep(for: duration)
+        }
+    }
+
+    deinit {
+        taskOwner.cancel()
     }
 
     // MARK: - Public Methods
@@ -23,7 +103,7 @@ final class SlideshowTimer {
     /// - Parameters:
     ///   - interval: 間隔（秒）1-60の範囲
     ///   - onTick: 間隔ごとに呼ばれるコールバック
-    func start(interval: Int, onTick: @escaping () -> Void) {
+    func start(interval: Int, onTick: @escaping @MainActor () async -> Void) {
         // 既存のタイマーをキャンセル
         stop()
 
@@ -40,8 +120,7 @@ final class SlideshowTimer {
     /// タイマーを一時停止
     func pause() {
         isPaused = true
-        timerTask?.cancel()
-        timerTask = nil
+        taskOwner.cancel()
 
         Logger.slideshow.debug("Slideshow timer paused")
     }
@@ -58,8 +137,7 @@ final class SlideshowTimer {
 
     /// タイマーを停止
     func stop() {
-        timerTask?.cancel()
-        timerTask = nil
+        taskOwner.cancel()
         isPaused = false
         onTickHandler = nil
 
@@ -71,8 +149,7 @@ final class SlideshowTimer {
         guard !isPaused, onTickHandler != nil else { return }
 
         // 現在のタスクをキャンセルして新しいサイクルを開始
-        timerTask?.cancel()
-        timerTask = nil
+        taskOwner.cancel()
         startTimerLoop()
 
         Logger.slideshow.debug("Slideshow timer reset")
@@ -95,23 +172,37 @@ final class SlideshowTimer {
     // MARK: - Private Methods
 
     private func startTimerLoop() {
-        timerTask = Task { [weak self] in
+        let generation = taskOwner.begin()
+        let interval = Duration.seconds(currentInterval)
+        let sleeper = self.sleeper
+        let owner = taskOwner
+        let task = Task { [weak self, weak owner] in
             while !Task.isCancelled {
-                guard let self = self else { break }
-
-                // 指定間隔待機
                 do {
-                    try await Task.sleep(nanoseconds: UInt64(self.currentInterval) * 1_000_000_000)
+                    // self を保持せずに待機する。owner の deinit が Task を cancel できる。
+                    try await sleeper(interval)
                 } catch {
-                    // キャンセルされた場合は終了
                     break
                 }
 
-                // キャンセルされていなければコールバックを実行
-                if !Task.isCancelled, let handler = self.onTickHandler {
-                    handler()
-                }
+                guard !Task.isCancelled else { break }
+                let handler = self?.handlerForTick(generation: generation)
+                await handler?()
             }
+            owner?.finish(generation: generation)
         }
+        taskOwner.install(task, generation: generation)
     }
+
+    private func handlerForTick(generation: UUID) -> (@MainActor () async -> Void)? {
+        guard taskOwner.snapshot().generation == generation, !isPaused else { return nil }
+        return onTickHandler
+    }
+
+    #if DEBUG
+    func _debugTaskSnapshot() -> TaskSnapshot {
+        let snapshot = taskOwner.snapshot()
+        return TaskSnapshot(activeTasks: snapshot.activeTasks, generation: snapshot.generation)
+    }
+    #endif
 }

@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AIview 総合修正実行計画 — 2026-08-11</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f3f5fa;
+      --surface: #ffffff;
+      --surface-2: #f7f9fc;
+      --ink: #182133;
+      --muted: #5f6b7d;
+      --line: #dce2eb;
+      --navy: #1d3a8a;
+      --blue: #3564dc;
+      --blue-soft: #eaf0ff;
+      --violet: #6941c6;
+      --violet-soft: #f2edff;
+      --green: #067647;
+      --green-soft: #eafbf2;
+      --amber: #b54708;
+      --amber-soft: #fff5e6;
+      --red: #b42318;
+      --red-soft: #fff0ee;
+      --shadow: 0 14px 42px rgba(27, 40, 72, .09);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0e1320;
+        --surface: #171d2b;
+        --surface-2: #111827;
+        --ink: #eef2ff;
+        --muted: #aab4c7;
+        --line: #30394c;
+        --navy: #aebdff;
+        --blue: #9eb1ff;
+        --blue-soft: #202d54;
+        --violet: #c5aaff;
+        --violet-soft: #30234a;
+        --green: #70d8a8;
+        --green-soft: #16372b;
+        --amber: #ffb86b;
+        --amber-soft: #392919;
+        --red: #ff9188;
+        --red-soft: #3b2024;
+        --shadow: none;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", sans-serif;
+      line-height: 1.7;
+    }
+    a { color: var(--blue); text-underline-offset: 3px; }
+    code, .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .92em;
+    }
+    code {
+      padding: .08rem .32rem;
+      border: 1px solid var(--line);
+      border-radius: .34rem;
+      background: var(--surface-2);
+    }
+    pre {
+      overflow-x: auto;
+      margin: 14px 0;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface-2);
+      line-height: 1.55;
+    }
+    pre code { padding: 0; border: 0; background: transparent; }
+    .page { max-width: 1220px; margin: 0 auto; padding: 44px 28px 84px; }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 42px;
+      border: 1px solid var(--line);
+      border-radius: 25px;
+      background: linear-gradient(132deg, var(--surface) 20%, var(--blue-soft) 72%, var(--violet-soft));
+      box-shadow: var(--shadow);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -110px;
+      bottom: -150px;
+      width: 390px;
+      height: 390px;
+      border-radius: 50%;
+      border: 55px solid rgba(84, 108, 220, .10);
+      pointer-events: none;
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--blue);
+      font-size: .8rem;
+      font-weight: 800;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+    h1 { max-width: 900px; margin: 0; font-size: clamp(2.1rem, 5vw, 3.8rem); line-height: 1.15; }
+    h2 { margin: 66px 0 19px; font-size: 1.8rem; line-height: 1.27; }
+    h3 { margin: 31px 0 11px; font-size: 1.23rem; line-height: 1.35; }
+    h4 { margin: 0 0 8px; font-size: 1.04rem; }
+    p { margin: .62rem 0 1rem; }
+    ul, ol { padding-left: 1.35rem; }
+    li { margin: .38rem 0; }
+    .lead { position: relative; z-index: 1; max-width: 880px; color: var(--muted); font-size: 1.14rem; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 23px; color: var(--muted); font-size: .9rem; }
+    .approval {
+      position: relative;
+      z-index: 1;
+      margin-top: 25px;
+      padding: 18px 20px;
+      border-left: 5px solid var(--green);
+      border-radius: 11px;
+      background: var(--green-soft);
+    }
+    .approval strong { color: var(--green); }
+    .grid { display: grid; gap: 16px; }
+    .stats { grid-template-columns: repeat(4, 1fr); margin-top: 22px; }
+    .stat, .card, .work, .note {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .stat { padding: 18px; }
+    .stat b { display: block; font-size: 1.65rem; line-height: 1.12; }
+    .stat span { color: var(--muted); font-size: .84rem; }
+    .card { padding: 22px 24px; }
+    .cards-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cards-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .toc { margin-top: 24px; padding: 22px 27px; }
+    .toc ol { columns: 2; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: .74rem;
+      font-weight: 820;
+      letter-spacing: .04em;
+      white-space: nowrap;
+    }
+    .pill.approved { color: var(--green); background: var(--green-soft); }
+    .pill.p0 { color: var(--red); background: var(--red-soft); }
+    .pill.p1 { color: var(--amber); background: var(--amber-soft); }
+    .pill.p2 { color: var(--blue); background: var(--blue-soft); }
+    .pill.size { color: var(--violet); background: var(--violet-soft); }
+    .pill.gate { color: var(--navy); background: var(--blue-soft); }
+    .decision { border-top: 4px solid var(--blue); box-shadow: none; }
+    .decision .num { color: var(--blue); font-weight: 850; }
+    .note { padding: 17px 20px; margin: 16px 0; box-shadow: none; }
+    .note.info { border-left: 4px solid var(--blue); }
+    .note.warn { border-left: 4px solid var(--amber); }
+    .note.stop { border-left: 4px solid var(--red); }
+    .note.good { border-left: 4px solid var(--green); }
+    table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+    th, td { padding: 11px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-size: .79rem; letter-spacing: .035em; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .dependency {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+      gap: 11px;
+      align-items: stretch;
+      margin: 24px 0;
+    }
+    .dep-node {
+      min-width: 0;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: var(--surface);
+    }
+    .dep-node strong { display: block; color: var(--blue); }
+    .arrow { align-self: center; color: var(--blue); font-size: 1.7rem; }
+    .lanes { display: grid; gap: 10px; margin: 20px 0; }
+    .lane { display: grid; grid-template-columns: 120px 1fr; gap: 14px; align-items: center; }
+    .lane-name { color: var(--muted); font-size: .82rem; font-weight: 800; text-transform: uppercase; }
+    .lane-track { display: flex; flex-wrap: wrap; gap: 8px; }
+    .lane-track span { padding: 5px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: .85rem; }
+    .work { margin: 17px 0; overflow: hidden; }
+    .work-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; padding: 20px 23px 12px; }
+    .work-head h3 { margin: 0; }
+    .work-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+    .work-body { padding: 0 23px 22px; }
+    .work-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 20px; }
+    .work-grid h4 { margin-top: 12px; color: var(--muted); }
+    .acceptance { padding: 13px 15px; border-radius: 10px; background: var(--green-soft); }
+    .acceptance strong { color: var(--green); }
+    .file-list { font-size: .86rem; color: var(--muted); }
+    .gate-list { counter-reset: gate; display: grid; gap: 13px; }
+    .gate-item { counter-increment: gate; position: relative; padding: 18px 20px 18px 58px; }
+    .gate-item::before {
+      content: "G" counter(gate);
+      position: absolute;
+      left: 17px;
+      top: 17px;
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: white;
+      background: var(--blue);
+      font-size: .74rem;
+      font-weight: 850;
+    }
+    .risk-high { border-left: 4px solid var(--red); }
+    .risk-medium { border-left: 4px solid var(--amber); }
+    .small { color: var(--muted); font-size: .87rem; }
+    .checklist { columns: 2; }
+    .footer { margin-top: 66px; padding-top: 25px; border-top: 1px solid var(--line); color: var(--muted); font-size: .87rem; }
+    @media (max-width: 900px) {
+      .page { padding: 22px 14px 64px; }
+      .hero { padding: 27px 22px; border-radius: 18px; }
+      .stats, .cards-2, .cards-3, .work-grid { grid-template-columns: 1fr; }
+      .toc ol, .checklist { columns: 1; }
+      .dependency { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); justify-self: center; }
+      .lane { grid-template-columns: 1fr; }
+      .work-head { flex-direction: column; }
+      .work-tags { justify-content: flex-start; }
+    }
+    @media print {
+      :root { color-scheme: light; }
+      body { background: #fff; }
+      .page { max-width: none; padding: 0; }
+      .hero, .card, .work, .stat { box-shadow: none; }
+      .work, .card { break-inside: avoid; }
+      a { color: inherit; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">AIview / Approved Remediation Program</p>
+      <h1>総合修正 実行計画</h1>
+      <p class="lead">総合コードレビューで特定した18所見を、12個の独立レビュー可能なPRへ分解した実装契約。依存順、状態モデル、テスト、移行、rollback、release gateを事前に固定し、再び症状単位の修正へ戻らないための計画である。</p>
+      <div class="meta">
+        <span>作成: 2026-08-11 JST</span>
+        <span>基点: <span class="mono">master @ 14c39d1 / v0.9.0</span></span>
+        <span>対象release案: <span class="mono">v0.10.0</span></span>
+        <span>参照: <a href="../reports/002-comprehensive-code-review.html">総合コードレビュー</a></span>
+      </div>
+      <div class="approval">
+        <strong>承認状態: 全18所見の修正を実施する。</strong>
+        本計画では追加の機能判断を待たずに進められるよう、未確定だった選択肢も明示的に解決した。唯一の外部state変更はCloudflare本番deployであり、実装・テスト完了後に段階的に行う。
+      </div>
+      <div class="grid stats">
+        <div class="stat"><b style="color:var(--blue)">12</b><span>実装PR</span></div>
+        <div class="stat"><b style="color:var(--red)">5</b><span>P0所見</span></div>
+        <div class="stat"><b style="color:var(--violet)">8</b><span>拘束する設計決定</span></div>
+        <div class="stat"><b style="color:var(--green)">6</b><span>merge / release gate</span></div>
+      </div>
+    </header>
+
+    <nav class="card toc" aria-label="目次">
+      <h3 style="margin-top:0">目次</h3>
+      <ol>
+        <li><a href="#scope">目的・範囲・前提</a></li>
+        <li><a href="#decisions">拘束する設計決定</a></li>
+        <li><a href="#sequence">依存関係と実行順</a></li>
+        <li><a href="#packages">12個の実装PR</a></li>
+        <li><a href="#coverage">18所見のcoverage</a></li>
+        <li><a href="#files">変更ファイル設計</a></li>
+        <li><a href="#tests">テスト戦略</a></li>
+        <li><a href="#rollout">移行・deploy・rollback</a></li>
+        <li><a href="#gates">merge / release gate</a></li>
+        <li><a href="#risks">リスク管理</a></li>
+        <li><a href="#done">全体Definition of Done</a></li>
+        <li><a href="#references">公式資料</a></li>
+      </ol>
+    </nav>
+
+    <section id="scope">
+      <h2>1. 目的・範囲・前提</h2>
+      <div class="grid cards-3">
+        <article class="card">
+          <h4>目的</h4>
+          <p>画像・URL同一性、非同期operationの世代、window単位の状態所有を型とtransactionで保証し、同種のnavigation/state bugを個別修正し続ける構造を終わらせる。</p>
+        </article>
+        <article class="card">
+          <h4>互換性</h4>
+          <p>画像・お気に入り・thumbnail disk cacheの既存形式は変更しない。recent foldersは無損失migration、telemetryは旧clientを一定期間受ける段階移行とする。</p>
+        </article>
+        <article class="card">
+          <h4>非目標</h4>
+          <p>新しい画像形式、UI刷新、ライブfolder監視、App Store sandbox化、analytics項目追加は行わない。修正中のfeature追加は凍結する。</p>
+        </article>
+      </div>
+      <div class="note info">
+        <strong>version前提:</strong> 大きな内部構造変更とtelemetry protocol v2を含むため、次のminor release <code>v0.10.0</code>を候補とする。ユーザー向け操作とファイル形式は後方互換なのでmajor bumpは不要。
+      </div>
+      <div class="note stop">
+        <strong>開始条件:</strong> PR-01でunit testが「buildできる」だけでなく、CI上で1件以上実行されたことを<code>xcresult</code>から検証する。現在のXcode 26.6 local runner assertionを未解決のまま、中核state refactorへ進まない。
+      </div>
+    </section>
+
+    <section id="decisions">
+      <h2>2. 拘束する設計決定</h2>
+      <p>以下は実装中に再び選択肢へ戻さない。変更する場合は理由・影響・代替案をADRとして先に更新する。</p>
+      <div class="grid cards-2">
+        <article class="card decision"><h4><span class="num">D1.</span> Window stateはscene-local</h4><p>globalに残すのはsettings、recent-folder repository、telemetry coordinator等のprocess serviceだけ。folder、selection、zoom、reload、cache-clear、sibling command、window metricsは各sceneが所有する。</p></article>
+        <article class="card decision"><h4><span class="num">D2.</span> 表示対象は1個のSelection</h4><p><code>BrowserSelection(url, index, image, loadID)</code>をcommit単位にする。<code>currentImageURL</code>を配列indexから別計算しない。削除・favorite・metadataは常にcommitted selectionのURLを使う。</p></article>
+        <article class="card decision"><h4><span class="num">D3.</span> 非同期commitは二重token</h4><p>folderを表す<code>sessionID</code>と個別loadを表す<code>operationID</code>を持つ。すべてのawait後に両方を照合し、古い完了はstateへ一切commitしない。</p></article>
+        <article class="card decision"><h4><span class="num">D4.</span> Scannerはevent sequence</h4><p>3本のasync callbackと共有cancel booleanを廃止し、所有Taskとterminationを持つ<code>AsyncThrowingStream&lt;FolderScanEvent&gt;</code>へ移行する。cancelはsequence終了として伝える。</p></article>
+        <article class="card decision"><h4><span class="num">D5.</span> 非sandbox配布を維持</h4><p>任意pathを開けるDeveloper ID配布を維持する。security-scoped bookmark、start/stop API、sandbox用entitlementを撤去し、recent folderは正規化pathとして保存する。</p></article>
+        <article class="card decision"><h4><span class="num">D6.</span> ログはprivate by default</h4><p>publicを許すのはcount、duration、enum、status code等だけ。path、filename、URL、error descriptionはprivate。生成AI promptは一切logしない。独自平文incident fileは撤去する。</p></article>
+        <article class="card decision"><h4><span class="num">D7.</span> Telemetry v2はPOST + bounded retention</h4><p>routine pingをJSON POSTへ移し、rate limit・入力制限・no-storeを適用する。stats keyはAuthorization header。D1は400日retentionと削除endpointを持つ。legacy GETはrate-limit付きで90日だけ残す。</p></article>
+        <article class="card decision"><h4><span class="num">D8.</span> 最終言語modeはSwift 6</h4><p>lock保護を理由に<code>@unchecked Sendable</code>を増やさない。同期cacheはtyped lock、UI stateはMainActor、I/O serviceはactor/owned Taskで表現し、全targetをSwift 6でbuildする。</p></article>
+      </div>
+    </section>
+
+    <section id="sequence">
+      <h2>3. 依存関係と実行順</h2>
+      <div class="dependency" aria-label="依存関係">
+        <div class="dep-node"><strong>基準線</strong>PR-01<br>test / policy / CI</div>
+        <div class="arrow">→</div>
+        <div class="dep-node"><strong>安全修正</strong>PR-02・03・09<br>memory / tasks / server</div>
+        <div class="arrow">→</div>
+        <div class="dep-node"><strong>状態中核</strong>PR-04〜08<br>session / selection / scene</div>
+        <div class="arrow">→</div>
+        <div class="dep-node"><strong>収束</strong>PR-10〜12<br>client / Swift 6 / audit</div>
+      </div>
+      <div class="lanes">
+        <div class="lane"><div class="lane-name">App core</div><div class="lane-track"><span>01 Gates</span><span>02 Cache</span><span>03 Tasks</span><span>04 Scan</span><span>05 Selection</span><span>06 Favorites/Metadata</span><span>07 Scene</span><span>08 Logs/Errors</span><span>11 Swift 6</span><span>12 Audit</span></div></div>
+        <div class="lane"><div class="lane-name">Telemetry</div><div class="lane-track"><span>01 Worker CI</span><span>09 Server v2 deploy</span><span>10 Client v2</span><span>12 Docs</span><span>+90日 Legacy停止</span></div></div>
+        <div class="lane"><div class="lane-name">Evidence</div><div class="lane-track"><span>Baseline xcresult</span><span>Race tests</span><span>2-window UI</span><span>TSan</span><span>Instruments</span><span>Release audit</span></div></div>
+      </div>
+      <div class="note good"><strong>並行化可能:</strong> PR-02（cache）とPR-09（Worker）はPR-01後に独立して進められる。PR-04〜08は同じViewModel/AppStateへ触れるため直列にする。大規模merge conflictを避けることを速度より優先する。</div>
+    </section>
+
+    <section id="packages">
+      <h2>4. 実装パッケージ — 12個のPR</h2>
+
+      <article class="work" id="pr01">
+        <div class="work-head"><h3>PR-01 — 実行可能な品質基準線</h3><div class="work-tags"><span class="pill p1">CI-01</span><span class="pill p2">DOC-01</span><span class="pill size">M</span></div></div>
+        <div class="work-body">
+          <div class="work-grid">
+            <div>
+              <h4>変更</h4>
+              <ul>
+                <li><code>CLAUDE.md</code>へstate scope、Task ownership、error分類、logging privacy、Swift version、test gate、telemetry policyを追記する。</li>
+                <li><code>Taskfile.yml</code>のSwiftLint/SwiftFormat構文を現行CLIへ修正し、<code>task ci</code>を唯一のlocal/CI入口にする。</li>
+                <li><code>.swiftlint.yml</code>、<code>.swiftformat</code>、初期<code>.swift-version=5.10</code>を追加。format-only commitをlogic変更と分離する。</li>
+                <li>PR/push CIを追加し、Debug build、unit tests、analyze、lint、format、ShellCheckを実行。GitHub Actionsはcommit SHAでpinする。</li>
+                <li><code>xcresulttool</code>でtest count &gt; 0を検査し、空実行をgreenにしない。release workflowをquality job依存にする。</li>
+              </ul>
+            </div>
+            <div>
+              <h4>検証</h4>
+              <ul><li>localとCIで同じ<code>task ci</code></li><li>Xcode runner assertionの再現有無をCIで切分け</li><li>format前後のbuild/test結果一致</li></ul>
+              <div class="acceptance"><strong>完了条件:</strong> unit testの実件数が記録され、壊れたlint/format commandが0。tag releaseはquality失敗時に開始されない。</div>
+              <p class="file-list">主な対象: CLAUDE.md, Taskfile.yml, .github/workflows/ci.yml, release.yml, PR template, lint/format/version config, scripts/check-xcresult-tests.sh</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="work" id="pr02">
+        <div class="work-head"><h3>PR-02 — LRU所有権と正確なmemory cost</h3><div class="work-tags"><span class="pill p0">MEM-01</span><span class="pill p2">CACHE-02</span><span class="pill size">M</span></div></div>
+        <div class="work-body">
+          <div class="work-grid">
+            <div>
+              <h4>変更</h4>
+              <ul>
+                <li>重複するnode実装をinternal <code>LRUStorage&lt;Key, Value&gt;</code>へ統合。<code>prev</code>をweak、<code>clear()</code>は全linkを防御的に切断する。</li>
+                <li>full image / thumbnail managerはstorageをlock内で操作し、辞書・list・costを1transactionで更新する。</li>
+                <li>costは可能ならCGImageの<code>bytesPerRow × height</code>、fallback時だけ全representationの安全な合計を使う。overflowと0/負pixelをguardする。</li>
+                <li>disk cache形式と既定上限値は変更しない。</li>
+              </ul>
+            </div>
+            <div>
+              <h4>テスト</h4>
+              <ul><li>2node以上をclear後、weak deinit probeがnil</li><li>head/middle/tail evictionと再挿入</li><li>multi-representation / 0 pixel cost</li><li>並行get/cache/clear stress</li></ul>
+              <div class="acceptance"><strong>完了条件:</strong> clear後に全Valueが解放され、LRU順序とcostが一致。Instrumentsでcache clear後のpersistent image allocationが基準線へ戻る。</div>
+              <p class="file-list">新規候補: Domain/LRUStorage.swift, Tests/LRUStorageTests.swift。変更: CacheManager.swift, ThumbnailCacheManager.swift, project.pbxproj</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="work" id="pr03">
+        <div class="work-head"><h3>PR-03 — Task registryとlong-lived Taskの所有権</h3><div class="work-tags"><span class="pill p1">ASYNC-02</span><span class="pill p1">BUILD-01 部分</span><span class="pill size">L</span></div></div>
+        <div class="work-body">
+          <div class="work-grid">
+            <div>
+              <h4>変更</h4>
+              <ul>
+                <li><code>ImageLoader</code>のkeyを<code>ImageRequestKey(url, targetPixelSize)</code>にし、entryへUUIDを持たせる。完了cleanupは現entry ID一致時だけremoveする。</li>
+                <li>prefetch entryは成功・失敗・cancelの全経路でremove。consumerが0になったunderlying decodeだけcancelし、display consumerをprefetch cancelに巻き込まない。</li>
+                <li>warmer、ThumbnailCarousel in-flight、Toast dismissへgeneration tokenを導入し、古いTaskが新handle/stateを消せないようにする。</li>
+                <li>ThumbnailActivityModel / SlideshowTimerはsleep前にselfをstrong保持しないloopへ変更し、deinitとscene disappearの両方でcancelする。</li>
+                <li>lock stateをtyped lockへ寄せ、Swift 6で説明できないmutable Sendableを除く。</li>
+              </ul>
+            </div>
+            <div>
+              <h4>テスト</h4>
+              <ul><li>同URL・異sizeは別decode</li><li>遅いwaiterが新entryを消さない</li><li>prefetch完了後registry=0</li><li>warmer A完了後もB handle保持</li><li>model/timer解放weak probe</li><li>連続toastは最新だけdismiss</li></ul>
+              <div class="acceptance"><strong>完了条件:</strong> すべてのTaskにowner、cancel point、identity、終了cleanupがあり、debug task countsがidle時0になる。</div>
+              <p class="file-list">対象: ImageLoader.swift, ImageBrowserViewModel.swift, ThumbnailCarousel.swift, ThumbnailActivityIndicator.swift, SlideshowTimer.swift, ToastOverlay.swift + related tests</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="work" id="pr04">
+        <div class="work-head"><h3>PR-04 — Folder scan sessionと世代隔離</h3><div class="work-tags"><span class="pill p0">ASYNC-01</span><span class="pill p1">ARCH-01 部分</span><span class="pill size">L</span></div></div>
+        <div class="work-body">
+          <div class="work-grid">
+            <div>
+              <h4>変更</h4>
+              <ul>
+                <li><code>FolderScanEvent</code>を<code>first(URL)</code>、<code>progress([URL])</code>、<code>complete([URL])</code>として定義。</li>
+                <li><code>FolderScanner.scan</code>はowned enumeration Taskを持つAsyncThrowingStreamを返す。stream terminationでTaskをcancelし、共有<code>isCancelled</code>と未使用<code>currentScanTask</code>を削除する。</li>
+                <li>ViewModelはopenごとに<code>BrowserSessionID</code>を発行。favorites load、scan event、error、warmer開始の全commit直前にsession一致をguardする。</li>
+                <li><code>CancellationError</code>は正常終了として扱い、次folderのerror/loading stateを書き換えない。</li>
+              </ul>
+            </div>
+            <div>
+              <h4>テスト</h4>
+              <ul><li>Aのfirst直後にBをopen</li><li>Aのprogress await中にBをopen</li><li>A errorがBへ表示されない</li><li>cancel storm 100回</li><li>stream consumer終了でenumerator停止</li></ul>
+              <div class="acceptance"><strong>完了条件:</strong> session B開始後、A由来のstate mutationが0。旧callback overloadとcancel booleanはproductionから消える。</div>
+              <p class="file-list">新規候補: Domain/FolderScanSession.swift, Tests/FolderSessionRaceTests.swift。変更: FolderScanner.swift, ImageBrowserViewModel.swift, project.pbxproj</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="work" id="pr05">
+        <div class="work-head"><h3>PR-05 — Selection transactionと破壊操作の安全化</h3><div class="work-tags"><span class="pill p0">STATE-01</span><span class="pill p1">ERR-01 部分</span><span class="pill size">XL</span></div></div>
+        <div class="work-body">
+          <div class="work-grid">
+            <div>
+              <h4>変更</h4>
+              <ul>
+                <li><code>BrowserSessionState</code>に<code>phase</code>、sorted URLs、committed <code>selection</code>、pending loadを集約する。</li>
+                <li><code>currentIndex</code>、<code>currentImageURL</code>、imageはselectionから派生。<code>targetIndex=-1</code> sentinelと配列差替え後の手動同期を廃止する。</li>
+                <li>scan completeは<code>loadedImageURL</code>をanchorとしてsort後indexを解決。subdirectory enable/disable、filter、reloadも同じtransition APIを使う。</li>
+                <li>空completeは<code>phase=.empty</code>、loading=false、selection=nil。UIは空表示へ遷移する。</li>
+                <li>delete/favorite直前にcommitted URLと表示loadID一致をguard。deleteはcaptureしたURLをTrashへ送り、成功後に次selectionをtransaction commitする。</li>
+              </ul>
+            </div>
+            <div>
+              <h4>不変条件</h4>
+              <pre><code>selection == nil  ⇔  phase is empty/failed/initial
+selection.index is valid
+urls[selection.index] == selection.url
+displayed image belongs to selection.loadID
+destructive action URL == selection.url</code></pre>
+              <h4>テスト</h4>
+              <ul><li>列挙順≠sort順</li><li>subdirectory追加で先頭変更</li><li>reloadでanchor削除/維持</li><li>空folder</li><li>navigation連打中delete</li><li>trash mockが表示URLのみ受信</li></ul>
+              <div class="acceptance"><strong>完了条件:</strong> 全selection transitionで不変条件assertが通り、画像・カウンタ・thumbnail枠・favorite/delete URLが常に同一。</div>
+              <p class="file-list">新規候補: Domain/BrowserSessionState.swift, Tests/BrowserSelectionTests.swift, Tests/ImageDeletionSafetyTests.swift。変更: VM, scanner adapter, ImageDisplayView</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="work" id="pr06">
+        <div class="work-head"><h3>PR-06 — Favorites / Metadata / Privacyのselection追従</h3><div class="work-tags"><span class="pill p1">STATE-02</span><span class="pill p1">STATE-03</span><span class="pill p2">PRIV-01 部分</span><span class="pill size">L</span></div></div>
+        <div class="work-body">
+          <div class="work-grid">
+            <div>
+              <h4>変更</h4>
+              <ul>
+                <li>ViewModel内favorite snapshotを正規化URL keyの<code>[URL: Int]</code> 1個へ統合。flat/aggregated辞書を廃止する。</li>
+                <li>favorite mutationはstore成功後にsnapshotへ反映し、filterは常に同じsnapshotから派生。同名fileが別folderにあっても衝突しない。</li>
+                <li>metadata Taskを所有し、panel表示中のselection変更でcancel/restart。sessionID + loadID一致時だけ結果をcommitする。</li>
+                <li>privacy ON時はlast-viewed debounceとmetadata/prompt関連Taskをcancelし、永続化commit直前にもprivacyを再確認する。</li>
+              </ul>
+            </div>
+            <div>
+              <h4>テスト</h4>
+              <ul><li>親/sub同名fileのfavorite独立</li><li>統合modeでset/remove直後の表示</li><li>filter中mutation</li><li>metadata A遅延中にBへ移動</li><li>panel close cancel</li><li>privacy ON直前のlast-viewed非保存</li></ul>
+              <div class="acceptance"><strong>完了条件:</strong> favorite levelのsourceは1つ。現在selection以外のmetadata/last-viewed完了がUI・diskへcommitされない。</div>
+              <p class="file-list">対象: ImageBrowserViewModel.swift, FavoritesStore.swift, InfoPanel.swift, LastViewed/Favorites/Subdirectory/Metadata tests</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="work" id="pr07">
+        <div class="work-head"><h3>PR-07 — Scene-local commandsとnon-sandbox path migration</h3><div class="work-tags"><span class="pill p0">SCENE-01</span><span class="pill p1">FS-01</span><span class="pill size">XL</span></div></div>
+        <div class="work-body">
+          <div class="work-grid">
+            <div>
+              <h4>変更</h4>
+              <ul>
+                <li><code>AppServices</code>をprocess-global repository/service container、<code>BrowserWindowSession</code>をscene-local observable stateとして分離する。</li>
+                <li>folder picker、path input、reload、cache clear、sibling、zoomはFocusedValues経由のfocused scene actionへ置換。global boolean/optional command slotsを削除する。</li>
+                <li>metrics collectorとactivity modelをwindow sessionへ所属させ、scene disappearでstop/cancelする。</li>
+                <li>非sandbox方針に従いsecurity-scoped bookmark作成・restore・start/stopを削除。sandbox用entitlementsを撤去する。</li>
+                <li>既存recent folder bookmark/pathを1回だけplain standardized pathへmigrationし、履歴順と最大10件を保持する。</li>
+              </ul>
+            </div>
+            <div>
+              <h4>テスト</h4>
+              <ul><li>2windowで別folder</li><li>focused windowだけzoom/reload/delete</li><li>pickerを1windowだけ表示</li><li>window close後metrics Task解放</li><li>旧bookmark defaultsからpath migration</li><li>存在しないrecent pathの扱い</li></ul>
+              <div class="acceptance"><strong>完了条件:</strong> process-global stateにtransient UI commandが0。production searchで<code>startAccessingSecurityScopedResource</code>が0、entitlementと実装方針が一致。</div>
+              <p class="file-list">新規候補: App/AppServices.swift, App/BrowserWindowSession.swift, App/FocusedBrowserCommands.swift, UI tests/MultiWindowIsolationUITests.swift。変更: AIviewApp, AppState, AppCommands, MainWindowView, RecentFoldersStore, entitlements</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="work" id="pr08">
+        <div class="work-head"><h3>PR-08 — Logging privacyとtyped error presentation</h3><div class="work-tags"><span class="pill p1">LOG-01</span><span class="pill p1">ERR-01</span><span class="pill size">L</span></div></div>
+        <div class="work-body">
+          <div class="work-grid">
+            <div>
+              <h4>変更</h4>
+              <ul>
+                <li>全<code>privacy: .public</code>を監査。path/name/URL/errorをprivate、prompt logを削除、<code>print</code>を0にする。</li>
+                <li><code>NavigationDiagnostics</code>の平文file outputを撤去し、filenameを含まないtyped <code>NavigationEvent</code>のin-memory ring + OSLogへ置換する。</li>
+                <li><code>AppError</code>をuserCancelled / permission / persistence / decode / invariantへ分類。favorite、folder picker、deleteの失敗をalert/toastへ一貫して表示する。</li>
+                <li>disk thumbnail write失敗はbest-effort継続しつつ、session単位にdedupeしたwarningとfailure metricを記録する。</li>
+                <li>CIにlog privacy静的checkを追加する。</li>
+              </ul>
+            </div>
+            <div>
+              <h4>テスト</h4>
+              <ul><li>error→user message mapping</li><li>cancelはalertを出さない</li><li>favorite save failureを表示</li><li>diagnostic eventにpath/name/promptなし</li><li>cache failure dedupe</li><li>production source print=0</li></ul>
+              <div class="acceptance"><strong>完了条件:</strong> sensitive valueのpublic log 0、prompt log 0、独自incident file 0。ユーザー操作の失敗はcancelを除き必ずUIまたは明示的best-effort metricへ到達。</div>
+              <p class="file-list">新規候補: Domain/AppError.swift, Domain/DiagnosticEvent.swift, scripts/check-log-privacy.sh。変更: Logger extension, NavigationDiagnostics, VM, MainWindowView, cache/data services</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="work" id="pr09">
+        <div class="work-head"><h3>PR-09 — Cloudflare Telemetry API v2（server first）</h3><div class="work-tags"><span class="pill p0">SEC-01</span><span class="pill p2">PRIV-01 部分</span><span class="pill size">L</span></div></div>
+        <div class="work-body">
+          <div class="work-grid">
+            <div>
+              <h4>変更</h4>
+              <ul>
+                <li>WranglerをRate Limiting binding対応の4.36以上へ更新しlockfileをcommit。<code>POST /v1/ping</code>を追加する。</li>
+                <li>Content-Type JSON、4 KiB body上限、UUID/semver/OS/arch/locale allowlistを検証。すべてのAPI responseへ<code>Cache-Control: no-store</code>。</li>
+                <li>ping/delete/statsへroute別Rate Limiting binding。keyはIP由来 + route、pingはinstall ID側の上限も併用する。429を明示。</li>
+                <li><code>/stats</code>はBearer tokenへ移し、digestをconstant-time比較。query keyを即時廃止する。</li>
+                <li><code>POST /v1/delete</code>でJSON bodyのhigh-entropy install UUIDを削除可能にする。rate limitとno-storeを適用。</li>
+                <li>既存schemaを<code>migrations/0001_initial.sql</code>へ移し、daily scheduled handlerで<code>last_seen &lt; now-400 days</code>を削除する。</li>
+                <li>旧<code>GET /ping</code>はCORSを外し、rate-limit付きdeprecated routeとして90日だけ維持する。</li>
+              </ul>
+            </div>
+            <div>
+              <h4>Worker tests</h4>
+              <ul><li>method/content-type/body/field validation</li><li>D1 insert/upsert/day count</li><li>429 paths</li><li>stats header auth + no query auth</li><li>no-store / no wildcard CORS</li><li>delete idempotency</li><li>retention boundary 399/401 days</li><li>legacy GET compatibility</li></ul>
+              <div class="acceptance"><strong>完了条件:</strong> Cloudflare Workers Vitest integration上でD1/bindingsを含むtestがgreen。staging migration→smoke→production deployの順で、旧v0.9 clientの204を維持。</div>
+              <p class="file-list">新規: migrations/, test/, vitest.config.ts, tsconfig.json, package-lock.json。変更: src/index.ts, wrangler.toml, package.json, Worker README</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="work" id="pr10">
+        <div class="work-head"><h3>PR-10 — macOS Telemetry client v2とprivacy control</h3><div class="work-tags"><span class="pill p0">SEC-01 client</span><span class="pill p2">PRIV-01</span><span class="pill size">M</span></div></div>
+        <div class="work-body">
+          <div class="work-grid">
+            <div>
+              <h4>変更</h4>
+              <ul>
+                <li>query GETをJSON POSTへ移し、stable install IDをURLから除く。</li>
+                <li>process-global telemetry coordinatorでin-flightを1個に限定。2xx受信後だけ当日送信済みにし、失敗はbounded retry後に次回起動へ残す。</li>
+                <li>analytics OFF時にin-flight taskをcancel。設定へ「匿名IDを削除してリセット」を追加し、server delete成功後にlocal IDを更新する。</li>
+                <li>UI/README/ADRへserver側country、400日retention、削除方法、pseudonymous IDであることを正確に記載する。</li>
+              </ul>
+            </div>
+            <div>
+              <h4>テスト</h4>
+              <ul><li>request URLにqueryなし</li><li>JSON fields/headers</li><li>非2xxでsent markerなし</li><li>multi-windowでも1 request</li><li>OFFでcancel</li><li>delete成功/失敗時のlocal ID</li><li>opt-out時通信0</li></ul>
+              <div class="acceptance"><strong>完了条件:</strong> PR-09 production確認後にmerge。新clientはPOSTのみ使用し、privacy disclosureがserver実態と一致。</div>
+              <p class="file-list">対象: TelemetryService.swift（またはTelemetryCoordinator.swiftへ分離）, SettingsStore/View, AIviewApp, telemetry tests, README英日, ADR 002, distribution spec</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="work" id="pr11">
+        <div class="work-head"><h3>PR-11 — Bounded metadata parserとSwift 6移行</h3><div class="work-tags"><span class="pill p2">PERF-01</span><span class="pill p1">BUILD-01</span><span class="pill size">L</span></div></div>
+        <div class="work-body">
+          <div class="work-grid">
+            <div>
+              <h4>変更</h4>
+              <ul>
+                <li>EXIF/XMPはImageIO metadata APIを優先。PNG fallbackはsignatureからchunkを順次読むbounded parserとし、tEXt/iTXt/zTXtの対象chunkだけを上限付きでdecodeする。</li>
+                <li>複数tEXt時は実際に<code>parameters</code> keywordを持つchunk自身のlengthを使う。truncated/oversized/invalid lengthを安全にrejectする。</li>
+                <li>static mutable formatterをvalue-type format styleまたはlock内生成へ置換。</li>
+                <li>全targetを<code>SWIFT_VERSION=6</code>へ変更し、remaining Sendable/actor diagnosticsを0にする。<code>@unchecked Sendable</code>追加は禁止、既存使用は根拠を再監査する。</li>
+                <li><code>.swift-version</code>も6.0へ更新し、CIのSwift 6 jobを正式gateへ昇格する。</li>
+              </ul>
+            </div>
+            <div>
+              <h4>テスト</h4>
+              <ul><li>parametersが2番目以降のtEXt</li><li>truncated/oversized/unknown chunk</li><li>巨大fixtureでbounded read</li><li>既存prompt extraction互換</li><li>Swift 6 Debug/Release/test build</li><li>TSan navigation/scan stress</li></ul>
+              <div class="acceptance"><strong>完了条件:</strong> full-file <code>Data(contentsOf:)</code>とbinary全体String化がmetadata pathから消え、Swift 6で全targetがwarning/errorなし。</div>
+              <p class="file-list">対象: MetadataExtractor.swift/tests, NavigationDiagnostics replacement, cache/loader concurrency types, project.pbxproj, .swift-version, CI</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="work" id="pr12">
+        <div class="work-head"><h3>PR-12 — Facade分解・文書同期・最終監査</h3><div class="work-tags"><span class="pill p1">ARCH-01</span><span class="pill p2">DOC-01</span><span class="pill size">L</span></div></div>
+        <div class="work-body">
+          <div class="work-grid">
+            <div>
+              <h4>変更</h4>
+              <ul>
+                <li>前PRで導入したstate/controller境界を確定し、ImageBrowserViewModelをUI向けfacadeへ縮小。I/O、scan、favorite persistence、metadata extractionを直接持たせない。</li>
+                <li>MainWindowViewからkeyboard/menu routing、dialogs、toolbarを小View/handlerへ分離する。</li>
+                <li>目標guardrail: ViewModel facade ≤ 800行、MainWindowView ≤ 350行。ただし行数合わせの無意味な分割は禁止し、1type=1責務を優先する。</li>
+                <li>READMEの<code>.aiview/thumbnails/</code>誤記、architecture表、data flow、concurrency model、telemetry disclosureを同期。CHANGELOGと新ADRを作成する。</li>
+                <li>18所見を再監査し、各IDにcode diff + automated test + manual evidenceを紐付ける。</li>
+              </ul>
+            </div>
+            <div>
+              <h4>最終検証</h4>
+              <ul><li>全CI + Release archive</li><li>2-window UI matrix</li><li>Instruments Leaks/Allocations</li><li>TSan stress</li><li>read-only/NAS/external drive smoke</li><li>telemetry staging/prod smoke</li><li>英日README構造一致</li></ul>
+              <div class="acceptance"><strong>完了条件:</strong> coverage matrixの18行がすべて「code・test・evidence」の3点でclosed。未解決のsentinel、global command flag、sensitive log、Swift 5 targetが0。</div>
+              <p class="file-list">対象: VM/MainWindowと抽出先、docs/spec全般、README英日、CHANGELOG、新ADR、review closure report</p>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section id="coverage">
+      <h2>5. 18所見のcoverage matrix</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>担当PR</th><th>主要な自動証拠</th><th>closure条件</th></tr></thead>
+          <tbody>
+            <tr><td>STATE-01</td><td>05</td><td>BrowserSelection / delete safety tests</td><td>表示・URL・indexの不変条件</td></tr>
+            <tr><td>MEM-01</td><td>02</td><td>weak deinit + Instruments</td><td>clear後allocation解放</td></tr>
+            <tr><td>ASYNC-01</td><td>04</td><td>A→B race / cancel storm</td><td>stale commit 0</td></tr>
+            <tr><td>SCENE-01</td><td>07</td><td>MultiWindowIsolation UI tests</td><td>focused sceneだけ操作</td></tr>
+            <tr><td>SEC-01</td><td>09, 10</td><td>Worker binding tests + MockURLProtocol</td><td>POST/rate limit/header auth/no-store</td></tr>
+            <tr><td>ASYNC-02</td><td>03, 04</td><td>registry=0 / deinit / token races</td><td>Task ownerとcleanup明示</td></tr>
+            <tr><td>STATE-02</td><td>06</td><td>stale metadata race</td><td>selection一致commitのみ</td></tr>
+            <tr><td>STATE-03</td><td>06</td><td>same-name multi-folder favorite</td><td>favorite snapshot 1個</td></tr>
+            <tr><td>LOG-01</td><td>08</td><td>privacy static check</td><td>sensitive public log 0</td></tr>
+            <tr><td>FS-01</td><td>07</td><td>source scan + recent migration tests</td><td>security scope API 0</td></tr>
+            <tr><td>ERR-01</td><td>05, 08</td><td>empty folder + injected failures</td><td>cancel以外の失敗が観測可能</td></tr>
+            <tr><td>BUILD-01</td><td>03, 11</td><td>Swift 6 all-target CI</td><td>compile diagnostics 0</td></tr>
+            <tr><td>CI-01</td><td>01</td><td>required CI / test-count check</td><td>releaseがquality依存</td></tr>
+            <tr><td>ARCH-01</td><td>04–08, 12</td><td>責務境界tests + lint guard</td><td>facade化・global command 0</td></tr>
+            <tr><td>PRIV-01</td><td>06, 09, 10</td><td>privacy cancel / retention / disclosure tests</td><td>UI・disk・server policy一致</td></tr>
+            <tr><td>PERF-01</td><td>11</td><td>malformed/large PNG tests</td><td>bounded read</td></tr>
+            <tr><td>DOC-01</td><td>01, 10, 12</td><td>doc link/path checks</td><td>CLAUDE原則とspec同期</td></tr>
+            <tr><td>CACHE-02</td><td>02</td><td>cost calculation tests</td><td>実decode costを反映</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="files">
+      <h2>6. 変更ファイル設計</h2>
+      <div class="grid cards-2">
+        <article class="card">
+          <h4>追加予定 — App / Domain</h4>
+          <ul class="mono">
+            <li>AIview/Sources/App/AppServices.swift</li>
+            <li>AIview/Sources/App/BrowserWindowSession.swift</li>
+            <li>AIview/Sources/App/FocusedBrowserCommands.swift</li>
+            <li>AIview/Sources/Domain/BrowserSessionState.swift</li>
+            <li>AIview/Sources/Domain/FolderScanSession.swift</li>
+            <li>AIview/Sources/Domain/LRUStorage.swift</li>
+            <li>AIview/Sources/Domain/AppError.swift</li>
+            <li>AIview/Sources/Domain/DiagnosticEvent.swift</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h4>追加予定 — Tests / CI / Worker</h4>
+          <ul class="mono">
+            <li>AIviewTests/BrowserSelectionTests.swift</li>
+            <li>AIviewTests/FolderSessionRaceTests.swift</li>
+            <li>AIviewTests/ImageDeletionSafetyTests.swift</li>
+            <li>AIviewTests/TaskOwnershipTests.swift</li>
+            <li>AIviewUITests/MultiWindowIsolationUITests.swift</li>
+            <li>.github/workflows/ci.yml</li>
+            <li>scripts/check-xcresult-tests.sh</li>
+            <li>scripts/check-log-privacy.sh</li>
+            <li>cloudflare/aiview-metrics/migrations/0001_initial.sql</li>
+            <li>cloudflare/aiview-metrics/test/index.spec.ts</li>
+            <li>cloudflare/aiview-metrics/vitest.config.ts</li>
+          </ul>
+        </article>
+      </div>
+      <div class="note warn"><strong>Xcode project注意:</strong> このprojectはfilesystem-synchronized groupではない。新しいSwift/test fileごとに<code>project.pbxproj</code>のFileReference、Group、Sources Build Phase、target membershipを更新し、Debug/Release両方でcompileされることを確認する。</div>
+      <div class="note info"><strong>名称の扱い:</strong> 上記は計画上の安定名。実装中に責務が重なることが判明した場合のみ統合可能だが、削除した境界をViewModel/AppStateへ戻してはならない。</div>
+    </section>
+
+    <section id="tests">
+      <h2>7. テスト戦略</h2>
+      <div class="grid cards-3">
+        <article class="card"><h4>Pure state tests</h4><p>BrowserSessionState、Selection、favorites snapshot、error mapping、diagnostic sanitization。時刻・UUID・filesystemを注入し、sleepや実I/Oへ依存しない。</p></article>
+        <article class="card"><h4>Concurrency tests</h4><p>controllable suspension pointを持つfake scanner/loader/storeで、A→B、cancel、late completionを決定的に再現する。固定sleepだけのrace testは禁止。</p></article>
+        <article class="card"><h4>Integration / UI</h4><p>実temp folder、mock Trash、2window accessibility、focused menu command、read-only cache failure。UI test fixtureはnetworkを無効化する。</p></article>
+        <article class="card"><h4>Worker tests</h4><p>Cloudflare推奨のWorkers Vitest integrationでD1とbindingを含める。各test fileのstorage isolationを利用し、retention testだけ明示時刻を注入する。</p></article>
+        <article class="card"><h4>Static / build</h4><p>Swift 6 Debug/Release、analyze、SwiftLint、SwiftFormat、ShellCheck、log privacy check、dependency lock差分を毎PRで実行する。</p></article>
+        <article class="card"><h4>Runtime evidence</h4><p>release candidateでInstruments Leaks/Allocations、TSan、window open-close、cache clear、100回folder切替、1,000画像navigationを測定する。</p></article>
+      </div>
+      <h3>計画する共通コマンド</h3>
+      <pre><code>task ci                 # build + tests(count&gt;0) + analyze + lint + format + shellcheck
+task test:race          # deterministic session/task race suite
+task test:ui:isolation  # multi-window focused-command suite
+task test:swift6        # all targets, Debug + Release
+task worker:test        # Workers Vitest + local D1 migrations
+task audit:privacy      # log/telemetry/static disclosure checks</code></pre>
+      <p class="small">正確なcommandはPR-01/09でTaskfileへ実装し、READMEやCIへ複製せず全てTaskfileを呼ぶ。</p>
+    </section>
+
+    <section id="rollout">
+      <h2>8. 移行・deploy・rollback</h2>
+      <h3>macOS app</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>対象</th><th>移行</th><th>rollback</th></tr></thead>
+          <tbody>
+            <tr><td>favorites.json</td><td>schema変更なし。URL-key snapshotはmemory内だけ。</td><td>旧versionからそのまま読める。</td></tr>
+            <tr><td>.aiview thumbnail</td><td>形式・path変更なし。memory LRUだけ置換。</td><td>旧version互換。cacheは削除して再生成可能。</td></tr>
+            <tr><td>recent folders</td><td>旧bookmark/pathをplain standardized pathへ1回migration。成功確認後に旧bookmark keyを削除。</td><td>移行前valueを1 releaseだけbackup keyへ保持。</td></tr>
+            <tr><td>window restoration</td><td>SceneStorage pathは維持。restored pathを新WindowSessionへ渡す。</td><td>既存keyを維持するためdata rollback不要。</td></tr>
+            <tr><td>telemetry ID</td><td>既存UUIDを維持しPOST bodyへ移す。reset操作時のみserver row削除後に新UUID。</td><td>server legacy GET期間中は旧clientへ戻せる。</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Cloudflare rollout</h3>
+      <ol>
+        <li><strong>Staging:</strong> local migrationsとVitest後、staging D1へmigration。v2 POST / delete / stats、legacy GETをsmoke test。</li>
+        <li><strong>Production server first:</strong> D1 exportを取得し、migrationをlist→apply。Worker deploy後、old GETとnew POST両方の204、stats auth、429、no-storeを確認。</li>
+        <li><strong>Client release:</strong> v0.10.0をPOST clientとしてrelease。server側でroute別countだけを観測し、payload/UUIDをlogしない。</li>
+        <li><strong>Retention:</strong> 初回scheduled deleteはdry-run countをlogしてから有効化。400日境界を確認する。</li>
+        <li><strong>Legacy retirement:</strong> v0.10.0 releaseから90日後、legacy GET trafficを確認してrouteを削除。これでSEC-01を最終closure。</li>
+      </ol>
+      <div class="note warn"><strong>rollback:</strong> D1 migrationはadditive/CREATE IF NOT EXISTSとし、旧Workerでも動く。retention deleteだけは不可逆なので、最初の実行前にexportを取得し、削除件数に上限を設ける。Worker deploy失敗時は直前versionへrollbackし、client releaseはserver v2確認前に行わない。</div>
+    </section>
+
+    <section id="gates">
+      <h2>9. Merge / Release gate</h2>
+      <div class="gate-list">
+        <article class="card gate-item"><h4>基準線gate</h4><p>unit testsが実際に1件以上実行される。Debug build/analyze/lint/format/shellcheckが再現可能。これ以前にPR-04以降へ着手しない。</p></article>
+        <article class="card gate-item"><h4>P0 correctness gate</h4><p>MEM-01、ASYNC-01、STATE-01の回帰testが先にred、修正後green。delete safety testなしでPR-05をmergeしない。</p></article>
+        <article class="card gate-item"><h4>Scene isolation gate</h4><p>2window UI testでfocused actionの独立性を確認。単一window manual確認だけではSCENE-01をcloseしない。</p></article>
+        <article class="card gate-item"><h4>Security/privacy gate</h4><p>Worker test、log privacy check、telemetry disclosure、security-scope API source scanがgreen。PR-10はPR-09 production smoke後のみmerge。</p></article>
+        <article class="card gate-item"><h4>Swift 6 gate</h4><p>全target Debug/Release/test buildでSwift 6 diagnostics 0。warning suppressionや新しいunchecked conformanceで通さない。</p></article>
+        <article class="card gate-item"><h4>Release gate</h4><p>Instruments/TSan evidence、18所見coverage、docs/CHANGELOG、signed archive/notarization dry-runを完了。legacy endpoint retirementはrelease後の追跡milestoneとして残す。</p></article>
+      </div>
+    </section>
+
+    <section id="risks">
+      <h2>10. リスク管理</h2>
+      <div class="grid cards-2">
+        <article class="card risk-high"><h4>Selection refactorの回帰</h4><p>最も広いnavigation挙動へ触れる。PR-04でsession隔離を先に完成し、PR-05はold/newのcompatibility façadeを保ちながらpure transition testsを追加する。一度にscene分離まで行わない。</p></article>
+        <article class="card risk-high"><h4>テレメトリ本番互換</h4><p>旧v0.9.0はGETしか送れない。server first + 90日dual routeを必須とし、rate limitでlegacy riskを抑える。clientを先にreleaseしない。</p></article>
+        <article class="card risk-medium"><h4>Swift 6診断の雪だるま</h4><p>PR-03からoverride buildを継続し、新規warningを増やさない。最終一括migration前にlock/task構造を直す。uncheckedで負債を隠さない。</p></article>
+        <article class="card risk-medium"><h4>Formatter大規模diff</h4><p>PR-01内でもformat-only commitを独立させ、logic commitと混ぜない。その後の全PRは設定済みformatを前提にし、後半で一括整形しない。</p></article>
+        <article class="card risk-medium"><h4>Recent folder履歴消失</h4><p>migrationはread-old→write-new→read-back verify→delete-oldの順。失敗時は旧keyを保持し、履歴を空にしない。</p></article>
+        <article class="card risk-medium"><h4>Memory testの偽陽性/偽陰性</h4><p>unit deinit probeとInstrumentsの両方を要求する。count=0だけを解放証拠にしない。autoreleasepoolを明示して測定する。</p></article>
+      </div>
+    </section>
+
+    <section id="done">
+      <h2>11. 全体Definition of Done</h2>
+      <ul class="checklist">
+        <li>18所見すべてに担当PR・test・evidenceがある</li>
+        <li>表示画像、selection URL、index、破壊操作URLが常に一致</li>
+        <li>folder Aの完了がsession Bへcommitできない</li>
+        <li>cache clear後に画像nodeが解放される</li>
+        <li>idle時のTask registryとlong-lived task countが0</li>
+        <li>2windowのcommand/state/metricsが独立</li>
+        <li>favorite snapshotがfully-qualified URLの1系統</li>
+        <li>metadataとlast-viewedがselection/privacyへ追従</li>
+        <li>sensitive public log、prompt log、production printが0</li>
+        <li>security-scoped APIとsandbox-only entitlementが0</li>
+        <li>空folderがspinnerではなくempty stateになる</li>
+        <li>Swift 6で全targetがbuild/test可能</li>
+        <li>PR CIとrelease gateが必須</li>
+        <li>WorkerはPOST、rate limit、Bearer stats、no-store、migration、retentionを持つ</li>
+        <li>privacy UI/README/ADRがcountry・400日・削除方法を説明</li>
+        <li>metadata parserがbounded I/O</li>
+        <li>READMEのcache pathとarchitecture文書が実装一致</li>
+        <li>Instruments Leaks/AllocationsとTSanの最終evidenceを保存</li>
+      </ul>
+      <div class="note good"><strong>完了判定:</strong> 「コードを変更した」ではなく、上のchecklistとcoverage matrixが全て証拠付きで満たされた時点。残るlegacy GET routeは90日milestoneで削除してSEC-01を完全closeする。</div>
+    </section>
+
+    <section id="references">
+      <h2>12. 実装時に拘束する公式資料</h2>
+      <div class="grid cards-2">
+        <article class="card">
+          <h4>Apple / Swift</h4>
+          <ul>
+            <li><a href="https://developer.apple.com/documentation/swiftui/managing-user-interface-state/">Managing user interface state</a></li>
+            <li><a href="https://developer.apple.com/documentation/swift/adoptingswift6?changes=latest_min_4__9_2_8">Adopting Swift 6</a></li>
+            <li><a href="https://developer.apple.com/documentation/swift/task/">Task</a></li>
+            <li><a href="https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/">Automatic Reference Counting</a></li>
+            <li><a href="https://developer.apple.com/documentation/os/generating-log-messages-from-your-code">Generating log messages</a></li>
+            <li><a href="https://developer.apple.com/documentation/xcode/diagnosing-memory-thread-and-crash-issues-early">Diagnosing memory, thread, and crash issues early</a></li>
+          </ul>
+        </article>
+        <article class="card">
+          <h4>Cloudflare（2026-08-11確認）</h4>
+          <ul>
+            <li><a href="https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/">Workers Rate Limiting binding</a> — Wrangler 4.36以上、periodは10/60秒</li>
+            <li><a href="https://developers.cloudflare.com/workers/testing/vitest-integration/">Workers Vitest integration</a></li>
+            <li><a href="https://developers.cloudflare.com/d1/reference/migrations/">D1 migrations</a></li>
+            <li><a href="https://developers.cloudflare.com/workers/configuration/cron-triggers/">Cron Triggers</a> — retention scheduled handler</li>
+            <li><a href="https://developers.cloudflare.com/d1/worker-api/prepared-statements/">D1 prepared statements</a></li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <p>AIview comprehensive remediation plan. Review baseline: <span class="mono">14c39d1</span>. このartifactは実装の順序と受け入れ条件を定義し、アプリ本体や外部serviceは変更しない。</p>
+    </footer>
+  </main>
+</body>
+</html>

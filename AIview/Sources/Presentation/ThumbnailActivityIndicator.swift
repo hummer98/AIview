@@ -1,4 +1,58 @@
 import SwiftUI
+import os
+
+private final class ThumbnailActivityTaskOwner: Sendable {
+    private struct State {
+        var task: Task<Void, Never>?
+        var generation: UUID?
+    }
+
+    private let lock = OSAllocatedUnfairLock(initialState: State())
+
+    func begin() -> UUID? {
+        lock.withLock { state in
+            guard state.generation == nil else { return nil }
+            let generation = UUID()
+            state.generation = generation
+            return generation
+        }
+    }
+
+    func install(_ task: Task<Void, Never>, generation: UUID) {
+        let accepted = lock.withLock { state in
+            guard state.generation == generation else { return false }
+            state.task = task
+            return true
+        }
+        if !accepted { task.cancel() }
+    }
+
+    func finish(generation: UUID) {
+        lock.withLock { state in
+            guard state.generation == generation else { return }
+            state.task = nil
+            state.generation = nil
+        }
+    }
+
+    func cancel() {
+        let task = lock.withLock { state in
+            let task = state.task
+            state.task = nil
+            state.generation = nil
+            return task
+        }
+        task?.cancel()
+    }
+
+    var activeTaskCount: Int {
+        lock.withLock { $0.generation == nil ? 0 : 1 }
+    }
+
+    deinit {
+        cancel()
+    }
+}
 
 /// ツールバー右端に表示する「サムネイル生成キュー稼働インジケータ」用のスナップショット値型。
 /// View ボディから切り出した純構造体なので、SwiftUI に依存せず単体テスト可能。
@@ -50,45 +104,81 @@ struct ThumbnailActivityState: Sendable, Equatable {
 @MainActor
 @Observable
 final class ThumbnailActivityModel {
+    typealias Sleeper = @Sendable (Duration) async throws -> Void
+
+    struct TaskSnapshot: Equatable, Sendable {
+        let activeTasks: Int
+
+        var isIdle: Bool { activeTasks == 0 }
+    }
+
     private(set) var state: ThumbnailActivityState = .idle
     private(set) var now: Date = .distantPast
 
     var isVisible: Bool { state.shouldDisplay(now: now) }
 
     private let metricsCollector: MetricsCollector
-    private var pollingTask: Task<Void, Never>?
+    private let taskOwner = ThumbnailActivityTaskOwner()
+    private let sleeper: Sleeper
 
-    init(metricsCollector: MetricsCollector) {
+    init(metricsCollector: MetricsCollector, sleeper: Sleeper? = nil) {
         self.metricsCollector = metricsCollector
-    }
-
-    func start() {
-        guard pollingTask == nil else { return }
-        pollingTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                guard let self else { return }
-                self.now = Date()
-                let snap = await self.metricsCollector.snapshot()
-                let lastNonZero: Date? = snap.thumbnailQueue.currentInFlight > 0
-                    ? Date()
-                    : self.state.lastNonZeroAt
-                self.state = ThumbnailActivityState(
-                    inFlight: snap.thumbnailQueue.currentInFlight,
-                    peak: snap.thumbnailQueue.peakInFlight,
-                    totalEnqueued: snap.thumbnailQueue.totalEnqueued,
-                    memoryHitRate: snap.thumbnailMemory.hitRate,
-                    diskHitRate: snap.thumbnailDisk.hitRate,
-                    lastNonZeroAt: lastNonZero
-                )
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-            }
+        self.sleeper = sleeper ?? { @Sendable duration in
+            try await Task.sleep(for: duration)
         }
     }
 
-    func stop() {
-        pollingTask?.cancel()
-        pollingTask = nil
+    deinit {
+        taskOwner.cancel()
     }
+
+    func start() {
+        guard let generation = taskOwner.begin() else { return }
+        let owner = taskOwner
+        let sleeper = self.sleeper
+        let task = Task { @MainActor [weak self, weak owner] in
+            defer { owner?.finish(generation: generation) }
+            guard let metricsCollector = self?.metricsCollector else { return }
+            while !Task.isCancelled {
+                let snap = await metricsCollector.snapshot()
+                guard !Task.isCancelled else { return }
+                self?.apply(snapshot: snap, now: Date())
+
+                // optional-chain の一時的な self 保持が終了してから sleep する。
+                do {
+                    try await sleeper(.seconds(1))
+                } catch {
+                    return
+                }
+            }
+        }
+        taskOwner.install(task, generation: generation)
+    }
+
+    func stop() {
+        taskOwner.cancel()
+    }
+
+    private func apply(snapshot: MetricsSnapshot, now: Date) {
+        self.now = now
+        let lastNonZero: Date? = snapshot.thumbnailQueue.currentInFlight > 0
+            ? now
+            : state.lastNonZeroAt
+        state = ThumbnailActivityState(
+            inFlight: snapshot.thumbnailQueue.currentInFlight,
+            peak: snapshot.thumbnailQueue.peakInFlight,
+            totalEnqueued: snapshot.thumbnailQueue.totalEnqueued,
+            memoryHitRate: snapshot.thumbnailMemory.hitRate,
+            diskHitRate: snapshot.thumbnailDisk.hitRate,
+            lastNonZeroAt: lastNonZero
+        )
+    }
+
+    #if DEBUG
+    func _debugTaskSnapshot() -> TaskSnapshot {
+        TaskSnapshot(activeTasks: taskOwner.activeTaskCount)
+    }
+    #endif
 }
 
 /// サムネイル生成キューの稼働を示すツールバー用インジケータ。

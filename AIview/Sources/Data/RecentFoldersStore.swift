@@ -1,191 +1,132 @@
 import Foundation
 import os
 
-/// 最近開いたフォルダ履歴の永続化プロトコル
-/// Requirements: 1.4, 1.5
-protocol RecentFoldersStoreProtocol: Sendable {
-    func getRecentFolders() -> [URL]
-    func addRecentFolder(_ url: URL)
-    func removeRecentFolder(_ url: URL)
-    func clearRecentFolders()
+/// 最近開いたフォルダ履歴の永続化実装。
+///
+/// Developer ID の非 sandbox 配布を前提とし、plain な正規化 path だけを保存する。
+/// 存在しない path も外付け volume / network mount が戻る可能性があるため履歴に保持し、
+/// open 時に通常の「path not found」error として扱う。
+final class RecentFoldersStore {
+    static let urlsKey = "recentFolderURLs"
+    static let legacyBookmarksKey = "recentFolderBookmarks"
+    static let migrationVersionKey = "recentFoldersPathMigrationVersion"
+    static let pathsBackupKey = "recentFolderURLs.prePathMigrationBackup.v1"
+    static let bookmarksBackupKey = "recentFolderBookmarks.prePathMigrationBackup.v1"
 
-    // Security-Scoped Bookmark support
-    func getBookmarkData(for url: URL) -> Data?
-    func restoreURL(from bookmarkData: Data) -> URL?
-    func startAccessingFolder(_ url: URL) -> Bool
-    func stopAccessingFolder(_ url: URL)
-}
-
-/// 最近開いたフォルダ履歴の永続化実装
-/// Security-Scoped Bookmarkを使用してアクセス権限を保持
-final class RecentFoldersStore: RecentFoldersStoreProtocol, @unchecked Sendable {
+    private let currentMigrationVersion = 1
     private let userDefaults: UserDefaults
     private let maxEntries = 10
-    private let urlsKey = "recentFolderURLs"
-    private let bookmarksKey = "recentFolderBookmarks"
-
-    private var accessedURLs: Set<URL> = []
     private let lock = NSLock()
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
+        migrateLegacyStorageIfNeeded()
     }
 
-    /// 最近開いたフォルダのURL一覧を取得
     func getRecentFolders() -> [URL] {
-        lock.lock()
-        defer { lock.unlock() }
-
-        guard let paths = userDefaults.stringArray(forKey: urlsKey) else {
-            return []
+        lock.withLock {
+            storedNormalizedPaths().map { URL(fileURLWithPath: $0) }
         }
-        return paths.compactMap { URL(fileURLWithPath: $0) }
     }
 
-    /// フォルダをリストに追加（既存の場合は先頭に移動）
+    /// フォルダをリストに追加（既存の場合は先頭に移動）。
     func addRecentFolder(_ url: URL) {
-        lock.lock()
-        defer { lock.unlock() }
-
-        var paths = userDefaults.stringArray(forKey: urlsKey) ?? []
-        let path = url.path
-
-        // 既存のエントリを削除
-        paths.removeAll { $0 == path }
-
-        // 先頭に追加
-        paths.insert(path, at: 0)
-
-        // 最大件数を維持
-        if paths.count > maxEntries {
-            paths = Array(paths.prefix(maxEntries))
+        lock.withLock {
+            var paths = storedNormalizedPaths()
+            let path = normalizedPath(url)
+            paths.removeAll { $0 == path }
+            paths.insert(path, at: 0)
+            persist(Array(paths.prefix(maxEntries)))
+            Logger.app.debug("Added recent folder; total: \(paths.count, privacy: .public)")
         }
-
-        userDefaults.set(paths, forKey: urlsKey)
-
-        // Security-Scoped Bookmarkを保存
-        saveBookmark(for: url)
-
-        Logger.app.debug("Added recent folder: \(url.lastPathComponent, privacy: .public), total: \(paths.count, privacy: .public)")
     }
 
-    /// フォルダをリストから削除
     func removeRecentFolder(_ url: URL) {
-        lock.lock()
-        defer { lock.unlock() }
-
-        var paths = userDefaults.stringArray(forKey: urlsKey) ?? []
-        paths.removeAll { $0 == url.path }
-        userDefaults.set(paths, forKey: urlsKey)
-
-        // Bookmarkも削除
-        removeBookmark(for: url)
-
-        Logger.app.debug("Removed recent folder: \(url.lastPathComponent, privacy: .public)")
-    }
-
-    /// すべての履歴をクリア
-    func clearRecentFolders() {
-        lock.lock()
-        defer { lock.unlock() }
-
-        userDefaults.removeObject(forKey: urlsKey)
-        userDefaults.removeObject(forKey: bookmarksKey)
-
-        Logger.app.info("Cleared all recent folders")
-    }
-
-    // MARK: - Security-Scoped Bookmark Support
-
-    /// URLのSecurity-Scoped Bookmark Dataを取得
-    func getBookmarkData(for url: URL) -> Data? {
-        lock.lock()
-        defer { lock.unlock() }
-
-        guard let bookmarks = userDefaults.dictionary(forKey: bookmarksKey) as? [String: Data] else {
-            return nil
+        lock.withLock {
+            var paths = storedNormalizedPaths()
+            let path = normalizedPath(url)
+            paths.removeAll { $0 == path }
+            persist(paths)
+            Logger.app.debug("Removed recent folder")
         }
-        return bookmarks[url.path]
     }
 
-    /// Bookmark DataからURLを復元
-    func restoreURL(from bookmarkData: Data) -> URL? {
-        var isStale = false
-        do {
-            let url = try URL(
-                resolvingBookmarkData: bookmarkData,
-                options: .withSecurityScope,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
+    func clearRecentFolders() {
+        lock.withLock {
+            userDefaults.removeObject(forKey: Self.urlsKey)
+            userDefaults.removeObject(forKey: Self.legacyBookmarksKey)
+            userDefaults.removeObject(forKey: Self.pathsBackupKey)
+            userDefaults.removeObject(forKey: Self.bookmarksBackupKey)
+            Logger.app.info("Cleared all recent folders")
+        }
+    }
 
-            if isStale {
-                Logger.app.warning("Bookmark is stale, need to refresh")
-                // 古いBookmarkの場合は新しいものを作成すべきだが、
-                // ここでは古いURLを返す
+    /// bookmark/path 混在形式から plain standardized path へ一度だけ移行する。
+    ///
+    /// 旧 bookmark dictionary は path を key に保存していたため、Data を解決せず key を
+    /// migration input として利用できる。移行前 value は rollback 用に1 release分残す。
+    private func migrateLegacyStorageIfNeeded() {
+        lock.withLock {
+            guard userDefaults.integer(forKey: Self.migrationVersionKey) < currentMigrationVersion else {
+                return
             }
 
-            return url
-        } catch {
-            Logger.app.error("Failed to restore URL from bookmark: \(error.localizedDescription, privacy: .public)")
-            return nil
+            let legacyPaths = userDefaults.stringArray(forKey: Self.urlsKey) ?? []
+            let legacyBookmarks = userDefaults.dictionary(forKey: Self.legacyBookmarksKey) ?? [:]
+
+            if userDefaults.object(forKey: Self.pathsBackupKey) == nil,
+               userDefaults.object(forKey: Self.urlsKey) != nil {
+                userDefaults.set(legacyPaths, forKey: Self.pathsBackupKey)
+            }
+            if userDefaults.object(forKey: Self.bookmarksBackupKey) == nil,
+               userDefaults.object(forKey: Self.legacyBookmarksKey) != nil {
+                userDefaults.set(legacyBookmarks, forKey: Self.bookmarksBackupKey)
+            }
+
+            // 履歴順を持つ旧 path 配列を優先し、path 配列にない bookmark key は
+            // dictionary 順に依存しないよう標準化後の昇順で末尾へ補完する。
+            let bookmarkPaths = legacyBookmarks.keys.map {
+                normalizedPath(URL(fileURLWithPath: $0))
+            }.sorted()
+            let normalized = normalizedUniquePaths(legacyPaths + bookmarkPaths)
+            let migrated = Array(normalized.prefix(maxEntries))
+            persist(migrated)
+
+            // UserDefaults の read-back で保存を確認してから旧 bookmark を撤去する。
+            guard userDefaults.stringArray(forKey: Self.urlsKey) == migrated else {
+                Logger.app.error("Recent folder path migration could not be verified")
+                return
+            }
+            userDefaults.removeObject(forKey: Self.legacyBookmarksKey)
+            userDefaults.set(currentMigrationVersion, forKey: Self.migrationVersionKey)
+            Logger.app.info("Migrated recent folders to normalized paths; total: \(migrated.count, privacy: .public)")
         }
     }
 
-    /// Security-Scopedリソースへのアクセスを開始
-    func startAccessingFolder(_ url: URL) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-
-        if accessedURLs.contains(url) {
-            return true
+    private func storedNormalizedPaths() -> [String] {
+        let paths = userDefaults.stringArray(forKey: Self.urlsKey) ?? []
+        let normalized = Array(normalizedUniquePaths(paths).prefix(maxEntries))
+        if normalized != paths {
+            persist(normalized)
         }
-
-        let success = url.startAccessingSecurityScopedResource()
-        if success {
-            accessedURLs.insert(url)
-            Logger.app.debug("Started accessing security-scoped resource: \(url.lastPathComponent, privacy: .public)")
-        } else {
-            Logger.app.warning("Failed to start accessing security-scoped resource: \(url.lastPathComponent, privacy: .public)")
-        }
-        return success
+        return normalized
     }
 
-    /// Security-Scopedリソースへのアクセスを終了
-    func stopAccessingFolder(_ url: URL) {
-        lock.lock()
-        defer { lock.unlock() }
-
-        if accessedURLs.contains(url) {
-            url.stopAccessingSecurityScopedResource()
-            accessedURLs.remove(url)
-            Logger.app.debug("Stopped accessing security-scoped resource: \(url.lastPathComponent, privacy: .public)")
+    private func normalizedUniquePaths(_ paths: [String]) -> [String] {
+        var seen = Set<String>()
+        return paths.compactMap { path in
+            guard !path.isEmpty else { return nil }
+            let normalized = normalizedPath(URL(fileURLWithPath: path))
+            guard seen.insert(normalized).inserted else { return nil }
+            return normalized
         }
     }
 
-    // MARK: - Private Methods
-
-    private func saveBookmark(for url: URL) {
-        do {
-            let bookmarkData = try url.bookmarkData(
-                options: .withSecurityScope,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
-
-            var bookmarks = userDefaults.dictionary(forKey: bookmarksKey) as? [String: Data] ?? [:]
-            bookmarks[url.path] = bookmarkData
-            userDefaults.set(bookmarks, forKey: bookmarksKey)
-
-            Logger.app.debug("Saved bookmark for: \(url.lastPathComponent, privacy: .public)")
-        } catch {
-            Logger.app.error("Failed to create bookmark: \(error.localizedDescription, privacy: .public)")
-        }
+    private func normalizedPath(_ url: URL) -> String {
+        url.standardizedFileURL.path
     }
 
-    private func removeBookmark(for url: URL) {
-        var bookmarks = userDefaults.dictionary(forKey: bookmarksKey) as? [String: Data] ?? [:]
-        bookmarks.removeValue(forKey: url.path)
-        userDefaults.set(bookmarks, forKey: bookmarksKey)
+    private func persist(_ paths: [String]) {
+        userDefaults.set(paths, forKey: Self.urlsKey)
     }
 }

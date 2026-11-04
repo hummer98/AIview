@@ -3,8 +3,19 @@ version: '3'
 vars:
   PROJECT: AIview.xcodeproj
   SCHEME: AIview
+  UNIT_TEST_SCHEME: AIview-UnitTests
+  XCODE_VERSION: '26.6'
   BUILD_DIR: build
   ARCHIVE_PATH: build/AIview.xcarchive
+  TEST_RESULTS_DIR: build/TestResults
+  UNIT_TEST_RESULT: build/TestResults/AIviewTests.xcresult
+  E2E_TEST_RESULT: build/TestResults/FavoritesE2ETests.xcresult
+  UI_TEST_RESULT: build/TestResults/AIviewUITests.xcresult
+  UI_XCTESTRUN: build/Build/Products/AIviewUITests-ci.xctestrun
+  TSAN_TEST_RESULT: build/TestResults/AIviewTSan.xcresult
+  TEST_ARCH:
+    sh: uname -m
+  TEST_DESTINATION: platform=macOS,arch={{.TEST_ARCH}}
 
 tasks:
   default:
@@ -23,60 +34,166 @@ tasks:
     cmds:
       - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -configuration Debug -derivedDataPath {{.BUILD_DIR}} build
 
+  analyze:
+    desc: Run Xcode static analyzer (Debug)
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -configuration Debug -derivedDataPath {{.BUILD_DIR}} analyze
+
   build:release:
     desc: Build release version
     cmds:
       - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -configuration Release -derivedDataPath {{.BUILD_DIR}} build
 
   test:
-    desc: Run all tests (unit + UI)
+    desc: Run all tests (unit + E2E + UI)
     cmds:
-      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' test
+      - task: test:unit
+      - task: test:e2e
+      - task: test:ui
 
   test:unit:
-    desc: Run unit tests only
+    desc: Run unit tests, excluding the dedicated E2E suite
     cmds:
-      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewTests test
+      - task: test:scheme:check
+      - rm -rf "{{.UNIT_TEST_RESULT}}"
+      - mkdir -p "{{.TEST_RESULTS_DIR}}"
+      - xcodebuild -project {{.PROJECT}} -scheme {{.UNIT_TEST_SCHEME}} -destination '{{.TEST_DESTINATION}}' -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 600 -derivedDataPath {{.BUILD_DIR}} -resultBundleVersion 3 -resultBundlePath "{{.UNIT_TEST_RESULT}}" -only-testing:AIviewTests -skip-testing:AIviewTests/FavoritesE2ETests test
+      - |
+        UNIT_TEST_COUNT=$(rg -g '!FavoritesE2ETests.swift' '^[[:space:]]+func test' AIviewTests | wc -l | tr -d '[:space:]')
+        ./scripts/check-xcresult-tests.sh "{{.UNIT_TEST_RESULT}}" \
+          --minimum-tests "$UNIT_TEST_COUNT" \
+          --maximum-skipped 0 \
+          --require-name AIviewTests \
+          --require-name BrowserSessionStateTests
+
+  test:e2e:
+    desc: Run the Favorites end-to-end suite
+    cmds:
+      - task: test:scheme:check
+      - rm -rf "{{.E2E_TEST_RESULT}}"
+      - mkdir -p "{{.TEST_RESULTS_DIR}}"
+      - xcodebuild -project {{.PROJECT}} -scheme {{.UNIT_TEST_SCHEME}} -destination '{{.TEST_DESTINATION}}' -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 900 -derivedDataPath {{.BUILD_DIR}} -resultBundleVersion 3 -resultBundlePath "{{.E2E_TEST_RESULT}}" -only-testing:AIviewTests/FavoritesE2ETests test
+      - |
+        E2E_TEST_COUNT=$(rg '^[[:space:]]+func testE2E_' AIviewTests/FavoritesE2ETests.swift | wc -l | tr -d '[:space:]')
+        ./scripts/check-xcresult-tests.sh "{{.E2E_TEST_RESULT}}" \
+          --minimum-tests "$E2E_TEST_COUNT" \
+          --maximum-skipped 0 \
+          --require-name AIviewTests \
+          --require-name FavoritesE2ETests
 
   test:ui:
     desc: Run UI tests only
     cmds:
-      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests test
+      - task: macos:version
+      - rm -rf "{{.UI_TEST_RESULT}}"
+      - rm -f "{{.UI_XCTESTRUN}}"
+      - mkdir -p "{{.TEST_RESULTS_DIR}}"
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination '{{.TEST_DESTINATION}}' -parallel-testing-enabled NO -derivedDataPath {{.BUILD_DIR}} build-for-testing
+      - |
+        GENERATED_XCTESTRUN=$(find "{{.BUILD_DIR}}/Build/Products" -maxdepth 1 -type f -name '{{.SCHEME}}_{{.SCHEME}}_macosx*-{{.TEST_ARCH}}.xctestrun' -print -quit)
+        if [[ -z "$GENERATED_XCTESTRUN" ]]; then
+          echo "error: build-for-testing did not create an xctestrun file" >&2
+          exit 1
+        fi
+        cp "$GENERATED_XCTESTRUN" "{{.UI_XCTESTRUN}}"
+        UI_TARGET_PATH=$(python3 - "{{.UI_XCTESTRUN}}" <<'PY'
+        import plistlib
+        import sys
+
+        with open(sys.argv[1], "rb") as xctestrun_file:
+            payload = plistlib.load(xctestrun_file)
+
+        matches = []
+        for configuration_index, configuration in enumerate(payload.get("TestConfigurations", [])):
+            for target_index, target in enumerate(configuration.get("TestTargets", [])):
+                if target.get("BlueprintName") == "AIviewUITests":
+                    matches.append(
+                        f"TestConfigurations.{configuration_index}.TestTargets.{target_index}"
+                    )
+
+        if len(matches) != 1:
+            raise SystemExit(
+                f"error: expected one AIviewUITests entry in xctestrun, found {len(matches)}"
+            )
+        print(matches[0])
+        PY
+        )
+        if plutil -extract "$UI_TARGET_PATH.SkipTestIdentifiers" raw -o - "{{.UI_XCTESTRUN}}" >/dev/null 2>&1; then
+          plutil -remove "$UI_TARGET_PATH.SkipTestIdentifiers" "{{.UI_XCTESTRUN}}"
+        fi
+        if plutil -extract "$UI_TARGET_PATH.SkipTestIdentifiers" raw -o - "{{.UI_XCTESTRUN}}" >/dev/null 2>&1; then
+          echo "error: UI SkipTestIdentifiers remain in generated xctestrun" >&2
+          exit 1
+        fi
+      - xcodebuild -xctestrun "{{.UI_XCTESTRUN}}" -destination '{{.TEST_DESTINATION}}' -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 900 -resultBundleVersion 3 -resultBundlePath "{{.UI_TEST_RESULT}}" -only-testing:AIviewUITests/ScrollPerformanceUITests test-without-building
+      - |
+        UI_TEST_COUNT=$(rg '^[[:space:]]+func test' AIviewUITests | wc -l | tr -d '[:space:]')
+        ./scripts/check-xcresult-tests.sh "{{.UI_TEST_RESULT}}" \
+          --minimum-tests "$UI_TEST_COUNT" \
+          --maximum-skipped 0 \
+          --require-name AIviewUITests \
+          --require-name ScrollPerformanceUITests
+
+  test:tsan:
+    desc: Run race/cancellation-focused unit suites under Thread Sanitizer
+    cmds:
+      - task: test:scheme:check
+      - rm -rf "{{.TSAN_TEST_RESULT}}"
+      - mkdir -p "{{.TEST_RESULTS_DIR}}"
+      - xcodebuild -project {{.PROJECT}} -scheme {{.UNIT_TEST_SCHEME}} -destination '{{.TEST_DESTINATION}}' -parallel-testing-enabled NO -enableThreadSanitizer YES -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 900 -derivedDataPath {{.BUILD_DIR}} -resultBundleVersion 3 -resultBundlePath "{{.TSAN_TEST_RESULT}}" -only-testing:AIviewTests/FolderScannerTests -only-testing:AIviewTests/ImageBrowserSessionTests -only-testing:AIviewTests/ImageLoaderContentionTests -only-testing:AIviewTests/BrowserWindowSessionTests -only-testing:AIviewTests/FavoritesMetadataPrivacyTests -only-testing:AIviewTests/ThumbnailWarmerTests test
+      - |
+        TSAN_TEST_COUNT=$(rg '^[[:space:]]+func test' \
+          AIviewTests/FolderScannerTests.swift \
+          AIviewTests/ImageLoaderContentionTests.swift \
+          AIviewTests/BrowserWindowSessionTests.swift \
+          AIviewTests/FavoritesMetadataPrivacyTests.swift \
+          AIviewTests/ThumbnailWarmerTests.swift \
+          | wc -l | tr -d '[:space:]')
+        ./scripts/check-xcresult-tests.sh "{{.TSAN_TEST_RESULT}}" \
+          --minimum-tests "$TSAN_TEST_COUNT" \
+          --maximum-skipped 0 \
+          --require-name AIviewTests \
+          --require-name FolderScannerTests \
+          --require-name ImageBrowserSessionTests \
+          --require-name ImageLoaderContentionTests \
+          --require-name BrowserWindowSessionTests \
+          --require-name FavoritesMetadataPrivacyTests \
+          --require-name ThumbnailWarmerTests
 
   test:perf:
     desc: Run scroll performance tests (200 images)
     cmds:
-      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests/ScrollPerformanceUITests test
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination '{{.TEST_DESTINATION}}' -parallel-testing-enabled NO -only-testing:AIviewUITests/ScrollPerformanceUITests test
 
   test:perf:nocache:
     desc: Run scroll performance test without cache
     cmds:
-      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests/ScrollPerformanceUITests/testScrollPerformance_withoutCache test
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination '{{.TEST_DESTINATION}}' -parallel-testing-enabled NO -only-testing:AIviewUITests/ScrollPerformanceUITests/testScrollPerformance_withoutCache test
 
   test:perf:cache:
     desc: Run scroll performance test with cache
     cmds:
-      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests/ScrollPerformanceUITests/testScrollPerformance_withCache test
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination '{{.TEST_DESTINATION}}' -parallel-testing-enabled NO -only-testing:AIviewUITests/ScrollPerformanceUITests/testScrollPerformance_withCache test
 
   test:perf:memory:
     desc: Run memory usage test during image load
     cmds:
-      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests/ScrollPerformanceUITests/testMemoryUsage_duringImageLoad test
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination '{{.TEST_DESTINATION}}' -parallel-testing-enabled NO -only-testing:AIviewUITests/ScrollPerformanceUITests/testMemoryUsage_duringImageLoad test
 
   test:perf:keynav:
     desc: Run key navigation responsiveness test
     cmds:
-      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests/ScrollPerformanceUITests/testKeyNavigationResponsiveness test
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination '{{.TEST_DESTINATION}}' -parallel-testing-enabled NO -only-testing:AIviewUITests/ScrollPerformanceUITests/testKeyNavigationResponsiveness test
 
   test:perf:keynav:loading:
     desc: Run key navigation test during thumbnail generation
     cmds:
-      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -only-testing:AIviewUITests/ScrollPerformanceUITests/testKeyNavigationDuringThumbnailGeneration test
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination '{{.TEST_DESTINATION}}' -parallel-testing-enabled NO -only-testing:AIviewUITests/ScrollPerformanceUITests/testKeyNavigationDuringThumbnailGeneration test
 
   test:coverage:
     desc: Run tests with coverage
     cmds:
-      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination 'platform=macOS' -enableCodeCoverage YES test
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -destination '{{.TEST_DESTINATION}}' -parallel-testing-enabled NO -enableCodeCoverage YES test
 
   clean:
     desc: Clean build artifacts
@@ -91,28 +208,172 @@ tasks:
 
   lint:
     desc: Run SwiftLint
+    preconditions:
+      - sh: command -v swiftlint >/dev/null 2>&1
+        msg: "SwiftLint is required. Run 'task setup' or 'brew install swiftlint'."
     cmds:
-      - swiftlint lint --path AIview
+      - swiftlint lint --config .swiftlint.yml --strict
 
   lint:fix:
     desc: Run SwiftLint with auto-fix
+    preconditions:
+      - sh: command -v swiftlint >/dev/null 2>&1
+        msg: "SwiftLint is required. Run 'task setup' or 'brew install swiftlint'."
     cmds:
-      - swiftlint lint --fix --path AIview
+      - swiftlint lint --fix --config .swiftlint.yml
 
   format:
     desc: Format code with SwiftFormat
+    preconditions:
+      - sh: command -v swiftformat >/dev/null 2>&1
+        msg: "SwiftFormat is required. Run 'task setup' or 'brew install swiftformat'."
     cmds:
-      - swiftformat AIview AIviewTests AIviewUITests
+      - swiftformat --config .swiftformat --cache ignore AIview AIviewTests AIviewUITests
 
   format:check:
     desc: Check formatting without changes
+    preconditions:
+      - sh: command -v swiftformat >/dev/null 2>&1
+        msg: "SwiftFormat is required. Run 'task setup' or 'brew install swiftformat'."
     cmds:
-      - swiftformat --lint AIview AIviewTests AIviewUITests
+      - swiftformat --lint --config .swiftformat --cache ignore AIview AIviewTests AIviewUITests
 
   lint:sh:
-    desc: Lint shell scripts with ShellCheck
+    desc: Lint shell scripts and enforce production log privacy
+    preconditions:
+      - sh: command -v shellcheck >/dev/null 2>&1
+        msg: "ShellCheck is required. Run 'task setup' or 'brew install shellcheck'."
     cmds:
       - shellcheck scripts/*.sh
+      - ./scripts/check-log-privacy.sh
+
+  lint:privacy:
+    desc: Check production logging privacy policy
+    cmds:
+      - ./scripts/check-log-privacy.sh
+
+  swift:version:
+    desc: Verify the repository and all Xcode targets use Swift 6.0
+    cmds:
+      - test "$(tr -d '[:space:]' < .swift-version)" = "6.0"
+      - test "$(grep -c 'SWIFT_VERSION = 6.0;' AIview.xcodeproj/project.pbxproj)" -eq 6
+
+  xcode:version:
+    desc: Verify the selected Xcode matches the repository CI and release toolchain
+    cmds:
+      - test "$(xcodebuild -version | awk 'NR == 1 { print $2 }')" = "{{.XCODE_VERSION}}"
+
+  macos:version:
+    desc: Reject macOS versions older than 26.5 for Xcode runtime evidence
+    cmds:
+      - |
+        OS_VERSION=$(sw_vers -productVersion)
+        OS_MAJOR=${OS_VERSION%%.*}
+        OS_REMAINDER=${OS_VERSION#*.}
+        OS_MINOR=${OS_REMAINDER%%.*}
+        if (( OS_MAJOR < 26 || (OS_MAJOR == 26 && OS_MINOR < 5) )); then
+          echo "error: macOS 26.5 or newer is required for test runtime evidence; found $OS_VERSION" >&2
+          exit 1
+        fi
+        printf 'Verified macOS runtime evidence host: %s (%s)\n' "$OS_VERSION" "$(sw_vers -buildVersion)"
+
+  test:scheme:check:
+    desc: Verify the shared unhosted unit-test scheme contract
+    cmds:
+      - |
+        python3 - "{{.PROJECT}}/xcshareddata/xcschemes/{{.UNIT_TEST_SCHEME}}.xcscheme" <<'PY'
+        import pathlib
+        import sys
+        import xml.etree.ElementTree as ET
+
+        scheme_path = pathlib.Path(sys.argv[1])
+        if not scheme_path.is_file():
+            raise SystemExit(f"error: shared unit-test scheme is missing: {scheme_path}")
+
+        root = ET.parse(scheme_path).getroot()
+        test_action = root.find("TestAction")
+        if test_action is None:
+            raise SystemExit("error: shared unit-test scheme has no TestAction")
+        if test_action.get("buildConfiguration") != "Debug":
+            raise SystemExit("error: shared unit-test scheme must use Debug")
+        if test_action.get("selectedLauncherIdentifier") != "Xcode.IDEFoundation.Launcher.PosixSpawn":
+            raise SystemExit("error: shared unit-test scheme must use PosixSpawn")
+
+        testables = [
+            reference.get("BlueprintName")
+            for reference in test_action.findall("./Testables/TestableReference/BuildableReference")
+        ]
+        if testables != ["AIviewTests"]:
+            raise SystemExit(
+                f"error: shared unit-test scheme must contain only AIviewTests; found {testables}"
+            )
+        print(f"Verified shared unit-test scheme: {scheme_path}")
+        PY
+      - |
+        if xcodebuild -project {{.PROJECT}} -target AIviewTests -configuration Debug -showBuildSettings \
+          | rg -q '^[[:space:]]+(TEST_HOST|BUNDLE_LOADER) ='; then
+          echo "error: AIviewTests Debug must remain unhosted" >&2
+          exit 1
+        fi
+        echo "Verified AIviewTests Debug is unhosted"
+
+  architecture:check:
+    desc: Enforce facade, scene-state, concurrency, and metadata architecture guardrails
+    cmds:
+      - ./scripts/check-architecture.sh
+
+  worker:install:
+    desc: Install the telemetry Worker dependencies from its lockfile
+    cmds:
+      - npm ci --prefix cloudflare/aiview-metrics
+
+  worker:typecheck:
+    desc: Type-check the telemetry Worker
+    deps: [worker:install]
+    cmds:
+      - npm run typecheck --prefix cloudflare/aiview-metrics
+
+  worker:test:
+    desc: Run the telemetry Worker Vitest and local D1 integration suite
+    deps: [worker:install]
+    cmds:
+      - npm test --prefix cloudflare/aiview-metrics
+
+  worker:dry-run:
+    desc: Validate and bundle the telemetry Worker without deploying
+    deps: [worker:install]
+    cmds:
+      - npm run deploy:dry-run --prefix cloudflare/aiview-metrics
+
+  worker:check:
+    desc: Run the complete telemetry Worker quality gate
+    deps: [worker:install]
+    cmds:
+      - npm run check --prefix cloudflare/aiview-metrics
+
+  ci:static:
+    desc: Run build, analysis, lint, format, privacy, architecture, and Worker gates
+    cmds:
+      - task: test:scheme:check
+      - task: macos:version
+      - task: xcode:version
+      - task: swift:version
+      - task: architecture:check
+      - task: build
+      - task: analyze
+      - task: lint
+      - task: format:check
+      - task: lint:sh
+      - task: worker:check
+
+  ci:
+    desc: Run the complete local/CI quality gate, including normal and TSan runtime tests
+    cmds:
+      - task: ci:static
+      - task: test:unit
+      - task: test:e2e
+      - task: test:ui
+      - task: test:tsan
 
   archive:
     desc: Create release archive
@@ -141,13 +402,44 @@ tasks:
 
   doctor:
     desc: Check if all required tools are installed
+    preconditions:
+      - sh: command -v xcodebuild >/dev/null 2>&1
+        msg: "xcodebuild is required. Install Xcode and select it with xcode-select."
+      - sh: xcrun --find xcresulttool >/dev/null 2>&1
+        msg: "xcresulttool is required. Install a current Xcode command line toolchain."
+      - sh: command -v swiftlint >/dev/null 2>&1
+        msg: "SwiftLint is required. Run 'task setup' or 'brew install swiftlint'."
+      - sh: command -v swiftformat >/dev/null 2>&1
+        msg: "SwiftFormat is required. Run 'task setup' or 'brew install swiftformat'."
+      - sh: command -v shellcheck >/dev/null 2>&1
+        msg: "ShellCheck is required. Run 'task setup' or 'brew install shellcheck'."
+      - sh: command -v node >/dev/null 2>&1
+        msg: "Node.js 22 or newer is required for the telemetry Worker."
+      - sh: 'node -e "process.exit(parseInt(process.versions.node) >= 22 ? 0 : 1)"'
+        msg: "Node.js 22 or newer is required for the telemetry Worker."
+      - sh: command -v npm >/dev/null 2>&1
+        msg: "npm is required for the telemetry Worker."
+      - sh: command -v rg >/dev/null 2>&1
+        msg: "ripgrep is required for test-count and architecture gates."
+      - sh: command -v python3 >/dev/null 2>&1
+        msg: "python3 is required for structured xcresult test-node validation."
     cmds:
-      - echo "Checking required tools..."
-      - echo ""
-      - echo "=== Required ==="
-      - command -v xcodebuild >/dev/null && echo "✓ xcodebuild $(xcodebuild -version | head -1)" || echo "✗ xcodebuild not found (install Xcode)"
-      - echo ""
-      - echo "=== Optional (for lint/format) ==="
-      - command -v swiftlint >/dev/null && echo "✓ swiftlint $(swiftlint version)" || echo "✗ swiftlint not found (brew install swiftlint)"
-      - command -v swiftformat >/dev/null && echo "✓ swiftformat $(swiftformat --version)" || echo "✗ swiftformat not found (brew install swiftformat)"
+      - xcodebuild -version
+      - sw_vers
+      - xcrun xcresulttool version
+      - swiftlint version
+      - swiftformat --version
+      - shellcheck --version
+      - node --version
+      - npm --version
+      - rg --version
+      - python3 --version
     silent: true
+
+  setup:
+    desc: Install local quality tools with Homebrew
+    preconditions:
+      - sh: command -v brew >/dev/null 2>&1
+        msg: "Homebrew is required for this setup task. See https://brew.sh/."
+    cmds:
+      - brew install go-task swiftlint swiftformat shellcheck ripgrep

@@ -9,8 +9,10 @@
 /* Begin PBXBuildFile section */
 		A1000001 /* AIviewApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000001 /* AIviewApp.swift */; };
 		A1000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000002 /* ContentView.swift */; };
-		A1000025 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000025 /* AppState.swift */; };
 		A1000026 /* AppCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000026 /* AppCommands.swift */; };
+		A100006E /* AppServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200006E /* AppServices.swift */; };
+		A100006F /* BrowserWindowSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200006F /* BrowserWindowSession.swift */; };
+		A1000070 /* FocusedBrowserCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000070 /* FocusedBrowserCommands.swift */; };
 		A1000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000003 /* Assets.xcassets */; };
 		A1000004 /* FileSystemAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000004 /* FileSystemAccess.swift */; };
 		A1000005 /* RecentFoldersStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000005 /* RecentFoldersStore.swift */; };
@@ -62,6 +64,7 @@
 		A1000054 /* DiskCacheStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000054 /* DiskCacheStoreTests.swift */; };
 		A1000055 /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000055 /* SettingsStoreTests.swift */; };
 		A1000057 /* ThumbnailCarouselTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000057 /* ThumbnailCarouselTests.swift */; };
+		A10000E0 /* ScrollWheelPanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000E0 /* ScrollWheelPanTests.swift */; };
 		A1000058 /* ImageBrowserViewModelSiblingFolderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */; };
 		A1000059 /* IsolatedRecentFoldersStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000059 /* IsolatedRecentFoldersStore.swift */; };
 		A1000060 /* BeepPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000060 /* BeepPlayer.swift */; };
@@ -71,6 +74,24 @@
 		A1000064 /* DummyImageGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000064 /* DummyImageGenerator.swift */; };
 		A1000065 /* ThumbnailActivityIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000065 /* ThumbnailActivityIndicator.swift */; };
 		A1000066 /* ThumbnailActivityStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000066 /* ThumbnailActivityStateTests.swift */; };
+		A1000067 /* LRUStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000067 /* LRUStorage.swift */; };
+		A1000068 /* LRUStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000068 /* LRUStorageTests.swift */; };
+		A1000069 /* BrowserSessionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000069 /* BrowserSessionState.swift */; };
+		A100006A /* BrowserSessionStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200006A /* BrowserSessionStateTests.swift */; };
+		A100006B /* ImageDeletionSafetyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200006B /* ImageDeletionSafetyTests.swift */; };
+		A100006C /* FavoritesMetadataPrivacyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200006C /* FavoritesMetadataPrivacyTests.swift */; };
+		A100006D /* FavoriteSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200006D /* FavoriteSnapshot.swift */; };
+		A1000071 /* BrowserWindowSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000071 /* BrowserWindowSessionTests.swift */; };
+		A1000072 /* AppError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000072 /* AppError.swift */; };
+		A1000073 /* ErrorPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000073 /* ErrorPresentationTests.swift */; };
+		A1000074 /* TelemetryCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000074 /* TelemetryCoordinatorTests.swift */; };
+		A1000075 /* BrowserSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000075 /* BrowserSessionController.swift */; };
+		A1000076 /* BrowserSessionPrimitives.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000076 /* BrowserSessionPrimitives.swift */; };
+		A1000077 /* SlideshowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000077 /* SlideshowController.swift */; };
+		A1000078 /* BrowserKeyboardRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000078 /* BrowserKeyboardRouter.swift */; };
+		A1000079 /* BrowserWindowDialogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000079 /* BrowserWindowDialogs.swift */; };
+		A100007A /* BrowserWindowChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200007A /* BrowserWindowChrome.swift */; };
+		A100007B /* ImageBrowserFacadeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200007B /* ImageBrowserFacadeTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -93,8 +114,10 @@
 /* Begin PBXFileReference section */
 		A2000001 /* AIviewApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIviewApp.swift; sourceTree = "<group>"; };
 		A2000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		A2000025 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		A2000026 /* AppCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCommands.swift; sourceTree = "<group>"; };
+		A200006E /* AppServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppServices.swift; sourceTree = "<group>"; };
+		A200006F /* BrowserWindowSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWindowSession.swift; sourceTree = "<group>"; };
+		A2000070 /* FocusedBrowserCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusedBrowserCommands.swift; sourceTree = "<group>"; };
 		A2000003 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A2000004 /* FileSystemAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSystemAccess.swift; sourceTree = "<group>"; };
 		A2000005 /* RecentFoldersStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentFoldersStore.swift; sourceTree = "<group>"; };
@@ -118,7 +141,6 @@
 		A2000024 /* PerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceTests.swift; sourceTree = "<group>"; };
 		A5000001 /* AIview.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIview.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A5000002 /* AIviewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIviewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		A2000023 /* AIview.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIview.entitlements; sourceTree = "<group>"; };
 		A2000027 /* ThumbnailCacheManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCacheManager.swift; sourceTree = "<group>"; };
 		A2000028 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		A200003A /* TelemetryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryService.swift; sourceTree = "<group>"; };
@@ -149,6 +171,7 @@
 		A2000054 /* DiskCacheStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCacheStoreTests.swift; sourceTree = "<group>"; };
 		A2000055 /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		A2000057 /* ThumbnailCarouselTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCarouselTests.swift; sourceTree = "<group>"; };
+		A20000E0 /* ScrollWheelPanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollWheelPanTests.swift; sourceTree = "<group>"; };
 		A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserViewModelSiblingFolderTests.swift; sourceTree = "<group>"; };
 		A2000059 /* IsolatedRecentFoldersStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IsolatedRecentFoldersStore.swift; sourceTree = "<group>"; };
 		A2000060 /* BeepPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeepPlayer.swift; sourceTree = "<group>"; };
@@ -158,6 +181,24 @@
 		A2000064 /* DummyImageGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DummyImageGenerator.swift; sourceTree = "<group>"; };
 		A2000065 /* ThumbnailActivityIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailActivityIndicator.swift; sourceTree = "<group>"; };
 		A2000066 /* ThumbnailActivityStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailActivityStateTests.swift; sourceTree = "<group>"; };
+		A2000067 /* LRUStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LRUStorage.swift; sourceTree = "<group>"; };
+		A2000068 /* LRUStorageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LRUStorageTests.swift; sourceTree = "<group>"; };
+		A2000069 /* BrowserSessionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSessionState.swift; sourceTree = "<group>"; };
+		A200006A /* BrowserSessionStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSessionStateTests.swift; sourceTree = "<group>"; };
+		A200006B /* ImageDeletionSafetyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageDeletionSafetyTests.swift; sourceTree = "<group>"; };
+		A200006C /* FavoritesMetadataPrivacyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesMetadataPrivacyTests.swift; sourceTree = "<group>"; };
+		A200006D /* FavoriteSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteSnapshot.swift; sourceTree = "<group>"; };
+		A2000071 /* BrowserWindowSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWindowSessionTests.swift; sourceTree = "<group>"; };
+		A2000072 /* AppError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppError.swift; sourceTree = "<group>"; };
+		A2000073 /* ErrorPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorPresentationTests.swift; sourceTree = "<group>"; };
+		A2000074 /* TelemetryCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryCoordinatorTests.swift; sourceTree = "<group>"; };
+		A2000075 /* BrowserSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSessionController.swift; sourceTree = "<group>"; };
+		A2000076 /* BrowserSessionPrimitives.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSessionPrimitives.swift; sourceTree = "<group>"; };
+		A2000077 /* SlideshowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowController.swift; sourceTree = "<group>"; };
+		A2000078 /* BrowserKeyboardRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserKeyboardRouter.swift; sourceTree = "<group>"; };
+		A2000079 /* BrowserWindowDialogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWindowDialogs.swift; sourceTree = "<group>"; };
+		A200007A /* BrowserWindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWindowChrome.swift; sourceTree = "<group>"; };
+		A200007B /* ImageBrowserFacadeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserFacadeTests.swift; sourceTree = "<group>"; };
 		A5000005 /* AIviewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIviewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2000080 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		A2000081 /* Developer.xcconfig.sample */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Developer.xcconfig.sample; sourceTree = "<group>"; };
@@ -201,7 +242,6 @@
 		A7000002 /* AIview */ = {
 			isa = PBXGroup;
 			children = (
-				A2000023 /* AIview.entitlements */,
 				A70000F0 /* Config */,
 				A7000003 /* Sources */,
 				A2000003 /* Assets.xcassets */,
@@ -234,8 +274,10 @@
 			children = (
 				A2000001 /* AIviewApp.swift */,
 				A2000002 /* ContentView.swift */,
-				A2000025 /* AppState.swift */,
 				A2000026 /* AppCommands.swift */,
+				A200006E /* AppServices.swift */,
+				A200006F /* BrowserWindowSession.swift */,
+				A2000070 /* FocusedBrowserCommands.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -256,12 +298,19 @@
 		A7000006 /* Domain */ = {
 			isa = PBXGroup;
 			children = (
+				A2000072 /* AppError.swift */,
 				A2000006 /* FolderScanner.swift */,
 				A2000007 /* ImageLoader.swift */,
 				A2000008 /* CacheManager.swift */,
+				A2000067 /* LRUStorage.swift */,
+				A2000069 /* BrowserSessionState.swift */,
+				A2000075 /* BrowserSessionController.swift */,
+				A2000076 /* BrowserSessionPrimitives.swift */,
+				A200006D /* FavoriteSnapshot.swift */,
 				A2000027 /* ThumbnailCacheManager.swift */,
 				A2000010 /* MetadataExtractor.swift */,
 				A2000011 /* ImageBrowserViewModel.swift */,
+				A2000077 /* SlideshowController.swift */,
 				A2000035 /* SlideshowTimer.swift */,
 				A2000045 /* Metrics.swift */,
 				A2000046 /* MetricsCollector.swift */,
@@ -277,6 +326,9 @@
 			isa = PBXGroup;
 			children = (
 				A2000012 /* MainWindowView.swift */,
+				A2000078 /* BrowserKeyboardRouter.swift */,
+				A2000079 /* BrowserWindowDialogs.swift */,
+				A200007A /* BrowserWindowChrome.swift */,
 				A2000013 /* ImageDisplayView.swift */,
 				A2000014 /* ThumbnailCarousel.swift */,
 				A2000015 /* InfoPanel.swift */,
@@ -298,6 +350,14 @@
 				A2000018 /* RecentFoldersStoreTests.swift */,
 				A2000019 /* FolderScannerTests.swift */,
 				A2000020 /* CacheManagerTests.swift */,
+				A2000068 /* LRUStorageTests.swift */,
+				A200006A /* BrowserSessionStateTests.swift */,
+				A200006B /* ImageDeletionSafetyTests.swift */,
+				A200006C /* FavoritesMetadataPrivacyTests.swift */,
+				A2000071 /* BrowserWindowSessionTests.swift */,
+				A2000073 /* ErrorPresentationTests.swift */,
+				A2000074 /* TelemetryCoordinatorTests.swift */,
+				A200007B /* ImageBrowserFacadeTests.swift */,
 				A2000021 /* MetadataExtractorTests.swift */,
 				A2000022 /* ImageLoaderTests.swift */,
 				A2000024 /* PerformanceTests.swift */,
@@ -314,6 +374,7 @@
 				A2000054 /* DiskCacheStoreTests.swift */,
 				A2000055 /* SettingsStoreTests.swift */,
 				A2000057 /* ThumbnailCarouselTests.swift */,
+				A20000E0 /* ScrollWheelPanTests.swift */,
 				A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */,
 				A2000050 /* ThumbnailWarmerTests.swift */,
 				A2000062 /* ThumbnailPriorityTests.swift */,
@@ -466,19 +527,31 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000072 /* AppError.swift in Sources */,
 				A1000001 /* AIviewApp.swift in Sources */,
 				A1000002 /* ContentView.swift in Sources */,
-				A1000025 /* AppState.swift in Sources */,
 				A1000026 /* AppCommands.swift in Sources */,
+				A100006E /* AppServices.swift in Sources */,
+				A100006F /* BrowserWindowSession.swift in Sources */,
+				A1000070 /* FocusedBrowserCommands.swift in Sources */,
 				A1000004 /* FileSystemAccess.swift in Sources */,
 				A1000005 /* RecentFoldersStore.swift in Sources */,
 				A1000006 /* FolderScanner.swift in Sources */,
 				A1000007 /* ImageLoader.swift in Sources */,
 				A1000008 /* CacheManager.swift in Sources */,
+				A1000067 /* LRUStorage.swift in Sources */,
+				A1000069 /* BrowserSessionState.swift in Sources */,
+				A1000075 /* BrowserSessionController.swift in Sources */,
+				A1000076 /* BrowserSessionPrimitives.swift in Sources */,
+				A100006D /* FavoriteSnapshot.swift in Sources */,
 				A1000009 /* DiskCacheStore.swift in Sources */,
 				A1000010 /* MetadataExtractor.swift in Sources */,
 				A1000011 /* ImageBrowserViewModel.swift in Sources */,
+				A1000077 /* SlideshowController.swift in Sources */,
 				A1000012 /* MainWindowView.swift in Sources */,
+				A1000078 /* BrowserKeyboardRouter.swift in Sources */,
+				A1000079 /* BrowserWindowDialogs.swift in Sources */,
+				A100007A /* BrowserWindowChrome.swift in Sources */,
 				A1000013 /* ImageDisplayView.swift in Sources */,
 				A1000014 /* ThumbnailCarousel.swift in Sources */,
 				A1000015 /* InfoPanel.swift in Sources */,
@@ -510,6 +583,14 @@
 				A1000018 /* RecentFoldersStoreTests.swift in Sources */,
 				A1000019 /* FolderScannerTests.swift in Sources */,
 				A1000020 /* CacheManagerTests.swift in Sources */,
+				A1000068 /* LRUStorageTests.swift in Sources */,
+				A100006A /* BrowserSessionStateTests.swift in Sources */,
+				A100006B /* ImageDeletionSafetyTests.swift in Sources */,
+				A100006C /* FavoritesMetadataPrivacyTests.swift in Sources */,
+				A1000071 /* BrowserWindowSessionTests.swift in Sources */,
+				A1000073 /* ErrorPresentationTests.swift in Sources */,
+				A1000074 /* TelemetryCoordinatorTests.swift in Sources */,
+				A100007B /* ImageBrowserFacadeTests.swift in Sources */,
 				A1000021 /* MetadataExtractorTests.swift in Sources */,
 				A1000022 /* ImageLoaderTests.swift in Sources */,
 				A1000023 /* PerformanceTests.swift in Sources */,
@@ -526,6 +607,7 @@
 				A1000054 /* DiskCacheStoreTests.swift in Sources */,
 				A1000055 /* SettingsStoreTests.swift in Sources */,
 				A1000057 /* ThumbnailCarouselTests.swift in Sources */,
+				A10000E0 /* ScrollWheelPanTests.swift in Sources */,
 				A1000058 /* ImageBrowserViewModelSiblingFolderTests.swift in Sources */,
 				A1000050 /* ThumbnailWarmerTests.swift in Sources */,
 				A1000059 /* IsolatedRecentFoldersStore.swift in Sources */,
@@ -691,7 +773,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = AIview/AIview.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
@@ -703,11 +784,11 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.9.0;
+				MARKETING_VERSION = 0.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIview;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -716,7 +797,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = AIview/AIview.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
@@ -728,27 +808,33 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.9.0;
+				MARKETING_VERSION = 0.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIview;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
 		AC000005 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(BUILT_PRODUCTS_DIR)/AIview.app/Contents/MacOS",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.9.0;
+				MARKETING_VERSION = 0.10.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"$(BUILT_PRODUCTS_DIR)/AIview.app/Contents/MacOS/AIview.debug.dylib",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AIview.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AIview";
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -759,11 +845,11 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.9.0;
+				MARKETING_VERSION = 0.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AIview.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AIview";
 			};
 			name = Release;
@@ -776,11 +862,11 @@
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.9.0;
+				MARKETING_VERSION = 0.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TEST_TARGET_NAME = AIview;
 			};
 			name = Debug;
@@ -793,11 +879,11 @@
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.9.0;
+				MARKETING_VERSION = 0.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TEST_TARGET_NAME = AIview;
 			};
 			name = Release;

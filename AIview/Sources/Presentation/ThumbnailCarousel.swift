@@ -45,10 +45,60 @@ struct ResolveResult {
     let passedThroughLoading: Bool
 }
 
+/// Carousel cell Task のgenerationとentry identityを一体で追跡する。
+/// folder reload後に同じURLが再登録されても、旧Taskのdeferは新entryを削除できない。
+struct ThumbnailInFlightRegistry {
+    struct Token: Hashable, Sendable {
+        let url: URL
+        let generation: UUID
+        let entryID: UUID
+    }
+
+    private(set) var generation = UUID()
+    private(set) var folderID: UUID?
+    private var entries: [URL: Token] = [:]
+
+    /// 各cell Taskの開始時にfolder scopeを同期的に確定する。
+    /// 親Viewと子Viewの`.task`起動順に依存せず、最初のcellだけが世代交代を行う。
+    @discardableResult
+    mutating func ensureFolder(_ folderID: UUID) -> Bool {
+        guard self.folderID != folderID else { return false }
+        self.folderID = folderID
+        generation = UUID()
+        entries.removeAll()
+        return true
+    }
+
+    mutating func begin(url: URL) -> Token? {
+        guard entries[url] == nil else { return nil }
+        let token = Token(url: url, generation: generation, entryID: UUID())
+        entries[url] = token
+        return token
+    }
+
+    @discardableResult
+    mutating func finish(_ token: Token) -> Bool {
+        guard entries[token.url] == token else { return false }
+        entries.removeValue(forKey: token.url)
+        return true
+    }
+
+    func isCurrent(generation: UUID) -> Bool {
+        self.generation == generation
+    }
+
+    var count: Int { entries.count }
+}
+
 /// サムネイルカルーセル
 /// NSCollectionViewベースの仮想化スクロール
 /// Requirements: 2.2-2.5, 9.1-9.3
 struct ThumbnailCarousel: View {
+    private struct CellTaskID: Hashable {
+        let folderID: UUID
+        let url: URL
+    }
+
     let imageURLs: [URL]
     /// フォルダの identity 信号。ViewModel が openFolder / reload / サブディレクトリ切替 /
     /// フィルタ切替で更新する。これが変わったときだけ thumbnailStates をリセットする。
@@ -57,21 +107,17 @@ struct ThumbnailCarousel: View {
     let currentIndex: Int
     let onSelect: (Int) -> Void
     let thumbnailCacheManager: ThumbnailCacheManager
-    var favorites: [String: Int] = [:]
+    var favorites: [URL: Int] = [:]
 
     @State private var thumbnailStates: [URL: ThumbnailLoadState] = [:]
-    // 世代トークン: imageURLs が切替わるたびに +1 し、古い世代の UI 更新を破棄する。
-    @State private var generation: Int = 0
-    // 進行中の load を URL 単位で追跡するデデュプリケーション用ガード。
-    // `.loading` は UI 表示用（ProgressView）、inFlight は処理の多重起動防御用と責務が異なる。
-    // `loadThumbnailAsync` は `@MainActor` 下で同期的に insert/remove するため競合なし。
-    @State private var inFlightURLs: Set<URL> = []
+    // `.loading`（UI）とTask ownership（多重起動防止・identity cleanup）を分離する。
+    @State private var inFlightRegistry = ThumbnailInFlightRegistry()
 
     private static let maxRetryCount = 3
 
     /// 同時生成上限。`ThumbnailGenerator.concurrencyLimit` を View 側からも参照可能にする
     /// 後方互換用シム（テストが `ThumbnailCarousel.thumbnailConcurrencyLimit` を参照）。
-    static var thumbnailConcurrencyLimit: Int { ThumbnailGenerator.concurrencyLimit }
+    nonisolated static var thumbnailConcurrencyLimit: Int { ThumbnailGenerator.concurrencyLimit }
 
     /// 現在表示位置からどれだけ離れた位置まで `.high` 優先度で生成するか。
     /// 80pt サムネ + 4pt 間隔 ≒ 84pt/枚、典型ウィンドウ幅 1000-1400pt で片側 6-8 枚が可視範囲。
@@ -91,16 +137,15 @@ struct ThumbnailCarousel: View {
                             loadState: thumbnailStates[url],
                             isSelected: index == currentIndex,
                             size: thumbnailSize,
-                            favoriteLevel: favorites[url.lastPathComponent] ?? 0
+                            favoriteLevel: favorites[FavoriteURLKey.normalize(url)] ?? 0
                         )
                         .id(index)
                         .onTapGesture {
                             onSelect(index)
                         }
-                        // `.task(id: url)` は url が変わると前の Task を SwiftUI が
-                        // 自動 cancel して新しい Task を起動する。ForEach の id が
-                        // \.offset のままでも、この修飾子は url 単位で発火する。
-                        .task(id: url) {
+                        // folderまたはURLが変わるとSwiftUIが旧Taskをcancelし、新しい
+                        // Taskを起動する。ForEachのidが\.offsetでもreloadを取りこぼさない。
+                        .task(id: CellTaskID(folderID: folderID, url: url)) {
                             await loadThumbnailAsync(for: url, indexInFolder: index)
                         }
                     }
@@ -118,21 +163,6 @@ struct ThumbnailCarousel: View {
                 // 優先で withAnimation ブロックの外で呼ぶ。
                 let window = highPriorityWindow(for: newIndex)
                 ThumbnailGenerator.shared.operationRegistry.updatePriorities(highPriorityURLs: window)
-            }
-            // folderID が変わったタイミングで世代交代。
-            // ViewModel が openFolder / reload / サブディレクトリ切替 / フィルタ切替で folderID を
-            // 更新する。同一内容のフォルダを再読込してもこの Task を再発火させたいときは、
-            // ViewModel が folderID = UUID() を明示的に呼ぶ (reloadCurrentFolder)。
-            // scan progress 中の imageURLs 増分では folderID は更新しないため、scan 中に
-            // thumbnailStates が flush される問題は発生しない（[`docs/spec/01-architecture.md`]
-            // の「フォルダ内容は静的前提」設計）。
-            // セル個別の `.task(id: url)` は SwiftUI が view disappear 時に自動 cancel する。
-            .task(id: folderID) {
-                generation &+= 1
-                thumbnailStates.removeAll()
-                // 世代交代時に古い URL の inFlight 登録が残存すると新世代の再ロードを
-                // 抑制してしまうため、明示的にクリアする。
-                inFlightURLs.removeAll()
             }
         }
     }
@@ -152,7 +182,7 @@ struct ThumbnailCarousel: View {
     /// index が currentIndex ± radius の範囲にあれば `.high`、そうでなければ `.low`。
     /// currentIndex が 0 未満（フォルダ未選択等の過渡状態）は全件 `.low` に倒す。
     /// O(1) の純粋関数。
-    static func priority(forIndex index: Int, currentIndex: Int, radius: Int) -> ThumbnailPriority {
+    nonisolated static func priority(forIndex index: Int, currentIndex: Int, radius: Int) -> ThumbnailPriority {
         guard currentIndex >= 0 else { return .low }
         return abs(index - currentIndex) <= radius ? .high : .low
     }
@@ -160,39 +190,45 @@ struct ThumbnailCarousel: View {
     /// `.task(id: url)` から呼ばれる非同期ロードのエントリポイント。
     /// この関数実行時点の世代トークンを固定し、await 後の state 更新直前に比較することで
     /// フォルダ切替後に遅れて到着する古い世代の完了通知を破棄する。
-    /// `@MainActor` 明示により state アクセスは全て同期。`inFlightURLs` の
-    /// insert/remove も defer で同期実行され競合しない。
+    /// `@MainActor` 明示により state アクセスは全て同期。registry の
+    /// begin/identity付きfinishも defer で同期実行され競合しない。
     /// `indexInFolder` は `ForEach(Array(imageURLs.enumerated()))` から受け取る index で、
     /// O(1) で priority 判定を行うために必要。
     @MainActor
     private func loadThumbnailAsync(for url: URL, indexInFolder: Int) async {
         let filename = url.lastPathComponent
-        let startGeneration = generation
+
+        // SwiftUIは親子`.task`の起動順を保証しないため、folder世代交代を親Taskに
+        // 委ねない。cancel済みの旧cellを除外したうえで、各load開始時に同期確定する。
+        guard !Task.isCancelled else { return }
+        if inFlightRegistry.ensureFolder(folderID) {
+            thumbnailStates.removeAll()
+        }
 
         // 既にロード済み / ロード中 / 失敗済みはスキップ（再度 onAppear で再入しても
         // 無駄な work をしない）
         if let state = thumbnailStates[url] {
             switch state {
             case .loaded:
-                logger.debug("[\(filename)] skip: already loaded")
+                logger.debug("[\(filename, privacy: .private)] skip: already loaded")
                 return
             case .loading:
-                logger.debug("[\(filename)] skip: already loading")
+                logger.debug("[\(filename, privacy: .private)] skip: already loading")
                 return
             case .failed:
-                logger.debug("[\(filename)] skip: already failed")
+                logger.debug("[\(filename, privacy: .private)] skip: already failed")
                 return
             }
         }
 
         // inFlight ガード: `.loading` は UI 表示用状態で設定タイミングが disk lookup 後に
         // 遅延されるため、処理の多重起動を別途防ぐ必要がある。同期 insert + defer remove。
-        if inFlightURLs.contains(url) {
-            logger.debug("[\(filename)] skip: already in flight")
+        guard let inFlightToken = inFlightRegistry.begin(url: url) else {
+            logger.debug("[\(filename, privacy: .private)] skip: already in flight")
             return
         }
-        inFlightURLs.insert(url)
-        defer { inFlightURLs.remove(url) }
+        let startGeneration = inFlightToken.generation
+        defer { inFlightRegistry.finish(inFlightToken) }
 
         let size = CGSize(width: thumbnailSize, height: thumbnailSize)
 
@@ -205,16 +241,16 @@ struct ThumbnailCarousel: View {
         )
 
         // await 後の世代チェック（@MainActor 下なので直接アクセス可）
-        guard startGeneration == generation else { return }
+        guard inFlightRegistry.isCurrent(generation: startGeneration) else { return }
 
         switch result.finalState {
         case .loaded(let image):
             // memory hit / disk hit — `.loading` を経由せず直接確定
-            logger.debug("[\(filename)] cache hit (passedThroughLoading=\(result.passedThroughLoading))")
+            logger.debug("[\(filename, privacy: .private)] cache hit (passedThroughLoading=\(result.passedThroughLoading, privacy: .public))")
             thumbnailStates[url] = .loaded(image)
         case .loading:
             // memory/disk 両 miss — 初めて `.loading` を設定し、生成経路に進む
-            logger.info("[\(filename)] start loading (both caches missed)")
+            logger.info("[\(filename, privacy: .private)] start loading (both caches missed)")
             thumbnailStates[url] = .loading
             let priority = Self.priority(
                 forIndex: indexInFolder,
@@ -242,41 +278,41 @@ struct ThumbnailCarousel: View {
         for url: URL,
         size: CGSize,
         retryCount: Int,
-        generation startGeneration: Int,
+        generation startGeneration: UUID,
         priority: ThumbnailPriority
     ) async {
         let filename = url.lastPathComponent
 
         if Task.isCancelled {
-            logger.warning("[\(filename)] task cancelled at start (retry: \(retryCount))")
+            logger.warning("[\(filename, privacy: .private)] task cancelled at start (retry: \(retryCount, privacy: .public))")
             resetLoadingState(for: url, generation: startGeneration)
             return
         }
 
-        logger.debug("[\(filename)] generating thumbnail (retry: \(retryCount), priority: \(String(describing: priority)))")
+        logger.debug("[\(filename, privacy: .private)] generating thumbnail (retry: \(retryCount, privacy: .public), priority: \(String(describing: priority), privacy: .public))")
         let startTime = CFAbsoluteTimeGetCurrent()
         let thumbnail = await ThumbnailGenerator.shared.generate(for: url, size: thumbnailSize, priority: priority)
         let elapsed = CFAbsoluteTimeGetCurrent() - startTime
 
         if Task.isCancelled {
-            logger.warning("[\(filename)] task cancelled after generate (elapsed: \(elapsed, format: .fixed(precision: 2))s)")
+            logger.warning("[\(filename, privacy: .private)] task cancelled after generate (elapsed: \(elapsed, format: .fixed(precision: 2), privacy: .public)s)")
             resetLoadingState(for: url, generation: startGeneration)
             return
         }
 
         if let thumbnail = thumbnail {
-            logger.debug("[\(filename)] generated successfully (elapsed: \(elapsed, format: .fixed(precision: 2))s)")
+            logger.debug("[\(filename, privacy: .private)] generated successfully (elapsed: \(elapsed, format: .fixed(precision: 2), privacy: .public)s)")
             thumbnailCacheManager.cacheThumbnail(thumbnail, for: url, size: size)
             await thumbnailCacheManager.storeThumbnailToDisk(thumbnail, for: url, size: size)
-            guard startGeneration == generation else { return }
+            guard inFlightRegistry.isCurrent(generation: startGeneration) else { return }
             thumbnailStates[url] = .loaded(thumbnail)
-            logger.info("[\(filename)] loaded successfully")
+            logger.info("[\(filename, privacy: .private)] loaded successfully")
         } else {
             let nextRetryCount = retryCount + 1
-            logger.warning("[\(filename)] generate failed (retry: \(retryCount)/\(Self.maxRetryCount), elapsed: \(elapsed, format: .fixed(precision: 2))s)")
+            logger.warning("[\(filename, privacy: .private)] generate failed (retry: \(retryCount, privacy: .public)/\(Self.maxRetryCount, privacy: .public), elapsed: \(elapsed, format: .fixed(precision: 2), privacy: .public)s)")
             if nextRetryCount < Self.maxRetryCount {
                 let delayMs = 100 * (1 << retryCount)
-                logger.debug("[\(filename)] will retry after \(delayMs)ms")
+                logger.debug("[\(filename, privacy: .private)] will retry after \(delayMs, privacy: .public)ms")
                 try? await Task.sleep(nanoseconds: UInt64(delayMs * 1_000_000))
                 await generateAndCache(
                     for: url,
@@ -286,8 +322,8 @@ struct ThumbnailCarousel: View {
                     priority: priority
                 )
             } else {
-                logger.error("[\(filename)] max retries reached, marking as failed")
-                guard startGeneration == generation else { return }
+                logger.error("[\(filename, privacy: .private)] max retries reached, marking as failed")
+                guard inFlightRegistry.isCurrent(generation: startGeneration) else { return }
                 thumbnailStates[url] = .failed(retryCount: nextRetryCount)
             }
         }
@@ -296,12 +332,12 @@ struct ThumbnailCarousel: View {
     /// キャンセル時に状態をリセット（再度ロード可能にする）。
     /// 世代が切り替わった後の resetLoadingState は新世代の state に干渉させない。
     @MainActor
-    private func resetLoadingState(for url: URL, generation startGeneration: Int) {
-        guard startGeneration == generation else { return }
+    private func resetLoadingState(for url: URL, generation startGeneration: UUID) {
+        guard inFlightRegistry.isCurrent(generation: startGeneration) else { return }
         // .loading状態の場合のみリセット（.loadedや.failedは保持）
         if case .loading = thumbnailStates[url] {
             thumbnailStates[url] = nil
-            logger.debug("[\(url.lastPathComponent)] reset loading state for retry")
+            logger.debug("[\(url.lastPathComponent, privacy: .private)] reset loading state for retry")
         }
     }
 

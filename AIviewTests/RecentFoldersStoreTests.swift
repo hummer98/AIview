@@ -96,6 +96,26 @@ final class RecentFoldersStoreTests: XCTestCase {
         XCTAssertTrue(sut.getRecentFolders().isEmpty)
     }
 
+    func testClearRecentFolders_removesMigrationBackupsButKeepsVersionMarker() {
+        testDefaults.set(["/tmp/legacy"], forKey: RecentFoldersStore.pathsBackupKey)
+        testDefaults.set(
+            ["/tmp/legacy": Data([0x01])],
+            forKey: RecentFoldersStore.bookmarksBackupKey
+        )
+        testDefaults.set(
+            ["/tmp/legacy": Data([0x01])],
+            forKey: RecentFoldersStore.legacyBookmarksKey
+        )
+
+        sut.clearRecentFolders()
+
+        XCTAssertNil(testDefaults.object(forKey: RecentFoldersStore.urlsKey))
+        XCTAssertNil(testDefaults.object(forKey: RecentFoldersStore.legacyBookmarksKey))
+        XCTAssertNil(testDefaults.object(forKey: RecentFoldersStore.pathsBackupKey))
+        XCTAssertNil(testDefaults.object(forKey: RecentFoldersStore.bookmarksBackupKey))
+        XCTAssertEqual(testDefaults.integer(forKey: RecentFoldersStore.migrationVersionKey), 1)
+    }
+
     // MARK: - Persistence Tests
 
     func testRecentFolders_persistAcrossInstances() {
@@ -110,5 +130,58 @@ final class RecentFoldersStoreTests: XCTestCase {
         // Then
         XCTAssertEqual(folders.count, 1)
         XCTAssertEqual(folders.first, testURL)
+    }
+
+    func testAddRecentFolder_normalizesAndDeduplicatesPaths() {
+        sut.addRecentFolder(URL(fileURLWithPath: "/tmp/parent/../folder"))
+        sut.addRecentFolder(URL(fileURLWithPath: "/tmp/folder"))
+
+        XCTAssertEqual(sut.getRecentFolders().map(\.path), ["/tmp/folder"])
+    }
+
+    func testMigration_preservesPathOrderAddsBookmarkOnlyPathsAndRemovesLegacyBookmarks() {
+        testDefaults.removeObject(forKey: RecentFoldersStore.migrationVersionKey)
+        let legacyPaths = ["/tmp/z/../first", "/tmp/second", "/tmp/first"]
+        let legacyBookmarks: [String: Data] = [
+            "/tmp/third": Data([0x01]),
+            "/tmp/second": Data([0x02])
+        ]
+        testDefaults.set(legacyPaths, forKey: RecentFoldersStore.urlsKey)
+        testDefaults.set(legacyBookmarks, forKey: RecentFoldersStore.legacyBookmarksKey)
+
+        let migratedStore = RecentFoldersStore(userDefaults: testDefaults)
+
+        XCTAssertEqual(
+            migratedStore.getRecentFolders().map(\.path),
+            ["/tmp/first", "/tmp/second", "/tmp/third"]
+        )
+        XCTAssertEqual(
+            testDefaults.stringArray(forKey: RecentFoldersStore.pathsBackupKey),
+            legacyPaths
+        )
+        XCTAssertNotNil(testDefaults.dictionary(forKey: RecentFoldersStore.bookmarksBackupKey))
+        XCTAssertNil(testDefaults.object(forKey: RecentFoldersStore.legacyBookmarksKey))
+        XCTAssertEqual(testDefaults.integer(forKey: RecentFoldersStore.migrationVersionKey), 1)
+    }
+
+    func testMigration_runsOnlyOnceAndDoesNotReimportBackupBookmarks() {
+        testDefaults.removeObject(forKey: RecentFoldersStore.migrationVersionKey)
+        testDefaults.set(["/tmp/first"], forKey: RecentFoldersStore.urlsKey)
+        testDefaults.set(["/tmp/legacy": Data([0x01])], forKey: RecentFoldersStore.legacyBookmarksKey)
+        _ = RecentFoldersStore(userDefaults: testDefaults)
+
+        testDefaults.set(["/tmp/current"], forKey: RecentFoldersStore.urlsKey)
+        let reopenedStore = RecentFoldersStore(userDefaults: testDefaults)
+
+        XCTAssertEqual(reopenedStore.getRecentFolders().map(\.path), ["/tmp/current"])
+    }
+
+    func testGetRecentFolders_keepsMissingPathsForRemount() {
+        let missing = URL(fileURLWithPath: "/Volumes/offline-drive/photos")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missing.path))
+
+        sut.addRecentFolder(missing)
+
+        XCTAssertEqual(sut.getRecentFolders(), [missing.standardizedFileURL])
     }
 }

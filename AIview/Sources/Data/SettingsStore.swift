@@ -104,7 +104,8 @@ final class SettingsStore {
     // MARK: - Analytics（匿名利用統計）
 
     /// 匿名の利用統計を送信するか（既定 ON / opt-out）。
-    /// OFF の間はアプリは計測目的の通信を一切行わない。詳細は `TelemetryService`。
+    /// OFF の間は通常の利用 ping を送らない。userが明示したserver deleteだけは実行可能。
+    /// 詳細は `TelemetryCoordinator`。
     var analyticsEnabled: Bool {
         get { defaults.bool(forKey: Keys.analyticsEnabled) }
         set { defaults.set(newValue, forKey: Keys.analyticsEnabled) }

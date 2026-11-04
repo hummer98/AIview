@@ -9,7 +9,7 @@ final class ImageBrowserViewModelSiblingFolderTests: XCTestCase {
     var tempDirectory: URL!
     var recentStoreHelper: IsolatedRecentFoldersStore!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         recentStoreHelper = IsolatedRecentFoldersStore(label: "SiblingFolderTests")
         sut = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
 
@@ -17,8 +17,8 @@ final class ImageBrowserViewModelSiblingFolderTests: XCTestCase {
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
     }
 
-    override func tearDownWithError() throws {
-        sut.stopSlideshow()
+    override func tearDown() async throws {
+        sut.sceneDidDisappear()
         sut = nil
 
         if let tempDir = tempDirectory {
@@ -83,13 +83,11 @@ final class ImageBrowserViewModelSiblingFolderTests: XCTestCase {
         let folderB = siblings[1]
 
         await sut.openFolder(folderB)
-        try await Task.sleep(for: .milliseconds(200))
 
         XCTAssertEqual(sut.currentFolderURL?.lastPathComponent, "b")
 
         // When
         await sut.moveToSiblingFolder(direction: .next)
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then: c に遷移
         XCTAssertEqual(sut.currentFolderURL?.lastPathComponent, "c")
@@ -104,11 +102,9 @@ final class ImageBrowserViewModelSiblingFolderTests: XCTestCase {
         let folderB = siblings[1]
 
         await sut.openFolder(folderB)
-        try await Task.sleep(for: .milliseconds(200))
 
         // When
         await sut.moveToSiblingFolder(direction: .previous)
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then: a に遷移
         XCTAssertEqual(sut.currentFolderURL?.lastPathComponent, "a")
@@ -122,11 +118,9 @@ final class ImageBrowserViewModelSiblingFolderTests: XCTestCase {
         let folderC = siblings[2]
 
         await sut.openFolder(folderC)
-        try await Task.sleep(for: .milliseconds(200))
 
         // When
         await sut.moveToSiblingFolder(direction: .next)
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then: c のまま
         XCTAssertEqual(sut.currentFolderURL?.lastPathComponent, "c", "末尾からラップしないべき")
@@ -139,11 +133,9 @@ final class ImageBrowserViewModelSiblingFolderTests: XCTestCase {
         let folderA = siblings[0]
 
         await sut.openFolder(folderA)
-        try await Task.sleep(for: .milliseconds(200))
 
         // When
         await sut.moveToSiblingFolder(direction: .previous)
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then: a のまま
         XCTAssertEqual(sut.currentFolderURL?.lastPathComponent, "a", "先頭からラップしないべき")
@@ -156,13 +148,10 @@ final class ImageBrowserViewModelSiblingFolderTests: XCTestCase {
         let only = siblings[0]
 
         await sut.openFolder(only)
-        try await Task.sleep(for: .milliseconds(200))
 
         // When
         await sut.moveToSiblingFolder(direction: .next)
-        try await Task.sleep(for: .milliseconds(200))
         await sut.moveToSiblingFolder(direction: .previous)
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then
         XCTAssertEqual(sut.currentFolderURL?.lastPathComponent, "only", "兄弟1つのみなら移動しない")
@@ -176,13 +165,11 @@ final class ImageBrowserViewModelSiblingFolderTests: XCTestCase {
         let folderFile2 = siblings[2]
 
         await sut.openFolder(folderFile2)
-        try await Task.sleep(for: .milliseconds(200))
 
         XCTAssertEqual(sut.currentFolderURL?.lastPathComponent, "file2")
 
         // When: file2 -> .next
         await sut.moveToSiblingFolder(direction: .next)
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then: 自然順で file10 が file2 の次
         XCTAssertEqual(sut.currentFolderURL?.lastPathComponent, "file10",
@@ -200,11 +187,9 @@ final class ImageBrowserViewModelSiblingFolderTests: XCTestCase {
 
         let folderA = siblings[0]
         await sut.openFolder(folderA)
-        try await Task.sleep(for: .milliseconds(200))
 
         // When: a -> .previous で（名前順では .hidden が先にあるが、隠しフォルダなので）移動しないはず
         await sut.moveToSiblingFolder(direction: .previous)
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then: a のまま（.hidden はスキップされ、a が先頭扱い）
         XCTAssertEqual(sut.currentFolderURL?.lastPathComponent, "a",
@@ -220,11 +205,9 @@ final class ImageBrowserViewModelSiblingFolderTests: XCTestCase {
 
         let folderA = siblings[0]
         await sut.openFolder(folderA)
-        try await Task.sleep(for: .milliseconds(200))
 
         // When: a -> .next
         await sut.moveToSiblingFolder(direction: .next)
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then: b に遷移（extra.png はスキップされる）
         XCTAssertEqual(sut.currentFolderURL?.lastPathComponent, "b",

@@ -196,6 +196,31 @@ final class DiskCacheStoreTests: XCTestCase {
         XCTAssertEqual(snap.readHistogram.count, 1)
     }
 
+    func test_writeFailuresAreCountedWhileWarningIsDeduplicatedPerStore() async throws {
+        let store = DiskCacheStore()
+        let nonDirectoryParent = tempDir.appendingPathComponent("not-a-directory")
+        try Data([0x01]).write(to: nonDirectoryParent)
+        let source = nonDirectoryParent.appendingPathComponent("private-name.png")
+
+        for _ in 0..<2 {
+            do {
+                try await store.storeThumbnail(
+                    Data([0x02]),
+                    originalURL: source,
+                    modificationDate: .distantPast
+                )
+                XCTFail("cache write must fail when the parent is a regular file")
+            } catch {
+                // Expected: the actor records the failure before propagating it.
+            }
+        }
+
+        let snapshot = await store.metricsSnapshot()
+        XCTAssertEqual(snapshot.writeFailureCount, 2)
+        XCTAssertEqual(snapshot.writeFailureWarningCount, 1)
+        XCTAssertEqual(snapshot.writeCount, 0)
+    }
+
     // MARK: - Case 10: symlink uses its own path (per-folder semantics)
 
     func test_symlink_usesOwnFolderForCache() async throws {

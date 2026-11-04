@@ -1,12 +1,11 @@
 import SwiftUI
-import os
 
-/// アプリケーションのメニューコマンド定義
-/// Requirements: 1.1, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4
+/// アプリケーションのメニューコマンド定義。
+/// window 操作はすべて FocusedValues の focused scene action へ送る。
 struct AppCommands: Commands {
-    @Bindable var appState: AppState
+    @Bindable var appServices: AppServices
+    @FocusedValue(\.browserCommands) private var browserCommands
 
-    /// ホームディレクトリを~に置換した表示用パスを生成
     private func displayPath(for url: URL) -> String {
         let path = url.path
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
@@ -17,106 +16,108 @@ struct AppCommands: Commands {
     }
 
     var body: some Commands {
-        // ファイルメニューの「新規」を置き換え
         CommandGroup(replacing: .newItem) {
             Button("フォルダを開く...") {
-                appState.showFolderPicker = true
+                browserCommands?.showFolderPicker()
             }
             .keyboardShortcut("o", modifiers: .command)
+            .disabled(browserCommands == nil)
 
             Button("ファイルパスを入力して開く...") {
-                appState.showFilePathInput = true
+                browserCommands?.showFilePathInput()
             }
             .keyboardShortcut("o", modifiers: [.command, .shift])
+            .disabled(browserCommands == nil)
 
-            // 最近使ったフォルダサブメニュー
             Menu("最近使用したフォルダ") {
-                let folders = appState.recentFolders
+                let folders = appServices.recentFolders
                 if folders.isEmpty {
                     Text("履歴なし")
                         .foregroundColor(.secondary)
                 } else {
                     ForEach(folders, id: \.self) { url in
                         Button(displayPath(for: url)) {
-                            appState.openRecentFolder(url)
+                            browserCommands?.openRecentFolder(url)
                         }
+                        .disabled(browserCommands == nil)
                     }
 
                     Divider()
 
                     Button("履歴をクリア") {
-                        appState.clearRecentFolders()
+                        appServices.clearRecentFolders()
                     }
                 }
             }
+
+            Divider()
+
+            Button("表示中の画像をゴミ箱へ移動") {
+                browserCommands?.deleteCurrentImage()
+            }
+            .disabled(browserCommands?.hasImages != true)
         }
 
-        // 表示メニュー
-        // Requirements: 2.1, 2.2, 2.3, 2.4
         CommandMenu("表示") {
             Button("フォルダをリロード") {
-                appState.triggerReload()
+                browserCommands?.reloadFolder()
             }
             .keyboardShortcut("r", modifiers: .command)
-            .disabled(!appState.hasCurrentFolder)
+            .disabled(browserCommands?.hasCurrentFolder != true)
 
             Button("サムネイルキャッシュを削除して再生成") {
-                appState.triggerClearThumbnailCache()
+                browserCommands?.clearThumbnailCache()
             }
             .keyboardShortcut("r", modifiers: [.command, .shift])
-            .disabled(!appState.hasCurrentFolder)
+            .disabled(browserCommands?.hasCurrentFolder != true)
 
             Divider()
 
             Button("前のフォルダ") {
-                appState.requestSiblingFolder(.previous)
+                browserCommands?.moveToSiblingFolder(.previous)
             }
             .keyboardShortcut(.upArrow, modifiers: .command)
-            .disabled(!appState.hasCurrentFolder)
+            .disabled(browserCommands?.hasCurrentFolder != true)
 
             Button("次のフォルダ") {
-                appState.requestSiblingFolder(.next)
+                browserCommands?.moveToSiblingFolder(.next)
             }
             .keyboardShortcut(.downArrow, modifiers: .command)
-            .disabled(!appState.hasCurrentFolder)
+            .disabled(browserCommands?.hasCurrentFolder != true)
 
             Divider()
 
-            // ズーム
             Button("拡大") {
-                appState.requestZoom(.zoomIn)
+                browserCommands?.zoom(.zoomIn)
             }
             .keyboardShortcut("+", modifiers: .command)
-            .disabled(!appState.hasImages)
+            .disabled(browserCommands?.hasImages != true)
 
             Button("縮小") {
-                appState.requestZoom(.zoomOut)
+                browserCommands?.zoom(.zoomOut)
             }
             .keyboardShortcut("-", modifiers: .command)
-            .disabled(!appState.hasImages)
+            .disabled(browserCommands?.hasImages != true)
 
             Button("実際のサイズ") {
-                appState.requestZoom(.actualSize)
+                browserCommands?.zoom(.actualSize)
             }
             .keyboardShortcut("0", modifiers: .command)
-            .disabled(!appState.hasImages)
+            .disabled(browserCommands?.hasImages != true)
 
             Button("ウィンドウに合わせる") {
-                appState.requestZoom(.fit)
+                browserCommands?.zoom(.fit)
             }
             .keyboardShortcut("9", modifiers: .command)
-            .disabled(!appState.hasImages)
+            .disabled(browserCommands?.hasImages != true)
         }
 
-        // 開発メニュー: メトリクスをログに出力
         CommandMenu("開発") {
             Button("診断情報をログ出力") {
-                Task { @MainActor in
-                    let snapshot = await appState.metricsCollector.snapshot()
-                    Logger.metrics.info("\(snapshot.formattedLogString(), privacy: .public)")
-                }
+                browserCommands?.logMetrics()
             }
             .keyboardShortcut("d", modifiers: [.command, .shift])
+            .disabled(browserCommands == nil)
         }
     }
 }

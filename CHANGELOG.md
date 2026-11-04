@@ -2,6 +2,60 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [Unreleased]
+
+## [0.10.0] - 2026-11-04
+
+### Added
+
+- 拡大中にトラックパッドの二本指スクロール（マウスホイール）でパンできるように。フィット以下では従来どおりスクロールを捕捉しない
+- ズームをカーソル位置中心に変更。ピンチはピンチ開始位置、`⌘+` / `⌘−` / `⌘0` はカーソルが画像上にあればその位置を固定点に拡縮（画像外なら中央）
+
+### Fixed
+
+- PNG prompt抽出を全file読込からbounded chunk parserへ置換。ImageIO metadataを優先し、`tEXt` / `iTXt` / `zTXt`の`parameters`だけを1 MiB上限でdecodeして、複数text chunk・truncation・不正length・巨大chunkを安全に処理
+- macOS telemetry clientをquery GETからstrict JSON `POST /v1/ping`へ移行。process-global coordinatorでmulti-window送信を一系列に限定し、2xx後だけ日次markerを記録、bounded retryとanalytics OFF時の即時cancelを追加
+- Settingsから仮名install IDをserver削除してreset可能にし、delete成功後だけlocal ID/markerを更新、失敗時は旧IDを維持して再試行可能なerrorを表示
+- favorite、folder picker/path open、画像load、deleteの失敗をprivacy-safeな`AppError`へ分類し、cancelを除いてwindow-local alertへ一貫して到達させるよう修正
+- path/filename/URL/error detailのpublic log、metadata内promptのlog、production `print`を撤去。NavigationDiagnosticsの平文incident fileと任意文字列breadcrumb APIをtyped bounded in-memory ringへ置換
+- read-only media等のdisk thumbnail write失敗をbest-effortのまま全件metric化し、同一window/sessionのwarningを1回へdedupe
+- window固有のfolder/selection/dialog/zoom/metrics/command stateをscene-local `BrowserWindowSession`へ分離し、メニュー操作が複数windowへbroadcastされる問題を`FocusedValues` routingで修正。window close時にmetrics/activity/操作Taskを一括終了
+- folder scanとnavigation Task ownerを分離し、scan中の操作が列挙consumerを誤cancelする問題を修正。favorite/delete等の非冪等操作はscene-local serial queueで入力順に完了
+- お気に入りの表示sourceをcanonical full-URL keyの単一snapshotへ統合し、親/subfolderの同名file衝突、統合filter中のset/remove反映ずれ、保存失敗時にUIだけ先行更新する問題を修正
+- 情報パネルのmetadata Taskをselection/session generationへ追従させ、Aの遅いmetadataがB表示へ上書きする競合を修正。panel close・privacy ON・scene closeで明示cancelするよう変更
+- privacy ON時に保留中のlast-viewed記録とmetadata/prompt抽出をcancelし、disk commit直前にもprivacy/cancellation・session・selection load IDを再検証するよう変更
+- 表示画像・URL・indexをatomicな`BrowserSelection`へ統合し、scan/reload/subdirectory/filter後の並び替えをcommitted URL anchorで解決。空フォルダでspinnerが残る問題と、遅いnavigation loadが削除後の表示を上書きし得る競合を修正
+- 削除・お気に入り操作の直前に表示selectionのURL/index/load IDをproduction guardで検証し、Trashへは操作開始時にcaptureした表示URLだけを渡すよう変更
+- 画像decode・prefetch・サムネイルwarmer・carousel・toast・スライドショー・活動インジケータのTask所有権を明示化し、旧Task完了による新世代state消去、prefetch registry残留、sleep中のowner保持を修正
+- サムネイルwarmerのcancel回帰テストを固定sleep依存から制御可能なsuspension pointへ変更
+- フォルダを連続して開いた際、旧scanのprogress・error・favorites・画像load・warmer開始が新folderのstateへ混入する競合を`BrowserSessionID`によるcommit検証で修正
+
+### Developer
+
+- GitHub Actionsのquality/releaseランナーを`macos-26` + Xcode 26.6へ移行し、macOS 26.5以上と選択Xcode versionの完全一致を必須化。unit/E2E/TSanはDebug unhosted `AIview-UnitTests` scheme、UIはapp-hosted `AIview` schemeで分離し、unit 359件、Favorites E2E 26件、XCUIApplication UI 6件、race/cancel focused TSan 47件（同一source file内の`FolderScannerTests` / `ImageBrowserSessionTests`を含む6 XCTestCase）を`fail-fast: false`の独立jobで実行。Xcode 26.6 xcresult schema 0.1.0の`Passed`・failure 0・skip 0・source最低件数・構造parseしたexact node名を検証し、UI専用jobはgenerated xctestrunのscheme skipを明示解除。全job成功を集約するquality gateへtag release / dry-runを依存させ、各artifactを14日保持
+- `ImageBrowserViewModel`を1,928行のI/O/state所有typeから292行のUI facadeへ変更し、scene-localな`BrowserSessionController`を唯一source of truthにして従来APIをcomputed forwarding。nested Observationと互換initializerのcompile-time/deterministic回帰testを追加
+- session ID/checkpoint/generation Task slotを`BrowserSessionPrimitives`へ、slideshow state/settings/timer所有を`SlideshowController`へ責務抽出。`MainWindowView`は446→104行のcomposition rootとし、keyboard、dialogs、toolbar/statusを専用typeへ分離
+- `scripts/check-architecture.sh`を`task ci`へ接続し、facade/MainWindow行数、facade I/O所有、global command flag、index sentinel、`Task.detached`、`@unchecked Sendable`、metadata full-file read、Swift 5 targetの再導入を拒否
+- README英日のarchitecture/data flow/concurrencyを同一構造へ同期し、thumbnail保存treeを`.aiview/<original>.jpg`の実装と一致。ADR 003と18所見のclosure reportを追加
+- 全app/unit/UI targetをSwift 6.0へ移行。cache stateをtyped lock所有のvalueへ変更し、既存の`@unchecked Sendable`を全廃してDebug/Release/test compileを正式gate化
+- Telemetry transport/clock/sleeper/defaults/UUIDを注入可能にし、queryなしJSON、2xx/non-2xx/transport、bounded retry、multi-window排他、OFF cancel、ping/delete競合、delete成否を固定sleepなしのclient testで追加
+- Cloudflare telemetry serverをAPI v2へ更新。4 KiBのstrict JSON `POST /v1/ping`、route/install rate limit、Bearer-only statsのconstant-time比較、idempotent delete、D1 migration、400日UTC retention、90日期限付きlegacy GETを追加
+- Workers Vitest integrationでD1 migration、入力境界、auth、rate-limit key/429、delete、retention、legacy/no-CORS/no-storeを検証し、lockfile・typecheck・Wrangler dry-runをroot `task ci`へ接続
+- `scripts/check-log-privacy.sh`を`task ci`のShellCheck段階へ追加し、機微値のpublic補間、prompt log、production print、独自incident fileの再導入をfixture self-test付きで拒否
+- error mapping/cancel非表示/favorite・folder picker失敗表示、typed diagnostic ring上限、cache failure metric・warning dedupeの回帰testを追加
+- process-global stateをrepository/serviceだけの`AppServices`へ限定し、共有`AppState`とsandbox entitlementを撤去
+- recent folderをplain standardized pathへ一度だけ移行し、順序維持・重複除去・最大10件・rollback backup・missing volume保持・履歴clear時のbackup消去をテスト
+- 2windowのfolder/dialog/zoom/reload/delete分離、scan中navigation、side-effect直列化、scene close後Task idleを固定sleepなしのsession testで追加
+- Favorites/Metadata/Privacyのactor protocol境界と、固定sleepなしの制御可能なmutation failure・stale metadata・panel cancel・privacy commit raceテストを追加
+- `BrowserSessionState`のpure transition testsと、制御可能なdecoder gateを使う削除安全性テストを追加（固定sleep不使用）
+- `task ci` を local / CI 共通の品質ゲートとして追加し、Debug build、実件数を検証するunit / E2E / UI tests、Xcode analyze、SwiftLint、SwiftFormat、ShellCheck を直列実行
+- repository言語modeを一元化する`.swift-version`、実装原則、SHA pin済みGitHub Actions、quality成功を必須とするrelease workflowを追加
+- フルサイズ画像とサムネイルの重複LRU実装を、weakな`previous`リンクと防御的なclearを持つ共通`LRUStorage`へ統合
+- メモリcache costを先頭representationの単純なpixel数から、`CGImage.bytesPerRow × height`優先・全representation fallback・overflow防御へ修正
+- `ImageLoader`のin-flight keyをURLとtarget pixel sizeの組へ変更し、entry/consumer UUIDとidle snapshotでdecode共有・cleanup identityを検証可能にした
+- `FolderScanner`を`first` / `progress` / `complete`イベントの`AsyncThrowingStream`へ変更し、streamごとの列挙Task所有とconsumer終了時cancelを明示化。共有cancel flagとcallback overloadを削除
+- folder scanの世代隔離を、固定sleepなしのsuspension gate（first直後の切替、progress commit待機中の切替、旧error、100連続cancel、stream consumer終了）で検証
+
 ## [0.9.0] - 2026-07-18
 
 ### Added

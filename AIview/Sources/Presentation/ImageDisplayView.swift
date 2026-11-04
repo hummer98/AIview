@@ -11,6 +11,8 @@ struct ImageDisplayView: View {
     var isFilterEmpty: Bool = false
     /// ズーム状態をリセットする単位（画像の同一性）。切り替わるとフィットに戻す。
     var imageID: String? = nil
+    var zoomRequest: BrowserZoomRequest? = nil
+    var onZoomRequestConsumed: (UUID) -> Void = { _ in }
 
     var body: some View {
         ZStack {
@@ -44,7 +46,12 @@ struct ImageDisplayView: View {
                 // 画像を表示（ズーム・パン対応）。
                 // お気に入りインジケータはズーム変換の影響を受けないよう
                 // ZoomableImageView の外側にオーバーレイする。
-                ZoomableImageView(image: image, imageID: imageID)
+                ZoomableImageView(
+                    image: image,
+                    imageID: imageID,
+                    zoomRequest: zoomRequest,
+                    onZoomRequestConsumed: onZoomRequestConsumed
+                )
                     .overlay(alignment: .topLeading) {
                         // お気に入りインジケータ（左上・固定）
                         if favoriteLevel > 0 {
@@ -87,15 +94,17 @@ struct ImageDisplayView: View {
 /// で表現する（`fitScale` = フィット時の intrinsic→表示 縮小率）。
 ///
 /// 操作:
-/// - トラックパッドのピンチイン/アウト（`MagnifyGesture`）
+/// - トラックパッドのピンチイン/アウト（`MagnifyGesture`）。ピンチ開始位置を中心に拡縮
 /// - 拡大時のドラッグによるパン（`DragGesture`）
-/// - メニュー/ショートカット由来の `AppState.zoomCommand`
+/// - 拡大時のトラックパッド二本指スクロール / マウスホイールによるパン（`ScrollWheelPanCatcher`）
+/// - focused scene のメニュー/ショートカット由来の `BrowserZoomRequest`。
+///   カーソルが画像上にあればその位置、なければ中央を中心に拡縮
 /// 画像（`imageID`）が切り替わるとフィットへリセットする。
 struct ZoomableImageView: View {
     let image: NSImage
     var imageID: String? = nil
-
-    @Environment(AppState.self) private var appState: AppState?
+    var zoomRequest: BrowserZoomRequest? = nil
+    var onZoomRequestConsumed: (UUID) -> Void = { _ in }
 
     /// 確定済みの倍率（1.0 = フィット）
     @State private var scale: CGFloat = 1.0
@@ -108,6 +117,10 @@ struct ZoomableImageView: View {
     @GestureState private var gestureMagnify: CGFloat = 1.0
     /// ドラッグ中の暫定移動量（ジェスチャ終了で `pan` に確定）
     @GestureState private var gestureDrag: CGSize = .zero
+    /// ピンチ開始位置（view 座標）。ピンチ中の拡縮中心
+    @GestureState private var pinchAnchor: CGPoint?
+    /// 直近のカーソル位置。毎移動で再描画しないよう非観測の参照に保持する
+    @State private var hover = HoverLocation()
 
     private let minScale: CGFloat = 1.0
     private let maxScale: CGFloat = 20.0
@@ -116,9 +129,13 @@ struct ZoomableImageView: View {
     var body: some View {
         GeometryReader { geo in
             let effectiveScale = clampedScale(scale * gestureMagnify, container: geo.size)
+            // ピンチ中は開始位置を固定点として暫定パンを計算する
+            let basePan = pinchAnchor.map {
+                ZoomAnchor.pan(pan, from: scale, to: effectiveScale, anchor: $0, container: geo.size)
+            } ?? pan
             let liveOffset = clampedPan(
-                CGSize(width: pan.width + gestureDrag.width,
-                       height: pan.height + gestureDrag.height),
+                CGSize(width: basePan.width + gestureDrag.width,
+                       height: basePan.height + gestureDrag.height),
                 container: geo.size,
                 scale: effectiveScale
             )
@@ -143,9 +160,21 @@ struct ZoomableImageView: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
             .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case let .active(location): hover.location = location
+                case .ended: hover.location = nil
+                }
+            }
             .gesture(magnifyGesture(container: geo.size))
             // フィット時はパンを無効化（ナビの誤操作/意図しない移動を防ぐ）
             .gesture(canPan ? panGesture(container: geo.size) : nil)
+            // 拡大時のみ scrollWheel を捕捉してパンに使う。フィット時は素通し。
+            .overlay {
+                ScrollWheelPanCatcher(isEnabled: canPan) { delta in
+                    applyScrollPan(delta, container: geo.size)
+                }
+            }
             .overlay(alignment: .topTrailing) {
                 if showBadge {
                     zoomBadge(percent: percent(scale: effectiveScale, container: geo.size))
@@ -164,38 +193,45 @@ struct ZoomableImageView: View {
             scale = 1.0
             pan = .zero
         }
-        .onChange(of: appState?.zoomCommand) { _, command in
-            handleZoomCommand(command)
+        .onChange(of: zoomRequest) { _, request in
+            handleZoomRequest(request)
         }
     }
 
     // MARK: - Zoom Command
 
-    private func handleZoomCommand(_ command: ZoomCommand?) {
-        guard let command else { return }
+    private func handleZoomRequest(_ request: BrowserZoomRequest?) {
+        guard let request else { return }
         let container = containerSize
+        let anchor = hover.location
 
         withAnimation(.easeInOut(duration: 0.15)) {
-            switch command {
+            switch request.command {
             case .zoomIn:
-                applyScale(scale * stepFactor, container: container)
+                applyScale(scale * stepFactor, container: container, anchor: anchor)
             case .zoomOut:
-                applyScale(scale / stepFactor, container: container)
+                applyScale(scale / stepFactor, container: container, anchor: anchor)
             case .fit:
                 scale = 1.0
                 pan = .zero
             case .actualSize:
                 let fit = fitScale(container: container)
-                applyScale(fit > 0 ? 1.0 / fit : 1.0, container: container)
+                applyScale(fit > 0 ? 1.0 / fit : 1.0, container: container, anchor: anchor)
             }
         }
-        appState?.clearZoomCommand()
+        onZoomRequestConsumed(request.id)
     }
 
-    /// 倍率を設定し、パンを新しい倍率でクランプし直す
-    private func applyScale(_ newScale: CGFloat, container: CGSize) {
-        scale = clampedScale(newScale, container: container)
-        pan = clampedPan(pan, container: container, scale: scale)
+    /// 倍率を設定し、パンを新しい倍率でクランプし直す。
+    /// `anchor`（view 座標）を指定すると、その位置の画像上の点が動かないようにパンを補正する。
+    private func applyScale(_ newScale: CGFloat, container: CGSize, anchor: CGPoint? = nil) {
+        let oldScale = scale
+        let next = clampedScale(newScale, container: container)
+        let anchored = anchor.map {
+            ZoomAnchor.pan(pan, from: oldScale, to: next, anchor: $0, container: container)
+        } ?? pan
+        scale = next
+        pan = clampedPan(anchored, container: container, scale: next)
     }
 
     // MARK: - Gestures
@@ -205,8 +241,11 @@ struct ZoomableImageView: View {
             .updating($gestureMagnify) { value, state, _ in
                 state = value.magnification
             }
+            .updating($pinchAnchor) { value, state, _ in
+                state = value.startLocation
+            }
             .onEnded { value in
-                applyScale(scale * value.magnification, container: container)
+                applyScale(scale * value.magnification, container: container, anchor: value.startLocation)
             }
     }
 
@@ -223,6 +262,16 @@ struct ZoomableImageView: View {
                     scale: scale
                 )
             }
+    }
+
+    /// 二本指スクロール量を確定済みパンへ加算し、はみ出し範囲にクランプする
+    private func applyScrollPan(_ delta: CGSize, container: CGSize) {
+        pan = clampedPan(
+            CGSize(width: pan.width + delta.width,
+                   height: pan.height + delta.height),
+            container: container,
+            scale: scale
+        )
     }
 
     // MARK: - Geometry Helpers
@@ -286,6 +335,99 @@ struct ZoomableImageView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(Color.black.opacity(0.55), in: Capsule())
+    }
+}
+
+// MARK: - Zoom Anchor
+
+/// カーソル位置を固定点とする拡縮のパン補正。
+///
+/// 画像は container 中央を基準に `scale` 倍され `pan` だけずれて表示される。
+/// view 座標 `anchor` の下にある画像上の点を拡縮前後で同じ位置に保つには
+/// `pan' = a - (to / from) * (a - pan)`（`a` = anchor の中央基準座標）とする。
+/// クランプは呼び出し側で行う。
+enum ZoomAnchor {
+    static func pan(
+        _ pan: CGSize,
+        from oldScale: CGFloat,
+        to newScale: CGFloat,
+        anchor: CGPoint,
+        container: CGSize
+    ) -> CGSize {
+        guard oldScale > 0 else { return pan }
+        let ratio = newScale / oldScale
+        let ax = anchor.x - container.width / 2
+        let ay = anchor.y - container.height / 2
+        return CGSize(
+            width: ax - ratio * (ax - pan.width),
+            height: ay - ratio * (ay - pan.height)
+        )
+    }
+}
+
+/// 直近のカーソル位置（非観測。更新しても再描画しない）
+@MainActor
+final class HoverLocation {
+    var location: CGPoint?
+}
+
+// MARK: - Scroll Wheel Pan
+
+/// scrollWheel イベントの移動量をパンオフセットの変化量へ変換する。
+///
+/// `scrollingDelta` はシステムの「ナチュラルなスクロール」設定を反映済みで、
+/// NSScrollView と同様にコンテンツを delta 方向へ動かせば指の動きに追従する。
+/// 精密でない（行単位の）マウスホイールは points 相当へ拡大する。
+enum ScrollWheelPan {
+    static let lineDeltaMultiplier: CGFloat = 10
+
+    static func panDelta(deltaX: CGFloat, deltaY: CGFloat, hasPreciseDeltas: Bool) -> CGSize {
+        let factor: CGFloat = hasPreciseDeltas ? 1 : lineDeltaMultiplier
+        return CGSize(width: deltaX * factor, height: deltaY * factor)
+    }
+}
+
+/// 拡大時に scrollWheel だけを捕捉する透過オーバーレイ。
+///
+/// SwiftUI（macOS 14）には scrollWheel を受ける modifier がないため AppKit view を使う。
+/// `hitTest` は scrollWheel イベント中かつ有効時のみ自身を返し、クリック・ドラッグ・
+/// ピンチは下の SwiftUI ジェスチャへ素通しする。
+struct ScrollWheelPanCatcher: NSViewRepresentable {
+    var isEnabled: Bool
+    var onScroll: (CGSize) -> Void
+
+    func makeNSView(context: Context) -> ScrollWheelPanCatcherView {
+        let view = ScrollWheelPanCatcherView()
+        view.isEnabled = isEnabled
+        view.onScroll = onScroll
+        return view
+    }
+
+    func updateNSView(_ nsView: ScrollWheelPanCatcherView, context: Context) {
+        nsView.isEnabled = isEnabled
+        nsView.onScroll = onScroll
+    }
+}
+
+final class ScrollWheelPanCatcherView: NSView {
+    var isEnabled = false
+    var onScroll: ((CGSize) -> Void)?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard isEnabled, NSApp.currentEvent?.type == .scrollWheel else { return nil }
+        return super.hitTest(point)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard isEnabled, let onScroll else {
+            super.scrollWheel(with: event)
+            return
+        }
+        onScroll(ScrollWheelPan.panDelta(
+            deltaX: event.scrollingDeltaX,
+            deltaY: event.scrollingDeltaY,
+            hasPreciseDeltas: event.hasPreciseScrollingDeltas
+        ))
     }
 }
 

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR 003 — UI facadeとscene-local browser sessionの境界</title>
+<style>
+  body{font:15px/1.72 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;max-width:900px;margin:32px auto;padding:0 20px;color:#18212f;background:#fff}
+  h1{font-size:25px;border-bottom:2px solid #d8dee8;padding-bottom:9px}h2{font-size:19px;margin-top:28px}h3{font-size:16px;margin-top:22px}
+  code{background:#f1f4f8;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+  pre{background:#111827;color:#e5edf8;border-radius:9px;padding:14px 16px;overflow:auto;line-height:1.55}
+  .meta{color:#667085;font-size:13px}.note{border-left:4px solid #d68a00;background:#fff8e8;padding:10px 14px}
+  table{border-collapse:collapse;width:100%;margin:14px 0}th,td{border:1px solid #d8dee8;padding:8px 10px;text-align:left;vertical-align:top}th{background:#f6f8fb}
+</style>
+</head>
+<body>
+<h1>ADR 003 — UI facadeとscene-local browser sessionの境界</h1>
+<p class="meta"><strong>Status</strong>: accepted &nbsp;·&nbsp; <strong>Date</strong>: 2026-08-11 &nbsp;·&nbsp; <strong>Finding</strong>: ARCH-01 / SCENE-01 / ASYNC-02</p>
+
+<h2>Context</h2>
+<p>従来の<code>ImageBrowserViewModel</code>はfolder scan、image load/prefetch、favorite persistence/filter、metadata、slideshow、cache操作、UI transient stateを1 typeで調停し、PR-01〜11後に1,928行へ増加していた。<code>BrowserSessionState</code>のatomic selectionとsession/generation guardは安全性を上げたが、SwiftUI表示APIとI/O orchestrationの変更面が同じtypeに残っていた。</p>
+<p><code>MainWindowView</code>も446行で、layoutに加えkey routing、folder importer、alerts/sheet、toolbar、status bar、clipboardを実装していた。行数だけを減らすextension分割では、依存方向とownerは変わらない。</p>
+
+<h2>Decision</h2>
+<table>
+<thead><tr><th>Type</th><th>単一の責務</th><th>所有しないもの</th></tr></thead>
+<tbody>
+<tr><td><code>ImageBrowserViewModel</code></td><td>SwiftUI向けcomputed snapshot/action facade。互換initializerは依存をcontroller構築に渡す。</td><td>scanner、favorite store、metadata extractor、filesystem I/O、複製state</td></tr>
+<tr><td><code>BrowserSessionController</code></td><td>1 sceneのfolder sessionを調停し、session/load identity一致時だけ<code>BrowserSessionState</code>へcommit。</td><td>process-global command/state、SwiftUI dialog/layout</td></tr>
+<tr><td><code>BrowserSessionState</code></td><td>phase、URL集合、pending load、<code>BrowserSelection</code>の純粋でatomicなtransition。</td><td>I/O、Task、UI</td></tr>
+<tr><td><code>SlideshowController</code></td><td>active/paused/interval/settings/timer。tick actionをsessionへ通知。</td><td>image selection、folder scan</td></tr>
+<tr><td><code>BrowserWindowSession</code></td><td>scene-local Task owner、dialog/zoom/metrics、focused commandの宛先。</td><td>process-global mutable UI state</td></tr>
+</tbody>
+</table>
+
+<pre>focused UI event
+  -&gt; BrowserWindowSession
+  -&gt; ImageBrowserViewModel (facade)
+  -&gt; BrowserSessionController
+  -&gt; service actor / ImageLoader
+  -&gt; BrowserSessionState atomic commit
+  -&gt; nested Observation -&gt; SwiftUI</pre>
+
+<p>facadeはcontrollerを唯一sourceとしてcomputed forwardingする。facade側にsnapshotをcopyしない。getterがnested <code>@Observable</code> propertyを読むため、controllerの変更はObservation trackingを通じてUIへ伝播する。これは<code>ImageBrowserFacadeTests</code>で直接検証する。</p>
+
+<p><code>MainWindowView</code>はscene lifecycle/layout/overlayのcomposition rootに限定し、<code>BrowserKeyboardRouter</code>、<code>BrowserWindowDialogs</code>、<code>BrowserToolbarContent</code>、<code>BrowserStatusBar</code>へ意味単位で委譲する。</p>
+
+<h2>Enforcement</h2>
+<p><code>scripts/check-architecture.sh</code>を<code>task ci</code>の必須gateとし、facade 800行/MainWindow 350行の上限、facadeのI/O service所有/直接生成、旧global command flag、無効index sentinel、<code>Task.detached</code>、<code>@unchecked Sendable</code>、metadata pathのfull-file read、Swift 5 targetの再導入を検出する。</p>
+
+<h2>Consequences</h2>
+<ul>
+  <li><strong>改善:</strong> UI contractの変更は292行のfacadeに閉じ、I/Oやsession raceの不変条件はcontroller/stateの既存testを維持したまま抽出できる。</li>
+  <li><strong>改善:</strong> slideshowのsettings/timer所有がselection orchestrationから外れ、<code>SettingsStore()</code>の場当たり的再生成も消える。</li>
+  <li><strong>コスト:</strong> 互換APIのforwardingがある。source gateとobservation testで、facadeへ責務/stateが戻ることを防ぐ。</li>
+  <li><strong>残存課題:</strong> <code>BrowserSessionController</code>は1,788行で、favorite/filter、metadata coordination、reload/subdirectoryなどsession identityを横断する調停がなお集中する。本ADRはこれを「完全分解済み」とは扱わない。次の分離はsession/load identityを弱めず、独立のbehavior testを伴う場合のみ行う。</li>
+</ul>
+
+<h2>Alternatives considered</h2>
+<ul>
+  <li><strong>extensionだけで別file化:</strong> ownerと依存は変わらず、行数合わせになるため不採用。</li>
+  <li><strong>ViewModelを一度に複数store/controllerへ完全分解:</strong> session/generation/selection invariantを跨ぐ変更が大きく、実unit runtimeを起動できないXcode 26.6環境ではリスク過多。段階抽出を選択。</li>
+  <li><strong>facade側にsnapshotを複製:</strong> two sources of truthとstale UIを再導入するため不採用。</li>
+</ul>
+</body>
+</html>

@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import Compression
 @testable import AIview
 
 /// MetadataExtractor のユニットテスト
@@ -135,85 +136,261 @@ final class MetadataExtractorTests: XCTestCase {
         XCTAssertTrue(result.negativePrompt?.contains("ugly") == true)
     }
 
-    // MARK: - PNG tEXt Chunk Tests
+    // MARK: - Bounded PNG Metadata Parser Tests
 
-    func testExtractMetadata_fromRealPNGWithPrompt() async throws {
-        // Given: 実際のプロンプト入りPNGファイル
-        let realPNGPath = "/Volumes/Text2Img/2025-11-08/00004-3360867990.png"
-        let url = URL(fileURLWithPath: realPNGPath)
+    func testExtractMetadata_preservesPromptCompatibility() async throws {
+        let parameters = "mountain lake, sunset\nNegative prompt: blur, noise\nSteps: 30, CFG scale: 7"
+        let imageURL = try createPromptImage(name: "prompt.png", parameters: parameters)
 
-        // ファイルが存在しない場合はスキップ
-        guard FileManager.default.fileExists(atPath: realPNGPath) else {
-            throw XCTSkip("Test PNG file not available at \(realPNGPath)")
-        }
+        let metadata = try await sut.extractMetadata(from: imageURL)
 
-        // When
-        let metadata = try await sut.extractMetadata(from: url)
-
-        // Then
-        print("=== Metadata Debug ===")
-        print("fileName: \(metadata.fileName)")
-        print("fileSize: \(metadata.fileSize)")
-        print("imageSize: \(metadata.imageSize)")
-        print("prompt: \(metadata.prompt ?? "nil")")
-        print("negativePrompt: \(metadata.negativePrompt ?? "nil")")
-        print("additionalInfo: \(metadata.additionalInfo)")
-        print("======================")
-
-        XCTAssertNotNil(metadata.prompt, "プロンプトが抽出されるべき")
-        XCTAssertTrue(metadata.prompt?.contains("score_9") == true || metadata.prompt?.contains("source_photo") == true,
-                      "プロンプトに期待される内容が含まれるべき")
+        XCTAssertEqual(metadata.prompt, "mountain lake, sunset")
+        XCTAssertEqual(metadata.negativePrompt, "blur, noise")
     }
 
-    func testExtractFromPNGTextChunk_directTest() async throws {
-        // Given: 実際のプロンプト入りPNGファイル
-        let realPNGPath = "/Volumes/Text2Img/2025-11-08/00004-3360867990.png"
-        let url = URL(fileURLWithPath: realPNGPath)
+    func testParser_usesLengthOfSecondParametersTextChunk() throws {
+        let url = try writePNG(chunks: [
+            pngChunk(type: "tEXt", payload: Data("comment\0short".utf8)),
+            pngChunk(type: "tEXt", payload: Data("parameters\0second prompt\nSteps: 12".utf8)),
+            pngChunk(type: "IEND", payload: Data())
+        ])
 
-        guard FileManager.default.fileExists(atPath: realPNGPath) else {
-            throw XCTSkip("Test PNG file not available")
+        let result = try PNGMetadataParser.parse(url: url)
+
+        XCTAssertEqual(result.parameters, "second prompt\nSteps: 12")
+    }
+
+    func testParser_skipsOversizedNonParametersTextChunkAndUsesFollowingParametersLength() throws {
+        let url = tempDirectory.appendingPathComponent("large-leading-text.png")
+        try Data().write(to: url)
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+
+        try handle.write(contentsOf: pngSignature)
+        let largeLength = UInt32(PNGMetadataParser.maximumTextBytes + 8192)
+        try handle.write(contentsOf: chunkHeader(length: largeLength, type: "tEXt"))
+        try handle.write(contentsOf: Data("comment\0".utf8))
+        let payloadEnd = UInt64(pngSignature.count + 8) + UInt64(largeLength)
+        try handle.seek(toOffset: payloadEnd)
+        try handle.write(contentsOf: Data(repeating: 0, count: 4))
+        try handle.write(contentsOf: pngChunk(type: "tEXt", payload: Data("parameters\0right length".utf8)))
+        try handle.write(contentsOf: pngChunk(type: "IEND", payload: Data()))
+
+        let result = try PNGMetadataParser.parse(url: url)
+
+        XCTAssertEqual(result.parameters, "right length")
+        XCTAssertLessThan(result.bytesRead, 512)
+    }
+
+    func testParser_decodesUncompressedInternationalText() throws {
+        let payload = Data("parameters\0".utf8)
+            + Data([0, 0])
+            + Data("ja\0パラメータ\0夜空\nSteps: 20".utf8)
+        let url = try writePNG(chunks: [
+            pngChunk(type: "iTXt", payload: payload),
+            pngChunk(type: "IEND", payload: Data())
+        ])
+
+        XCTAssertEqual(try PNGMetadataParser.parameters(from: url), "夜空\nSteps: 20")
+    }
+
+    func testParser_decodesCompressedInternationalText() throws {
+        let compressed = try zlibCompressed(Data("forest path\nSteps: 18".utf8))
+        let payload = Data("parameters\0".utf8)
+            + Data([1, 0])
+            + Data("en\0Parameters\0".utf8)
+            + compressed
+        let url = try writePNG(chunks: [
+            pngChunk(type: "iTXt", payload: payload),
+            pngChunk(type: "IEND", payload: Data())
+        ])
+
+        XCTAssertEqual(try PNGMetadataParser.parameters(from: url), "forest path\nSteps: 18")
+    }
+
+    func testParser_decodesCompressedText() throws {
+        let compressed = try zlibCompressed(Data("portrait\nSteps: 24".utf8))
+        let payload = Data("parameters\0".utf8) + Data([0]) + compressed
+        let url = try writePNG(chunks: [
+            pngChunk(type: "zTXt", payload: payload),
+            pngChunk(type: "IEND", payload: Data())
+        ])
+
+        XCTAssertEqual(try PNGMetadataParser.parameters(from: url), "portrait\nSteps: 24")
+    }
+
+    func testParser_prefersUTF8AndFallsBackToLatin1() throws {
+        let utf8URL = try writePNG(chunks: [
+            pngChunk(type: "tEXt", payload: Data("parameters\0星空".utf8)),
+            pngChunk(type: "IEND", payload: Data())
+        ])
+        var latin1 = Data("parameters\0caf".utf8)
+        latin1.append(0xE9)
+        let latin1URL = try writePNG(chunks: [
+            pngChunk(type: "tEXt", payload: latin1),
+            pngChunk(type: "IEND", payload: Data())
+        ])
+
+        XCTAssertEqual(try PNGMetadataParser.parameters(from: utf8URL), "星空")
+        XCTAssertEqual(try PNGMetadataParser.parameters(from: latin1URL), "café")
+    }
+
+    func testParser_rejectsInvalidSignature() throws {
+        let url = tempDirectory.appendingPathComponent("invalid-signature.png")
+        try Data(repeating: 0, count: 32).write(to: url)
+
+        XCTAssertThrowsError(try PNGMetadataParser.parameters(from: url)) { error in
+            XCTAssertEqual(error as? PNGMetadataParserError, .invalidSignature)
         }
+    }
 
-        // バイナリを直接解析してデバッグ
-        let data = try Data(contentsOf: url)
+    func testParser_rejectsTruncatedPayloadAndCRCRegion() throws {
+        let payloadURL = tempDirectory.appendingPathComponent("truncated-payload.png")
+        try (pngSignature + chunkHeader(length: 128, type: "tEXt") + Data("parameters\0short".utf8))
+            .write(to: payloadURL)
 
-        // "parameters\0" を検索
-        let searchPattern = "parameters\0"
-        let searchData = searchPattern.data(using: .utf8)!
+        let crcURL = tempDirectory.appendingPathComponent("truncated-crc.png")
+        try (pngSignature + chunkHeader(length: 3, type: "abcD") + Data([1, 2, 3, 0, 0]))
+            .write(to: crcURL)
 
-        guard let range = data.range(of: searchData) else {
-            XCTFail("'parameters\\0' が見つかりません")
-            return
+        for url in [payloadURL, crcURL] {
+            XCTAssertThrowsError(try PNGMetadataParser.parameters(from: url)) { error in
+                XCTAssertEqual(error as? PNGMetadataParserError, .truncated)
+            }
         }
-        print("Found 'parameters\\0' at offset: \(range.lowerBound)")
+    }
 
-        // tEXtを検索
-        let tEXtKeyword = Data([0x74, 0x45, 0x58, 0x74])
-        guard let tEXtRange = data.range(of: tEXtKeyword, options: [], in: 0..<range.lowerBound) else {
-            XCTFail("'tEXt' が見つかりません")
-            return
+    func testParser_rejectsMissingIENDAndTruncationAfterParameters() throws {
+        let missingIEND = try writePNG(
+            name: "missing-iend.png",
+            chunks: [pngChunk(type: "tEXt", payload: Data("parameters\0prompt".utf8))]
+        )
+        let truncatedAfterParameters = tempDirectory.appendingPathComponent("truncated-after-parameters.png")
+        try (
+            pngSignature
+                + pngChunk(type: "tEXt", payload: Data("parameters\0prompt".utf8))
+                + chunkHeader(length: 4, type: "abCd")
+                + Data([1, 2, 3, 4, 0, 0])
+        ).write(to: truncatedAfterParameters)
+
+        for url in [missingIEND, truncatedAfterParameters] {
+            XCTAssertThrowsError(try PNGMetadataParser.parameters(from: url)) { error in
+                XCTAssertEqual(error as? PNGMetadataParserError, .truncated)
+            }
         }
-        print("Found 'tEXt' at offset: \(tEXtRange.lowerBound)")
+    }
 
-        let lengthStart = tEXtRange.lowerBound - 4
-        let chunkLength = UInt32(data[lengthStart]) << 24
-            | UInt32(data[lengthStart + 1]) << 16
-            | UInt32(data[lengthStart + 2]) << 8
-            | UInt32(data[lengthStart + 3])
-        print("Chunk length: \(chunkLength)")
+    func testParser_rejectsInvalidIENDAfterParametersAndInvalidChunkType() throws {
+        let invalidIEND = try writePNG(name: "invalid-iend-after-parameters.png", chunks: [
+            pngChunk(type: "tEXt", payload: Data("parameters\0prompt".utf8)),
+            pngChunk(type: "IEND", payload: Data([0]))
+        ])
+        let invalidTypeURL = tempDirectory.appendingPathComponent("invalid-type.png")
+        try (
+            pngSignature
+                + bigEndianData(0)
+                + Data([0x49, 0x44, 0x21, 0x54])
+                + Data(repeating: 0, count: 4)
+        ).write(to: invalidTypeURL)
 
-        let startIndex = range.upperBound
-        let chunkDataEnd = tEXtRange.upperBound + Int(chunkLength)
-        print("Parameter start: \(startIndex), end: \(chunkDataEnd)")
-
-        let parameterData = data[startIndex..<chunkDataEnd]
-        guard let parameters = String(data: parameterData, encoding: .utf8) else {
-            XCTFail("UTF-8デコード失敗")
-            return
+        XCTAssertThrowsError(try PNGMetadataParser.parameters(from: invalidIEND)) { error in
+            XCTAssertEqual(error as? PNGMetadataParserError, .invalidChunkLength)
         }
-        print("Parameters (first 300 chars): \(parameters.prefix(300))")
+        XCTAssertThrowsError(try PNGMetadataParser.parameters(from: invalidTypeURL)) { error in
+            XCTAssertEqual(error as? PNGMetadataParserError, .invalidChunkType)
+        }
+    }
 
-        XCTAssertTrue(parameters.contains("score_9") || parameters.contains("source_photo"))
+    func testParser_rejectsOversizedParametersChunkWithoutReadingIt() throws {
+        let url = tempDirectory.appendingPathComponent("oversized-parameters.png")
+        try Data().write(to: url)
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+
+        try handle.write(contentsOf: pngSignature)
+        let length = UInt32(PNGMetadataParser.maximumTextBytes + 1)
+        try handle.write(contentsOf: chunkHeader(length: length, type: "tEXt"))
+        try handle.write(contentsOf: Data("parameters\0".utf8))
+        let chunkEnd = UInt64(pngSignature.count + 8) + UInt64(length) + 4
+        try handle.seek(toOffset: chunkEnd - 1)
+        try handle.write(contentsOf: Data([0]))
+
+        XCTAssertThrowsError(try PNGMetadataParser.parameters(from: url)) { error in
+            XCTAssertEqual(error as? PNGMetadataParserError, .oversizedTextChunk)
+        }
+    }
+
+    func testParser_rejectsExpandedTextOverLimit() throws {
+        let expanded = Data(repeating: 0x61, count: PNGMetadataParser.maximumTextBytes + 1)
+        let compressed = try zlibCompressed(expanded)
+        let payload = Data("parameters\0".utf8) + Data([0]) + compressed
+        let url = try writePNG(chunks: [
+            pngChunk(type: "zTXt", payload: payload),
+            pngChunk(type: "IEND", payload: Data())
+        ])
+
+        XCTAssertThrowsError(try PNGMetadataParser.parameters(from: url)) { error in
+            XCTAssertEqual(error as? PNGMetadataParserError, .oversizedTextChunk)
+        }
+    }
+
+    func testParser_rejectsInvalidTextDelimitersAndCompressionFields() throws {
+        let invalidPayloads: [(String, Data, PNGMetadataParserError)] = [
+            ("tEXt", Data("parameters-without-null".utf8), .invalidTextChunk),
+            ("iTXt", Data("parameters\0".utf8) + Data([2, 0, 0, 0]), .invalidTextChunk),
+            ("iTXt", Data("parameters\0".utf8) + Data([0, 1, 0, 0]), .unsupportedCompression),
+            ("iTXt", Data("parameters\0".utf8) + Data([0, 0]) + Data("language-only".utf8), .invalidTextChunk),
+            ("zTXt", Data("parameters\0".utf8) + Data([1, 1, 2, 3]), .unsupportedCompression)
+        ]
+
+        for (index, fixture) in invalidPayloads.enumerated() {
+            let url = try writePNG(
+                name: "invalid-text-\(index).png",
+                chunks: [pngChunk(type: fixture.0, payload: fixture.1), pngChunk(type: "IEND", payload: Data())]
+            )
+            XCTAssertThrowsError(try PNGMetadataParser.parameters(from: url)) { error in
+                XCTAssertEqual(error as? PNGMetadataParserError, fixture.2)
+            }
+        }
+    }
+
+    func testParser_skipsUnknownAndLargeIDATWithoutAllocatingPayload() throws {
+        let url = tempDirectory.appendingPathComponent("large-sparse.png")
+        try Data().write(to: url)
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+
+        try handle.write(contentsOf: pngSignature)
+        let largeLength: UInt32 = 128 * 1024 * 1024
+        try handle.write(contentsOf: chunkHeader(length: largeLength, type: "IDAT"))
+        let payloadEnd = UInt64(pngSignature.count + 8) + UInt64(largeLength)
+        try handle.seek(toOffset: payloadEnd)
+        try handle.write(contentsOf: Data(repeating: 0, count: 4))
+        try handle.write(contentsOf: pngChunk(type: "vpAg", payload: Data(repeating: 7, count: 32)))
+        try handle.write(contentsOf: pngChunk(type: "tEXt", payload: Data("parameters\0bounded".utf8)))
+        try handle.write(contentsOf: pngChunk(type: "IEND", payload: Data()))
+
+        let result = try PNGMetadataParser.parse(url: url)
+
+        XCTAssertEqual(result.parameters, "bounded")
+        XCTAssertLessThan(result.bytesRead, 512)
+    }
+
+    func testParser_rejectsChunkCountLimitAndInvalidIENDLength() throws {
+        let chunks = [
+            pngChunk(type: "abCd", payload: Data()),
+            pngChunk(type: "efGh", payload: Data()),
+            pngChunk(type: "IEND", payload: Data())
+        ]
+        let countURL = try writePNG(name: "too-many.png", chunks: chunks)
+        let iendURL = try writePNG(name: "invalid-iend.png", chunks: [pngChunk(type: "IEND", payload: Data([0]))])
+
+        XCTAssertThrowsError(try PNGMetadataParser.parse(url: countURL, maximumChunkCount: 2)) { error in
+            XCTAssertEqual(error as? PNGMetadataParserError, .tooManyChunks)
+        }
+        XCTAssertThrowsError(try PNGMetadataParser.parameters(from: iendURL)) { error in
+            XCTAssertEqual(error as? PNGMetadataParserError, .invalidChunkLength)
+        }
     }
 
     // MARK: - Helper Methods
@@ -249,5 +426,91 @@ final class MetadataExtractorTests: XCTestCase {
 
         try pngData.write(to: url)
         return url
+    }
+
+    private func createPromptImage(name: String, parameters: String) throws -> URL {
+        let url = try createTestImage(name: name)
+        var png = try Data(contentsOf: url)
+        let iendSize = 12
+        guard png.count >= iendSize else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        png.insert(contentsOf: pngChunk(type: "tEXt", payload: Data("parameters\0\(parameters)".utf8)), at: png.count - iendSize)
+        try png.write(to: url)
+        return url
+    }
+
+    private var pngSignature: Data {
+        Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+    }
+
+    private func writePNG(name: String = UUID().uuidString + ".png", chunks: [Data]) throws -> URL {
+        let url = tempDirectory.appendingPathComponent(name)
+        var data = pngSignature
+        for chunk in chunks {
+            data.append(chunk)
+        }
+        try data.write(to: url)
+        return url
+    }
+
+    private func chunkHeader(length: UInt32, type: String) -> Data {
+        var data = bigEndianData(length)
+        data.append(Data(type.utf8))
+        return data
+    }
+
+    private func pngChunk(type: String, payload: Data) -> Data {
+        let typeData = Data(type.utf8)
+        var data = bigEndianData(UInt32(payload.count))
+        data.append(typeData)
+        data.append(payload)
+        data.append(bigEndianData(crc32(typeData + payload)))
+        return data
+    }
+
+    private func bigEndianData(_ value: UInt32) -> Data {
+        Data([
+            UInt8((value >> 24) & 0xFF),
+            UInt8((value >> 16) & 0xFF),
+            UInt8((value >> 8) & 0xFF),
+            UInt8(value & 0xFF)
+        ])
+    }
+
+    private func crc32(_ data: Data) -> UInt32 {
+        var crc: UInt32 = 0xFFFF_FFFF
+        for byte in data {
+            crc ^= UInt32(byte)
+            for _ in 0..<8 {
+                let mask = UInt32(bitPattern: -Int32(crc & 1))
+                crc = (crc >> 1) ^ (0xEDB8_8320 & mask)
+            }
+        }
+        return crc ^ 0xFFFF_FFFF
+    }
+
+    private func zlibCompressed(_ data: Data) throws -> Data {
+        var output = [UInt8](repeating: 0, count: max(64, data.count + 1024))
+        let encodedCount = data.withUnsafeBytes { source in
+            output.withUnsafeMutableBytes { destination in
+                guard let sourceBase = source.bindMemory(to: UInt8.self).baseAddress,
+                      let destinationBase = destination.bindMemory(to: UInt8.self).baseAddress else {
+                    return 0
+                }
+                return compression_encode_buffer(
+                    destinationBase,
+                    destination.count,
+                    sourceBase,
+                    source.count,
+                    nil,
+                    COMPRESSION_ZLIB
+                )
+            }
+        }
+        guard encodedCount > 0 else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        return Data(output.prefix(encodedCount))
     }
 }

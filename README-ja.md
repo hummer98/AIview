@@ -8,7 +8,7 @@ macOS向けの高性能画像ビューア。大量の画像コレクション（
 
 - **即時表示** - フォルダを開くとスキャン完了を待たずに最初の画像を表示
 - **スムーズなナビゲーション** - 矢印キーの連打でもUIがブロックされない
-- **AIプロンプト抽出** - PNGメタデータ（tEXtチャンク / XMP）からStable Diffusionのプロンプトを読み取り
+- **AIプロンプト抽出** - ImageIOメタデータまたは上限付きPNG text chunk（tEXt / iTXt / zTXt）からStable Diffusionのプロンプトを読み取り
 - **プライバシーモード** - スペースキーで即座に全コンテンツを非表示
 - **スマートプリフェッチ** - ナビゲーション方向に基づいて画像を先読み
 - **サムネイルカルーセル** - 数千枚の画像でも仮想スクロールで高速表示
@@ -19,6 +19,7 @@ macOS向けの高性能画像ビューア。大量の画像コレクション（
 - **サムネイル生成インジケータ** - ツールバーに生成中のみ表示される稼働状況アイコン
 - **ウィンドウ状態の復元** - 終了時に開いていた複数ウィンドウを、フォルダ・位置・サイズごと次回起動時に復元
 - **前回の表示位置を復元** - フォルダごとに最後に表示していた画像を記憶し、次回開いたときにそこへ戻るか確認（設定で切替可能）
+- **回復方法を示すエラー表示** - フォルダ、お気に入り、画像読み込み、削除の失敗を分類して表示し、キャンセルは表示しない
 
 ## キーボードショートカット
 
@@ -35,7 +36,7 @@ macOS向けの高性能画像ビューア。大量の画像コレクション（
 
 ### ズーム
 
-メイン画像をトラックパッドのピンチ、または表示メニュー / ショートカットで拡大・縮小できる。拡大中はドラッグでパン。画像を切り替えるとフィットに戻る。
+メイン画像をトラックパッドのピンチ、または表示メニュー / ショートカットで、カーソル位置を中心に拡大・縮小できる。拡大中はドラッグまたは二本指スクロールでパン。画像を切り替えるとフィットに戻る。
 
 | キー | 動作 |
 |------|------|
@@ -133,15 +134,40 @@ task run
 
 ## アーキテクチャ
 
+### レイヤの責務
+
 ```
 AIview/
 ├── Sources/
-│   ├── App/           # SwiftUI App、ContentView、AppState、AppCommands
-│   ├── Domain/        # ビジネスロジック（ImageLoader、FolderScanner、CacheManager、SlideshowTimer）
+│   ├── App/           # SwiftUI App、共有service、window session、focused command
+│   ├── Domain/        # session controller、state machine、loader、cache、slideshow
 │   ├── Data/          # 永続化（FavoritesStore、RecentFolders、Settings、DiskCache）
-│   └── Presentation/  # UIコンポーネント（ThumbnailCarousel、InfoPanel、SlideshowSettingsDialog）
+│   └── Presentation/  # 合成View、keyboard routing、dialog、toolbar/status
 └── Tests/             # ユニットテスト
 ```
+
+`ImageBrowserViewModel`はscene-localな`BrowserSessionController` 1個を公開するUI facadeであり、scanner、永続化、metadata抽出を所有しません。`BrowserSessionState`が表示URL、index、image、load identityをatomicにcommitする唯一の値です。`SlideshowController`がslideshow stateとtimerを所有します。process-globalな`AppServices`は意図的に共有するrepositoryとtelemetry coordinatorに限定します。
+
+### データフロー
+
+```text
+focused menu / keyboard / dialog
+  → BrowserWindowSession（scene-local Task owner）
+  → ImageBrowserViewModel（UI facade）
+  → BrowserSessionController
+  → FolderScanner / ImageLoader / FavoritesStore / MetadataExtractor
+  → BrowserSessionStateのatomic commit
+  → SwiftUI observation
+```
+
+### 並行性とstate所有権
+
+- 各windowがfolder、selection、dialog、zoom request、metrics、操作Taskを独立所有します。
+- 非同期commitは必ず現在のbrowser sessionとoperation/load identityに一致する必要があります。置換・closeされたsceneのTaskはcancelし、cancellationをerror表示しません。
+- persistenceとscanはactor、同期cacheとregistryはtyped lockで隔離します。production codeに`Task.detached`や`@unchecked Sendable`の回避策はありません。
+- process-globalなtelemetry coordinatorはrequest/retry Taskを最大1個だけ所有し、利用統計OFFで通常通信を即時cancelします。
+
+拘束する実装原則と完全なflowは[`CLAUDE.md`](CLAUDE.md)と[`docs/spec/01-architecture.md`](docs/spec/01-architecture.md)に記載しています。
 
 ## パフォーマンス設計
 
@@ -161,8 +187,9 @@ your-image-folder/
 ├── image1.png
 ├── image2.jpg
 └── .aiview/
-    ├── favorites.json    # お気に入り評価 + 前回の表示位置
-    └── thumbnails/       # キャッシュされたサムネイル
+    ├── favorites.json    # お気に入り評価 + 前回の表示位置
+    ├── image1.png.jpg    # image1.pngのキャッシュサムネイル
+    └── image2.jpg.jpg    # image2.jpgのキャッシュサムネイル
 ```
 
 ## 配布
@@ -181,9 +208,15 @@ AIview は [Homebrew Cask](https://github.com/hummer98/homebrew-aiview) 経由�
 
 ## プライバシー
 
-AIview は、アプリが実際にどれくらい使われているかを把握するため、起動時に**匿名の利用 ping** を1日1回送信します。**個人情報は一切含みません**。送信するのはランダムな識別子・アプリのバージョン・macOS のバージョン・CPU 種別・言語設定のみで、ファイルパス・画像の内容・個人を特定する情報は送信しません。
+`Space`でwindow単位のプライバシーオーバーレイを有効にできます。有効化時は、保留中の前回表示位置の書き込みとメタデータ/プロンプト抽出もキャンセルし、情報パネルが保持していたメタデータを消去します。
 
-**設定 → 表示 → プライバシー → 「匿名の利用統計を送信する」** で完全に停止できます。OFF にすると、計測に関する通信は一切行いません。
+AIview は起動時に、UTC日ごとに最大1回の利用pingを送信します。clientが送るのはstableで推測困難なrandom install UUID（**仮名識別子 / pseudonymous identifier**）、アプリとmacOSのversion、CPU種別、localeです。serverはCloudflareが付与した国codeを追加しますが、接続元IPは保存しません。installごとにこれらの項目、初回/最終送信時刻、active day数を1行だけ保存します。file path、画像内容、prompt、user名などの個人的な内容は送信しません。
+
+通常の利用統計は**設定 → 表示 → プライバシー → 「匿名の利用統計を送信する」**で停止できます。OFFにすると送信中のping/retryを即座にcancelし、OFFの間は通常の利用統計通信を行いません。serverの記録は最終送信から400日後に削除されます。
+
+**「仮名IDをサーバーから削除してリセット」**は、現在のUUIDをserverから削除し、serverが成功を返した後だけ新しいlocal UUIDを生成します。失敗時は再試行できるよう旧UUIDを維持します。この明示的な削除requestは通常の利用統計がOFFでも利用でき、OFF中にanalytics serverへ送る唯一のrequestです。
+
+アプリ診断にはAppleのprivacy-awareなUnified Loggingを使用します。ファイルpath/name、URL、metadata、error詳細はprivateで扱い、抽出したAI promptはlogしません。ナビゲーション診断は内容を持たないbounded in-memory event履歴だけに保持し、平文incident fileへは保存しません。
 
 詳細: [ADR 002](docs/adr/002-anonymous-usage-telemetry.html)。
 

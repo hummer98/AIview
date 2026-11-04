@@ -18,15 +18,16 @@
 ### CacheManager（フルサイズ画像）
 
 - 容量: デフォルト **512MB**（設定で変更可、`SettingsStore.fullImageCacheSizeMB`）
-- データ構造: 双方向リスト + 辞書 = LRU 実装
-- メモリサイズ推定: `pixelsWide × pixelsHigh × 4 bytes`
+- データ構造: `LRUStorage`（双方向リスト + 辞書）をフルサイズ・サムネイルで共有。`previous`リンクをweakにし、clear時は全リンクを明示的に切断
+- メモリサイズ: 取得可能なら `CGImage.bytesPerRow × height`、取得できない場合だけ全 `NSImageRep` の安全な合計（不正な寸法と `Int` overflow を防御）
 - `handleMemoryWarning()` でサイズを半減
-- `NSLock` 保護、ロック待ち時間ヒストグラムを記録（>1ms で warning）
+- `NSLock` 保護。辞書・LRU link・合計 cost は同じ lock 内の1 transactionで更新し、ロック待ち時間ヒストグラムを記録（>1ms で warning）
 
 ### ThumbnailCacheManager（サムネイル）
 
 - 容量: デフォルト **256MB**（`thumbnailCacheSizeMB`）
 - フルサイズと独立（駆逐ポリシーが干渉しない）
+- メモリ層はフルサイズと同じ `LRUStorage` と decoded byte cost 計算を使用
 - メモリミス時は `DiskCacheStore` から非同期で読み込み、ヒットしたらメモリにも昇格
 
 ## ディスクキャッシュ
@@ -51,12 +52,14 @@
 - 進行方向: **12 枚先**まで（`.utility`）
 - 逆方向: **3 枚遡る**（戻る操作への保険）
 
-`hasCachedImage` で既に充填済みの URL はスキップ。`prefetchTasks` 辞書で重複起動を防止。
+`hasCachedImage` で既に充填済みの URL はスキップ。in-flight decodeは`ImageRequestKey(URL, targetPixelSize)`で区別し、同一keyの表示とprefetchだけがworkを共有する。registry entryと各consumerはUUID identityを持ち、遅れて終了した旧waiterが同じkeyの新entryを削除しない。
 
 ### キャンセル戦略
 
 - フォルダ切替・リロード: `cancelAll()` で進行中・プリフェッチ中の Task を全停止
 - ナビゲーション中: `cancelAllExcept(activeURL)` で表示対象だけ残し他は停止 → ストールを防ぎ最新の入力に追従
+- 個別prefetch cancel: prefetch consumerだけを解放し、表示consumerが残るdecodeは継続。最後のconsumerが離れた時だけunderlying decodeをcancel
+- prefetch registry entryはsuccess/failure/cancellationの全経路でidentity付きcleanupを行い、idle時は0件へ戻る
 
 ## 巨大画像のダウンサンプリング
 
@@ -77,7 +80,9 @@
 - **CacheManager**: hits/misses（フルサイズ）、ロック待ちヒストグラム、>1ms 件数
 - **ThumbnailCacheManager**: メモリ hits/misses + ディスク hits/misses
 - **ImageLoader**: prefetchSuccess/Failure、ロック待ち
-- **DiskCacheStore**: read/write 件数、レイテンシヒストグラム
+- **DiskCacheStore**: read/write 件数、レイテンシヒストグラム、thumbnail write失敗件数、window/session内のwarning発行件数
+
+ディスクthumbnail書き込みはbest-effortで、read-only media等でも画像表示は継続する。一方で失敗を不可視にはせず、windowごとに`BrowserSessionController`が所有する`DiskCacheStore` actorで全失敗をcountする。同一storeのwarningは最初の1回だけUnified Loggingへ出し、`writeFailureCount`と`writeFailureWarningCount`を`MetricsCollector.snapshot()`へ含める。UI facadeはwindow metricsのbind用にこのservice参照をread-onlyで公開するだけで、I/Oを実装しない。
 - **QueueInstrumentation**: avgInFlight、p50/p95 待機時間
 
 `⌘⇧D`（開発メニュー → 診断情報をログ出力）で `Logger.metrics` に整形済み文字列を吐く。

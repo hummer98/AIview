@@ -9,6 +9,7 @@ final class ScrollPerformanceUITests: XCTestCase {
 
     private var app: XCUIApplication!
     private var testFolderURL: URL!
+    private var testImageURLs: [URL] = []
 
     private let imageCount = 100  // PNG形式では生成時間を考慮して100枚に
     private let imageSize = CGSize(width: 2048, height: 2048)  // PNG形式で約4-6MB/枚
@@ -21,8 +22,8 @@ final class ScrollPerformanceUITests: XCTestCase {
 
     // MARK: - Setup / Teardown
 
-    override func setUpWithError() throws {
-        try super.setUpWithError()
+    override func setUp() async throws {
+        try await super.setUp()
         continueAfterFailure = false
 
         // テスト用一時フォルダを作成
@@ -32,12 +33,13 @@ final class ScrollPerformanceUITests: XCTestCase {
         // 1. キャッシュクリア（冪等性確保）
         try DummyImageGenerator.clearCache(in: testFolderURL)
 
-        // 2. 200枚のダミー画像を生成
-        try DummyImageGenerator.generateImages(
+        // 2. 全fixtureを書き終えてからappを起動し、scannerとの生成raceを避ける
+        testImageURLs = try DummyImageGenerator.generateImages(
             count: imageCount,
             in: testFolderURL,
             imageSize: imageSize
         )
+        XCTAssertEqual(testImageURLs.count, imageCount)
 
         // 3. アプリを起動
         app = XCUIApplication()
@@ -45,36 +47,48 @@ final class ScrollPerformanceUITests: XCTestCase {
         // テストフォルダのパスを環境変数で渡す
         app.launchEnvironment["AIVIEW_TEST_FOLDER"] = testFolderURL.path
         app.launchEnvironment["AIVIEW_UI_TEST_MODE"] = "1"
+        // no-cache計測中にbackground warmerがcacheを作ると測定条件が崩れる。
+        // その他のtestではproduction同様にwarmerを有効化する。
+        app.launchEnvironment["AIVIEW_UI_TEST_BACKGROUND_IMAGE_WORK"] =
+            name.contains("testScrollPerformance_withoutCache") ? "0" : "1"
+        app.launchArguments += ["-ApplePersistenceIgnoreState", "YES"]
 
         app.launch()
 
         // アプリをアクティブにしてフォーカスを確保
         app.activate()
+        XCTAssertTrue(
+            app.wait(for: .runningForeground, timeout: 15),
+            "AIview should reach the foreground before UI assertions"
+        )
     }
 
-    override func tearDownWithError() throws {
-        // 1. キャッシュクリア
-        if let folder = testFolderURL {
-            try? DummyImageGenerator.clearCache(in: folder)
+    override func tearDown() async throws {
+        // app-owned scanner/warmer/disk writesを終了してからfixtureを削除する。
+        if let application = app, application.state != .notRunning {
+            application.terminate()
+            XCTAssertTrue(
+                application.wait(for: .notRunning, timeout: 10),
+                "AIview should terminate before fixture cleanup"
+            )
+        }
 
-            // 2. テストフォルダ削除
-            try? DummyImageGenerator.cleanupTestFolder(folder)
+        if let folder = testFolderURL {
+            try DummyImageGenerator.cleanupTestFolder(folder)
         }
 
         app = nil
         testFolderURL = nil
+        testImageURLs = []
 
-        try super.tearDownWithError()
+        try await super.tearDown()
     }
 
     // MARK: - Performance Tests
 
     /// グリッドスクロールのパフォーマンステスト（キャッシュなし）
     func testScrollPerformance_withoutCache() throws {
-        // キャッシュを確実にクリア
-        try DummyImageGenerator.clearCache(in: testFolderURL)
-
-        // フォルダを開く
+        // setUpでcacheなしのfixtureを作り、このtestだけbackground warmerも無効化済み。
         openTestFolder()
 
         // サムネイルカルーセルが表示されるまで待機
@@ -88,8 +102,11 @@ final class ScrollPerformanceUITests: XCTestCase {
         // スクロールパフォーマンスを計測（CPU時間で計測）
         let cpuMetric = XCTCPUMetric(application: app)
         let clockMetric = XCTClockMetric()
+        let options = XCTMeasureOptions()
+        // 同じprocessの2回目以降はmemory/disk cache hitになり、cold条件ではなくなる。
+        options.iterationCount = 1
 
-        measure(metrics: [cpuMetric, clockMetric]) {
+        measure(metrics: [cpuMetric, clockMetric], options: options) {
             // 右方向にスクロール（端まで）
             scrollToEnd(carousel: carousel)
 
@@ -114,8 +131,8 @@ final class ScrollPerformanceUITests: XCTestCase {
         // キャッシュを生成するために一度全体をスクロール
         warmupCache(carousel: carousel)
 
-        // キャッシュが生成されるまで少し待機
-        Thread.sleep(forTimeInterval: 2.0)
+        // 固定sleepではcache完了を保証できないため、全originalに対応する実fileを待つ。
+        waitForThumbnailCache(timeout: 120)
 
         // スクロールパフォーマンスを計測
         let cpuMetric = XCTCPUMetric(application: app)
@@ -156,12 +173,17 @@ final class ScrollPerformanceUITests: XCTestCase {
 
         // メモリ使用量を計測
         let memoryMetric = XCTMemoryMetric(application: app)
+        let options = XCTMeasureOptions()
+        // 初回load後はcache済みになるため、「load中」の条件を混在させない。
+        options.iterationCount = 1
 
-        measure(metrics: [memoryMetric]) {
+        measure(metrics: [memoryMetric], options: options) {
             // 全画像を表示するためにスクロール（端まで）
             let swipeCount = calculateSwipesToEnd(carouselWidth: carousel.frame.width)
             for _ in 0..<swipeCount {
                 carousel.swipeLeft(velocity: .slow)
+                // memory metricの対象となる「scroll後もdecodeが進行する滞在時間」を一定化する。
+                // readiness待ちではないため、可変predicate waitへ置換しない。
                 Thread.sleep(forTimeInterval: 0.5)
             }
 
@@ -171,7 +193,7 @@ final class ScrollPerformanceUITests: XCTestCase {
     }
 
     /// フォルダを開いた直後に矢印キーでブロックされずにナビゲーションできるかテスト
-    /// 200枚の画像があっても、キー入力に対して即座に応答すること
+    /// 100枚の画像があっても、キー入力に対して即座に応答すること
     func testKeyNavigationResponsiveness() throws {
         // フォルダを開く（環境変数経由で自動オープン）
         openTestFolder()
@@ -205,10 +227,7 @@ final class ScrollPerformanceUITests: XCTestCase {
     /// フォルダ開いた直後（バックグラウンドでサムネイル生成中）にキーナビが効くかテスト
     /// XCUITestのオーバーヘッドを考慮した閾値を設定
     func testKeyNavigationDuringThumbnailGeneration() throws {
-        // キャッシュをクリアして、サムネイル生成が発生する状態にする
-        try DummyImageGenerator.clearCache(in: testFolderURL)
-
-        // フォルダを開く
+        // setUpがcacheなしfixtureをapp起動前に確定している。
         openTestFolder()
 
         // カルーセルが表示されるまで待機（サムネイルはまだ読み込み中）
@@ -224,7 +243,10 @@ final class ScrollPerformanceUITests: XCTestCase {
         let clockMetric = XCTClockMetric()
 
         // サムネイル生成中でもキー操作ができることを確認
-        measure(metrics: [cpuMetric, clockMetric]) {
+        let options = XCTMeasureOptions()
+        // warmer完了後の反復を「生成中」のsampleへ混ぜない。
+        options.iterationCount = 1
+        measure(metrics: [cpuMetric, clockMetric], options: options) {
             // 10回矢印キーを押す
             for _ in 0..<10 {
                 mainWindow.typeKey(.rightArrow, modifierFlags: [])
@@ -245,12 +267,31 @@ final class ScrollPerformanceUITests: XCTestCase {
         // app.menuBars.menuItems["Open Folder..."].click()
     }
 
+    /// background warmerとvisible cellのdisk writeが全件完了するまで待つ。
+    /// test runner側からfile existenceをpollするため、appのmain threadをblockしない。
+    private func waitForThumbnailCache(timeout: TimeInterval) {
+        let expectedCount = testImageURLs.count
+        let predicate = NSPredicate { [testImageURLs] _, _ in
+            DummyImageGenerator.validThumbnailCacheCount(for: testImageURLs) == expectedCount
+        }
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: nil)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        XCTAssertEqual(
+            result,
+            .completed,
+            "Expected \(expectedCount) thumbnail cache files, found "
+                + "\(DummyImageGenerator.validThumbnailCacheCount(for: testImageURLs))"
+        )
+    }
+
     /// キャッシュをウォームアップ（全画像を一度表示）
     private func warmupCache(carousel: XCUIElement) {
         // ゆっくりスクロールして全サムネイルを読み込む
         let swipeCount = calculateSwipesToEnd(carouselWidth: carousel.frame.width)
         for _ in 0..<swipeCount {
             carousel.swipeLeft(velocity: .slow)
+            // LazyHStackの各viewportを生成queueへ投入するためのgesture cadence。
+            // 完了判定はwaitForThumbnailCacheが実file countで行う。
             Thread.sleep(forTimeInterval: 0.3)
         }
 

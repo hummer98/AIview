@@ -1,0 +1,139 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - '**'
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
+env:
+  XCODE_VERSION: '26.6'
+
+jobs:
+  preflight:
+    name: Build and static gates
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@1242409711ff5721add51979e9e11e23ebb7e5a4 # v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - name: Select Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cloudflare/aiview-metrics/package-lock.json
+
+      - name: Install quality tools
+        run: brew install go-task swiftlint swiftformat shellcheck ripgrep
+
+      - name: Verify runner and selected Xcode
+        run: |
+          sw_vers
+          echo "Runner image: ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          task macos:version
+          task xcode:version
+
+      - name: Log tool versions
+        run: task doctor
+
+      - name: Run build and static gates
+        run: task ci:static
+
+  runtime-tests:
+    name: ${{ matrix.label }}
+    needs: preflight
+    runs-on: macos-26
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: unit
+            label: Unit tests
+            task: test:unit
+            result: AIviewTests.xcresult
+            timeout_minutes: 60
+          - id: e2e
+            label: Favorites E2E tests
+            task: test:e2e
+            result: FavoritesE2ETests.xcresult
+            timeout_minutes: 45
+          - id: ui
+            label: XCUIApplication UI tests
+            task: test:ui
+            result: AIviewUITests.xcresult
+            timeout_minutes: 60
+          - id: tsan
+            label: TSan race and cancellation tests
+            task: test:tsan
+            result: AIviewTSan.xcresult
+            timeout_minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@1242409711ff5721add51979e9e11e23ebb7e5a4 # v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - name: Install test tools
+        run: brew install go-task ripgrep
+
+      - name: Verify runner and selected Xcode
+        run: |
+          sw_vers
+          echo "Runner image: ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          task macos:version
+          task xcode:version
+
+      - name: Run ${{ matrix.label }}
+        run: task ${{ matrix.task }}
+
+      - name: Upload ${{ matrix.label }} xcresult
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: AIview-${{ matrix.id }}-xcresult-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/TestResults/${{ matrix.result }}
+          if-no-files-found: error
+          retention-days: 14
+
+  quality:
+    name: Quality evidence complete
+    if: always()
+    needs:
+      - preflight
+      - runtime-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every quality job
+        env:
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+          RUNTIME_TESTS_RESULT: ${{ needs.runtime-tests.result }}
+        run: |
+          if [[ "$PREFLIGHT_RESULT" != "success" || "$RUNTIME_TESTS_RESULT" != "success" ]]; then
+            echo "Quality evidence incomplete: preflight=$PREFLIGHT_RESULT runtime-tests=$RUNTIME_TESTS_RESULT" >&2
+            exit 1
+          fi
+          echo "All build, static, unit, E2E, UI, and TSan gates succeeded."

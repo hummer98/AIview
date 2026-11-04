@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AIview 総合コードレビュー — 2026-08-11</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f6fb;
+      --surface: #ffffff;
+      --surface-2: #f8fafc;
+      --ink: #172033;
+      --muted: #5d687a;
+      --border: #dce2ec;
+      --accent: #3157d5;
+      --accent-soft: #e9edff;
+      --p0: #b42318;
+      --p0-soft: #fff0ee;
+      --p1: #b54708;
+      --p1-soft: #fff6e8;
+      --p2: #175cd3;
+      --p2-soft: #edf4ff;
+      --good: #067647;
+      --good-soft: #ecfdf3;
+      --shadow: 0 18px 48px rgba(30, 42, 68, .09);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0e1320;
+        --surface: #171d2b;
+        --surface-2: #111827;
+        --ink: #edf2ff;
+        --muted: #aab4c8;
+        --border: #30394d;
+        --accent: #9eb0ff;
+        --accent-soft: #202b55;
+        --p0: #ff9188;
+        --p0-soft: #3b2024;
+        --p1: #ffb86b;
+        --p1-soft: #392919;
+        --p2: #83b6ff;
+        --p2-soft: #182d4a;
+        --good: #70d8a8;
+        --good-soft: #16372b;
+        --shadow: none;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", sans-serif;
+      line-height: 1.72;
+    }
+    a { color: var(--accent); text-underline-offset: 3px; }
+    code, .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .92em;
+    }
+    code {
+      padding: .08rem .3rem;
+      border-radius: .3rem;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+    }
+    .shell { max-width: 1180px; margin: 0 auto; padding: 44px 28px 80px; }
+    .hero {
+      padding: 40px;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: linear-gradient(135deg, var(--surface), var(--accent-soft));
+      box-shadow: var(--shadow);
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-weight: 750;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      font-size: .8rem;
+    }
+    h1 { margin: 0; line-height: 1.18; font-size: clamp(2rem, 5vw, 3.7rem); }
+    h2 { margin: 64px 0 18px; line-height: 1.25; font-size: 1.75rem; }
+    h3 { margin: 32px 0 12px; line-height: 1.35; font-size: 1.22rem; }
+    h4 { margin: 0 0 8px; font-size: 1.02rem; }
+    p { margin: .6rem 0 1rem; }
+    .lead { max-width: 860px; color: var(--muted); font-size: 1.13rem; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 24px; color: var(--muted); font-size: .9rem; }
+    .verdict {
+      margin-top: 28px;
+      padding: 18px 20px;
+      border-left: 5px solid var(--p0);
+      border-radius: 10px;
+      background: var(--p0-soft);
+    }
+    .verdict strong { color: var(--p0); }
+    .grid { display: grid; gap: 16px; }
+    .stats { grid-template-columns: repeat(4, 1fr); margin-top: 22px; }
+    .stat, .card, .finding, .note {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .stat { padding: 18px; }
+    .stat b { display: block; font-size: 1.7rem; line-height: 1.1; }
+    .stat span { color: var(--muted); font-size: .86rem; }
+    .toc { margin-top: 24px; padding: 22px 26px; }
+    .toc ol { columns: 2; padding-left: 1.25rem; }
+    .card { padding: 22px 24px; }
+    .cards-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cards-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: .74rem;
+      letter-spacing: .04em;
+      white-space: nowrap;
+    }
+    .pill.p0 { color: var(--p0); background: var(--p0-soft); }
+    .pill.p1 { color: var(--p1); background: var(--p1-soft); }
+    .pill.p2 { color: var(--p2); background: var(--p2-soft); }
+    .pill.ok { color: var(--good); background: var(--good-soft); }
+    .finding { margin: 16px 0; overflow: hidden; }
+    .finding-head { display: flex; gap: 12px; align-items: flex-start; padding: 18px 22px 10px; }
+    .finding-head h3 { margin: 0; }
+    .finding-body { padding: 0 22px 20px; }
+    .finding-body p:last-child { margin-bottom: 0; }
+    .label { font-weight: 750; color: var(--muted); }
+    .evidence {
+      margin: 12px 0;
+      padding: 12px 14px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: .92rem;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: .93rem; }
+    th, td { text-align: left; vertical-align: top; padding: 11px 12px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-size: .8rem; letter-spacing: .035em; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+    ul, ol { padding-left: 1.3rem; }
+    li { margin: .38rem 0; }
+    .architecture {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 18px;
+      align-items: stretch;
+      margin: 24px 0;
+    }
+    .architecture .arrow { align-self: center; color: var(--accent); font-size: 2rem; }
+    .architecture .card { box-shadow: none; }
+    .bad-line { border-top: 4px solid var(--p0); }
+    .good-line { border-top: 4px solid var(--good); }
+    .note { padding: 17px 20px; margin: 16px 0; box-shadow: none; }
+    .note.warn { border-left: 4px solid var(--p1); }
+    .note.good { border-left: 4px solid var(--good); }
+    .phase { counter-increment: phase; position: relative; padding-left: 54px; }
+    .phase::before {
+      content: counter(phase);
+      position: absolute;
+      left: 18px;
+      top: 18px;
+      width: 27px;
+      height: 27px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: white;
+      background: var(--accent);
+      font-weight: 800;
+    }
+    .phases { counter-reset: phase; }
+    .small { font-size: .88rem; color: var(--muted); }
+    .footer { margin-top: 66px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: .88rem; }
+    @media (max-width: 800px) {
+      .shell { padding: 22px 14px 60px; }
+      .hero { padding: 26px 22px; border-radius: 18px; }
+      .stats, .cards-2, .cards-3 { grid-template-columns: 1fr; }
+      .toc ol { columns: 1; }
+      .architecture { grid-template-columns: 1fr; }
+      .architecture .arrow { transform: rotate(90deg); justify-self: center; }
+    }
+    @media print {
+      :root { color-scheme: light; }
+      body { background: white; }
+      .shell { max-width: none; padding: 0; }
+      .hero, .card, .finding, .stat { box-shadow: none; break-inside: avoid; }
+      a { color: inherit; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <p class="eyebrow">AIview / Comprehensive Code Review</p>
+      <h1>総合コードレビュー</h1>
+      <p class="lead">SwiftUI / AppKit クライアントと Cloudflare Worker を対象に、Apple・Swift・Cloudflare の公式資料から先に評価基準を作り、構造、状態管理、非同期処理、メモリ、エラー処理、ログ、プライバシー、CI を横断して確認した。</p>
+      <div class="meta">
+        <span>実施: 2026-08-11 13:54 JST</span>
+        <span>対象: <span class="mono">master @ 14c39d1 (v0.9.0)</span></span>
+        <span>Swift: 15,464 lines（テスト含む）</span>
+        <span>作業ツリー: レビュー開始時 clean</span>
+      </div>
+      <div class="verdict">
+        <strong>結論: 次の機能追加より先に、状態と非同期処理の構造修正が必要。</strong>
+        現状は十分なテスト資産とレイヤ分割を持つ一方、画像・URL同一性、フォルダ読み込みの世代、ウィンドウ単位の状態という3つの不変条件が型や単一状態で表現されていない。結果として、個別症状をTask・フラグ・補助プロパティで抑える修正が積み重なり、別経路で同じ種類の不具合が再発しうる。
+      </div>
+      <div class="grid stats">
+        <div class="stat"><b style="color:var(--p0)">5</b><span>P0 — 次リリース前</span></div>
+        <div class="stat"><b style="color:var(--p1)">9</b><span>P1 — 構造改善</span></div>
+        <div class="stat"><b style="color:var(--p2)">4</b><span>P2 — 品質・文書</span></div>
+        <div class="stat"><b style="color:var(--good)">1 / 3</b><span>主要検証成功（analyze）</span></div>
+      </div>
+    </header>
+
+    <nav class="card toc" aria-label="目次">
+      <h3 style="margin-top:0">目次</h3>
+      <ol>
+        <li><a href="#criteria">予備調査から作成した観点</a></li>
+        <li><a href="#summary">優先度一覧</a></li>
+        <li><a href="#p0">P0 所見</a></li>
+        <li><a href="#p1">P1 所見</a></li>
+        <li><a href="#patchwork">場当たり的修正と構造診断</a></li>
+        <li><a href="#claude">CLAUDE.md 評価</a></li>
+        <li><a href="#verification">実行した検証</a></li>
+        <li><a href="#plan">推奨修正計画</a></li>
+        <li><a href="#positives">良い点</a></li>
+        <li><a href="#sources">公式資料</a></li>
+      </ol>
+    </nav>
+
+    <section id="criteria">
+      <h2>1. 予備調査から作成したレビュー観点</h2>
+      <p>実装を読む前に、変更されやすい一般論やブログではなく、Apple / Swift / Cloudflare の一次資料を基準にした。特にSwiftアプリ固有の観点は次の通り。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>観点</th><th>期待する性質</th><th>今回の確認対象</th></tr></thead>
+          <tbody>
+            <tr><td>SwiftUI状態管理</td><td>single source of truth。共有状態は必要最小の共通祖先に置き、画面・scene固有状態をアプリ全体へ引き上げない。</td><td><code>@State</code> / <code>@Environment</code> / <code>@SceneStorage</code>、複数WindowGroup、コマンド配送。</td></tr>
+            <tr><td>Observation</td><td><code>@Observable</code>はUI状態の追跡に使い、I/O・サービス・状態遷移を分離してテスト可能にする。</td><td><code>AppState</code>、<code>ImageBrowserViewModel</code>の責務と派生状態。</td></tr>
+            <tr><td>Swift Concurrency</td><td>Swift 6のデータ競合検査に通ること。キャンセルは協調的であり、Taskの所有者・世代・終了条件が明示されること。</td><td>Actor再入、unstructured Task、Taskレジストリ、キャンセル後のcommit。</td></tr>
+            <tr><td>ARC / メモリ</td><td>クラス間・クロージャ間の強参照サイクルを作らない。大画像を扱うため、実メモリ量に基づく上限と解放確認が必要。</td><td>LRU双方向リスト、無限Task、画像サイズ推定、PNG全読込。</td></tr>
+            <tr><td>ファイル権限</td><td><code>startAccessingSecurityScopedResource()</code>成功時は、不要になり次第必ず対応するstopを呼ぶ。</td><td>recent folder bookmark、sandbox entitlements、window/folderライフサイクル。</td></tr>
+            <tr><td>エラー処理</td><td>キャンセル、ユーザー操作失敗、回復可能I/O、致命的整合性違反を区別し、UIまたは観測系へ伝播する。</td><td><code>try?</code>、空フォルダ、favorites、picker、disk cache。</td></tr>
+            <tr><td>ログとプライバシー</td><td>動的値は既定private。パス・ファイル名・生成AIプロンプト・エラー内容のpublic公開を原則禁止する。</td><td><code>Logger</code> 100箇所のpublic指定、独自ファイルログ、<code>print</code>。</td></tr>
+            <tr><td>Worker / D1</td><td>入力検証、レート制限、秘密情報をURLへ置かない、bindingとprepared statement、versioned migrations。</td><td><code>/ping</code>、<code>/stats</code>、CORS、D1 schema、秘密情報。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="summary">
+      <h2>2. 優先度一覧</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>優先度</th><th>所見</th><th>主な影響</th></tr></thead>
+          <tbody>
+            <tr><td>STATE-01</td><td><span class="pill p0">P0</span></td><td>表示画像とcurrent URL/indexが乖離する</td><td>別画像のお気に入り化・削除</td></tr>
+            <tr><td>MEM-01</td><td><span class="pill p0">P0</span></td><td>2つのLRUリストが強参照サイクル</td><td>clear後も画像を恒久保持</td></tr>
+            <tr><td>ASYNC-01</td><td><span class="pill p0">P0</span></td><td>フォルダスキャンのキャンセルと世代管理が機能しない</td><td>古いフォルダの結果が新状態を上書き</td></tr>
+            <tr><td>SCENE-01</td><td><span class="pill p0">P0</span></td><td>scene固有コマンドを全Window共有</td><td>複数Windowの誤操作・状態混線</td></tr>
+            <tr><td>SEC-01</td><td><span class="pill p0">P0</span></td><td>公開テレメトリendpointに濫用防止がない</td><td>D1汚染・コスト・秘密のURL露出</td></tr>
+            <tr><td>ASYNC-02</td><td><span class="pill p1">P1</span></td><td>Task所有権・終了時cleanupに競合/循環</td><td>キャンセル不能、window解放不能</td></tr>
+            <tr><td>STATE-02</td><td><span class="pill p1">P1</span></td><td>metadataが画像遷移に追従しない</td><td>別画像の情報を表示</td></tr>
+            <tr><td>STATE-03</td><td><span class="pill p1">P1</span></td><td>favoritesのflat/aggregated二重状態が分岐</td><td>統合モードの表示・filterが古い</td></tr>
+            <tr><td>LOG-01</td><td><span class="pill p1">P1</span></td><td>ログポリシー不在、機微値をpublic</td><td>パス・ファイル名・prompt漏洩</td></tr>
+            <tr><td>FS-01</td><td><span class="pill p1">P1</span></td><td>security-scoped accessを停止しない</td><td>権限資源リーク、設計の矛盾</td></tr>
+            <tr><td>ERR-01</td><td><span class="pill p1">P1</span></td><td>エラー握り潰しと空フォルダ無限loading</td><td>操作失敗が見えない、UI停止</td></tr>
+            <tr><td>BUILD-01</td><td><span class="pill p1">P1</span></td><td>Swift 6で4件のcompile error</td><td>並行性安全性が未保証</td></tr>
+            <tr><td>CI-01</td><td><span class="pill p1">P1</span></td><td>PR CIなし、lint/format taskが壊れている</td><td>releaseまで退行を検出しない</td></tr>
+            <tr><td>ARCH-01</td><td><span class="pill p1">P1</span></td><td>1,670行ViewModelへ状態遷移が集中</td><td>症状修正の連鎖、変更影響が広い</td></tr>
+            <tr><td>PRIV-01</td><td><span class="pill p2">P2</span></td><td>privacy mode直前の遅延記録が残る</td><td>プライバシー期待との不一致</td></tr>
+            <tr><td>PERF-01</td><td><span class="pill p2">P2</span></td><td>PNG metadataでファイル全体を複数回展開</td><td>巨大画像で一時メモリ急増</td></tr>
+            <tr><td>DOC-01</td><td><span class="pill p2">P2</span></td><td>CLAUDE.mdの原則不足と文書drift</td><td>実装判断・レビュー基準が属人化</td></tr>
+            <tr><td>CACHE-02</td><td><span class="pill p2">P2</span></td><td>先頭representationだけで画像サイズ推定</td><td>cache上限の過小計上</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="p0">
+      <h2>3. P0 — 次リリース前に直すべき所見</h2>
+
+      <article class="finding">
+        <div class="finding-head"><span class="pill p0">STATE-01 / P0</span><h3>表示画像と <code>currentImageURL</code> が別物になり、削除対象を誤る</h3></div>
+        <div class="finding-body">
+          <p><span class="label">事実:</span> 最初に列挙された画像を表示した後、scan完了時に配列をソートしてから <code>currentImageURL</code> を読み直している。したがって「実際にload済みのURL」ではなく「新しい配列の同じindex」をanchorとして採用する。DirectoryEnumeratorの順序はソート順とは限らない。サブディレクトリ有効化でも配列だけを差し替え、画像・indexを同期していない。</p>
+          <div class="evidence"><a href="../../AIview/Sources/Domain/ImageBrowserViewModel.swift">ImageBrowserViewModel.swift</a> 655–696, 1458–1491。削除は587–617で <code>currentImageURL</code> を対象にするため、画面で見ている画像と違うファイルをTrashへ送る可能性がある。</div>
+          <p><span class="label">修正:</span> 選択状態を <code>Selection(url, index, image)</code> の1値としてcommitし、<code>loadedImageURL == imageURLs[currentIndex]</code> を常時不変条件にする。配列差替え前に <code>loadedImageURL</code> をcaptureし、新配列でindexを解決、存在しなければ先頭をreloadする。削除直前にも表示URL一致をguardする。</p>
+          <p><span class="label">必須テスト:</span> 列挙順と名前順が異なる3画像、subdirectory追加で先頭が変わるケース、表示画像と削除URLの一致。</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="finding-head"><span class="pill p0">MEM-01 / P0</span><h3>LRUキャッシュの双方向ノードが循環参照し、clear後も画像を解放しない</h3></div>
+        <div class="finding-body">
+          <p><span class="label">事実:</span> <code>CacheNode.prev</code> と <code>next</code> が双方strongである。通常evictionはlinksを切るが、<code>clearMemoryCache()</code> は辞書とhead/tailだけを捨て、各node間のlinksを切らない。2node以上あれば相互保持が残り、各nodeが大きな<code>NSImage</code>を保持し続ける。同じ実装がfull-sizeとthumbnailの2系統にある。</p>
+          <div class="evidence"><a href="../../AIview/Sources/Domain/CacheManager.swift">CacheManager.swift</a> 11–17, 152–160 / <a href="../../AIview/Sources/Domain/ThumbnailCacheManager.swift">ThumbnailCacheManager.swift</a> 10–15, 234–243。</div>
+          <p><span class="label">修正:</span> 通常は <code>weak var prev</code> とし、clear時も防御的に全nodeのlinksを切る。LRUの所有権を値型のkey列へ寄せる選択肢もある。<code>NSImage.representations.first</code>だけのサイズ推定も、実際のCGImageの<code>bytesPerRow × height</code>等へ改める。</p>
+          <p><span class="label">検証:</span> deinit probe/weak sentinelを用いた単体テストに加え、Instruments Leaks + Allocationsでclear前後のpersistent bytesを測る。既存テストはcountが0になることしか見ず、解放は検証していない。</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="finding-head"><span class="pill p0">ASYNC-01 / P0</span><h3>フォルダ切替のキャンセルが実質機能せず、古いscanが新しい状態を上書きする</h3></div>
+        <div class="finding-body">
+          <p><span class="label">事実:</span> <code>FolderScanner.currentScanTask</code> は宣言されるが一度も代入されない。共有boolean <code>isCancelled</code> は新scan開始時にfalseへ戻される。actorはcallbackの<code>await</code>で再入可能なので、Aをscan中にBを開くと、Aをcancel→Bがfalseへreset→Aが続行できる。ViewModelのcallbackにもfolder URLやgenerationの照合がない。</p>
+          <div class="evidence"><a href="../../AIview/Sources/Domain/FolderScanner.swift">FolderScanner.swift</a> 38–55, 90–128, 131–135 / <a href="../../AIview/Sources/Domain/ImageBrowserViewModel.swift">ImageBrowserViewModel.swift</a> 265–339。</div>
+          <p><span class="label">影響:</span> Aのfirst/progress/complete/errorが、すでにBを表示中の <code>imageURLs</code>、favorites、loading/error、warmerを上書きする。</p>
+          <p><span class="label">修正:</span> <code>FolderSessionID</code>（UUID）をopen開始ごとに発行し、await後と全commit直前に一致をguardする。Scannerはcallback3本ではなく <code>AsyncThrowingStream&lt;ScanEvent&gt;</code> または結果値を返し、所有するTask handleを確実にcancelする。<code>CancellationError</code>はUI errorにしない。</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="finding-head"><span class="pill p0">SCENE-01 / P0</span><h3>scene固有状態をアプリ全体の <code>AppState</code> に置き、全windowへbroadcastしている</h3></div>
+        <div class="finding-body">
+          <p><span class="label">事実:</span> <code>AIviewApp</code>が1個の<code>@State AppState</code>を全<code>WindowGroup</code>へ注入する一方、各windowは個別ViewModelを持つ。folder picker、recent folder、reload、cache clear、sibling navigation、zoomは共有slot/booleanを各windowが監視して消費する。<code>hasCurrentFolder</code> / <code>hasImages</code>とmetrics collectorも最後に更新したwindowが勝つ。</p>
+          <div class="evidence"><a href="../../AIview/Sources/App/AIviewApp.swift">AIviewApp.swift</a> 19, 32–58 / <a href="../../AIview/Sources/App/AppState.swift">AppState.swift</a> 19–125 / <a href="../../AIview/Sources/Presentation/MainWindowView.swift">MainWindowView.swift</a> 8–74。</div>
+          <div class="architecture">
+            <div class="card bad-line"><h4>現在</h4><p><code>AppState</code> 1個</p><p>↓ picker / zoom / reload / metrics</p><p>Window A・B・Cが同じイベントを監視・clear</p></div>
+            <div class="arrow">→</div>
+            <div class="card good-line"><h4>推奨</h4><p>App-global: settings / telemetry / shared services</p><p>Scene: <code>BrowserSession</code> / commands / metrics</p><p>メニューはfocused sceneへ配送</p></div>
+          </div>
+          <p><span class="label">修正:</span> windowごとに<code>BrowserSession</code>を生成し、transient commandとavailabilityはそこへ置く。メニュー配送はFocusedValues / focused scene actionを使用する。アプリ全体へ残すのは設定、テレメトリ、共有cache service等だけにする。</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="finding-head"><span class="pill p0">SEC-01 / P0</span><h3>稼働中のmetrics Workerが第三者の書込みとURL credential露出を許す</h3></div>
+        <div class="finding-body">
+          <p><span class="label">事実:</span> <code>GET /ping</code>はIDが空でないことと長さしか検証せず、認証・署名・rate limitがない。CORSは<code>*</code>で、任意のbrowser/botからD1を汚染できる。stable install UUIDをqueryへ置くため、URLログや中間系へ残りうる。<code>/stats?key=...</code>も秘密をquery stringへ置く。</p>
+          <div class="evidence"><a href="../../cloudflare/aiview-metrics/src/index.ts">cloudflare/aiview-metrics/src/index.ts</a> 22–75, 88–90 / <a href="../../AIview/Sources/Data/TelemetryService.swift">TelemetryService.swift</a> 41–74。</div>
+          <p><span class="label">修正:</span> pingはPOST JSON + <code>Cache-Control: no-store</code>、UUID形式・field allowlistを検証し、Cloudflare Workers Rate Limiting bindingを追加する。濫用耐性が必要ならinstallごとのserver-issued tokenまたは署名を導入する。statsは<code>Authorization: Bearer</code> header + timing-safe compareへ移し、全応答をno-storeにする。D1はversioned migrationへ移す。</p>
+        </div>
+      </article>
+    </section>
+
+    <section id="p1">
+      <h2>4. P1 / P2 — 構造・運用品質の所見</h2>
+      <div class="grid cards-2">
+        <article class="card">
+          <span class="pill p1">ASYNC-02 / P1</span>
+          <h3>Taskの所有権とcleanupが不安定</h3>
+          <ul>
+            <li>古いthumbnail warmerが完了時に<code>thumbnailWarmingTask = nil</code>とし、新しいTaskのhandleを消せる（VM 765–781）。</li>
+            <li><code>ThumbnailActivityModel</code>と<code>SlideshowTimer</code>はself所有の無限Task内で、sleepを跨いでselfをstrong保持する。明示stopされないscene closeで循環が残りうる。</li>
+            <li><code>ImageLoader.prefetchTasks</code>は完了時に削除されず、再prefetchを阻害する。loading cleanupもURLだけでremoveするので、新しい同URL Taskを遅いwaiterが消せる。</li>
+            <li>Toastは「既存タイマーをキャンセル」とコメントするがhandleを保持せず、古いtimerが新toastをdismissできる。</li>
+          </ul>
+          <p><strong>対策:</strong> Task token/identityと所有者を明示し、cleanupは「自分が現行なら」のみ行う。sceneの<code>onDisappear</code>/deinitでstop。可能な箇所はstructured concurrencyへ。</p>
+        </article>
+
+        <article class="card">
+          <span class="pill p1">STATE-02 / P1</span>
+          <h3>情報パネルのmetadataが画像遷移に追従しない</h3>
+          <p>metadata loadはpanelを開いた瞬間に1回だけuntracked Taskで起動され、navigationでは再実行されない。完了時にもrequested URLと現在URLを照合しないため、遅いAの結果がB表示中にcommitされる。</p>
+          <div class="evidence"><a href="../../AIview/Sources/Domain/ImageBrowserViewModel.swift">ImageBrowserViewModel.swift</a> 625–634, 891–901。</div>
+          <p><strong>対策:</strong> <code>metadataTask</code>を所有し、選択変更でcancel/restart。URLまたはselection generation一致時だけcommitし、panelを閉じたら停止する。</p>
+        </article>
+
+        <article class="card">
+          <span class="pill p1">STATE-03 / P1</span>
+          <h3>favoritesが二重のsource of truth</h3>
+          <p>通常の<code>favorites</code>と統合用<code>aggregatedFavorites</code>をViewModelにもactorにも保持する。統合モードで更新してもflat辞書しか更新されず、表示は古いaggregated値を読む。汎用<code>rebuildFilteredIndices()</code>は常にflat辞書を読む。</p>
+          <div class="evidence"><a href="../../AIview/Sources/Domain/ImageBrowserViewModel.swift">ImageBrowserViewModel.swift</a> 958–1014, 1061–1071。</div>
+          <p><strong>対策:</strong> favoritesはfolder-relative identityをkeyにした1正規形へ統合し、UIには派生snapshotだけを公開する。同名ファイルが複数folderにあるケースを必須テストにする。</p>
+        </article>
+
+        <article class="card">
+          <span class="pill p1">LOG-01 / P1</span>
+          <h3>ログポリシー不在で、機微値を明示的にpublic化</h3>
+          <p><code>privacy: .public</code>は100箇所、うちパス・filename・URL・prompt・errorに関わる候補は79箇所。full path、生成AI prompt先頭100文字、localized errorをpublic指定している。独自navigation fileにもfilename/errorを平文保存する。folder pickerだけは<code>print</code>を使用。</p>
+          <div class="evidence"><a href="../../AIview/Sources/Domain/MetadataExtractor.swift">MetadataExtractor.swift</a> 169–236 / <a href="../../AIview/Sources/Domain/NavigationDiagnostics.swift">NavigationDiagnostics.swift</a> 18–19, 73–95 / <a href="../../AIview/Sources/Presentation/MainWindowView.swift">MainWindowView.swift</a> 548–562。</div>
+          <p><strong>対策:</strong> <code>CLAUDE.md</code>にpublic/private基準、category、level、保持期間、禁止値を定義。publicは件数・時間・列挙値だけ、path/name/errorはprivateまたはhash、promptは記録禁止。独自file logはopt-in、redaction、削除導線を持たせる。</p>
+        </article>
+
+        <article class="card">
+          <span class="pill p1">FS-01 / P1</span>
+          <h3>security-scoped resourceを開始しても停止しない</h3>
+          <p>startはAppStateとViewModelの2箇所にあるが、productionからstopを呼ぶ箇所は0。しかも各々が別<code>RecentFoldersStore</code> instanceを持つため、開始したownerと終了すべきownerが分かれる。entitlementsはsandbox=falseなのにbookmark entitlementを有効化しており、設計意図も曖昧。</p>
+          <div class="evidence"><a href="../../AIview/Sources/Data/RecentFoldersStore.swift">RecentFoldersStore.swift</a> 135–163 / <a href="../../AIview/AIview.entitlements">AIview.entitlements</a> 5–10。</div>
+          <p><strong>対策:</strong> 非sandbox配布を維持するなら不要なbookmark/entitlementを削除。sandbox化するならsceneのfolder leaseとしてownerを一本化し、切替・close・deinitでstopする。</p>
+        </article>
+
+        <article class="card">
+          <span class="pill p1">ERR-01 / P1</span>
+          <h3>エラーを握り潰し、空フォルダではloadingが終わらない</h3>
+          <ul>
+            <li>favorite操作はUI側で<code>try?</code>により保存失敗を無視する。</li>
+            <li>folder importerはcancelと実エラーを区別せず、既存errorをclearして<code>print</code>する。</li>
+            <li>disk cache writeも<code>try?</code>で観測不能。read-only mediaは仕様上あり得るため、dedupeしたdebug/warningが必要。</li>
+            <li>空folderではfirst image callbackがないため<code>isLoading=true</code>のままcompleteし、UIは「画像がありません」よりspinnerを優先する。</li>
+          </ul>
+          <p><strong>対策:</strong> userCancel / recoverable / invariant failureを型で区別。空complete時はloading=false。favorite失敗はtoast/alert、cache失敗はrate-limited logとmetricsへ。</p>
+        </article>
+
+        <article class="card">
+          <span class="pill p1">BUILD-01 / P1</span>
+          <h3>Strict Concurrencyを設定しているがSwift 5 modeのため、Swift 6 errorを見逃す</h3>
+          <p>projectは<code>SWIFT_STRICT_CONCURRENCY=complete</code>だが<code>SWIFT_VERSION=5.0</code>。Swift 6を強制すると4件でbuild失敗した。</p>
+          <ul>
+            <li><code>ImageLoader.State</code>がnon-Sendable</li>
+            <li><code>CacheManager.state</code>と<code>ThumbnailCacheManager.state</code>がSendable classのmutable stored property</li>
+            <li>static <code>ISO8601DateFormatter</code>がnon-Sendable shared mutable state</li>
+          </ul>
+          <p><strong>対策:</strong> lock保護stateを<code>OSAllocatedUnfairLock&lt;State&gt;</code>等へ包むかactor化し、uncheckedを使うなら不変条件を文書化・テストする。CIにSwift 6 buildを追加して段階移行する。</p>
+        </article>
+
+        <article class="card">
+          <span class="pill p1">CI-01 / P1</span>
+          <h3>release前のquality gateがなく、用意されたコマンドも陳腐化</h3>
+          <p>GitHub Actionsはrelease/update-tapだけでPR/push CIがない。release workflowもtest/lint/analyzeを通さずarchiveする。現環境で<code>task lint</code>はSwiftLintの廃止済み<code>--path</code>で失敗し、<code>task format:check</code>も引数順が不正で失敗した。</p>
+          <p>直接実行ではSwiftLint 0.63.2が117件（serious 25）、SwiftFormat 0.61.1が56/63 filesを指摘。ただしproject設定ファイルとSwift version指定がないため、数自体を品質判定に使うべきではない。</p>
+          <p><strong>対策:</strong> <code>.swiftlint.yml</code> / <code>.swiftformat</code> / <code>.swift-version</code>を合意して固定し、PRでDebug build・unit test・Swift 6 build・lint・format・shellcheckを実施。release jobは同じquality jobへ依存させる。</p>
+        </article>
+      </div>
+
+      <h3>その他のP2所見</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>内容</th><th>推奨</th></tr></thead>
+          <tbody>
+            <tr><td>PRIV-01</td><td>last-viewed記録はschedule時だけprivacy modeを確認する。0.8秒以内にprivacy ONにしても予約済み書込みが走る。テレメトリUIは「送信項目のみ」と述べるが、serverはCF countryも保存し、retention/deletion policyがない。stable UUIDは匿名というよりpseudonymous identifier。</td><td>privacy ON時にTaskをcancelし、commit直前にも確認。UI/READMEへcountry、保持期間、削除方法を明記。</td></tr>
+            <tr><td>PERF-01</td><td>PNG prompt抽出が<code>Data(contentsOf:)</code>を行い、XMP fallbackでも再読込して全binaryをString化する。複数tEXt chunk時に、parametersより前の「最初のtEXt」をlength基準にするためparserも誤り得る。</td><td>ImageIO metadataを優先し、必要ならbounded streaming chunk parserにする。promptをlogしない。</td></tr>
+            <tr><td>DOC-01</td><td>READMEのcache treeは<code>.aiview/thumbnails/</code>だが実装/spec/CLAUDEは<code>.aiview/&lt;original&gt;.jpg</code>。architecture文書のVM行数も実態より古い。</td><td>canonical specからREADMEを同期し、CIで英日READMEの構造・主要pathを検査。</td></tr>
+            <tr><td>CACHE-02</td><td>画像メモリ量を<code>representations.first</code>のpixel数×4で推定する。複数representation、未decode/0 pixel、row alignmentを反映しない。</td><td>decode後CGImageのbytesPerRow×height、または実測persistent footprintを基準にする。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="patchwork">
+      <h2>5. 「場当たり的修正」があるか — 構造診断</h2>
+      <p><strong>ある。</strong> ただし個々の修正コメントやテストは丁寧で、問題は開発姿勢ではなく、変更を受け止める状態モデルが足りないことにある。</p>
+      <div class="grid cards-3">
+        <article class="card"><h4>状態の組を手動同期</h4><p><code>currentIndex</code>、<code>targetIndex</code>、<code>currentImage</code>、<code>loadedImageURL</code>、<code>isLoading</code>を別々に更新する。1経路でも更新順を誤るとSTATE-01が生じる。</p></article>
+        <article class="card"><h4>boolean / optional command bus</h4><p>reload、zoom、sibling、open URLをset→全View監視→誰かがclearする。これはqueueでもscene-directed actionでもなく、複数consumerを持つと意味が崩れる。</p></article>
+        <article class="card"><h4>症状修正の履歴</h4><p><span class="mono">0984323</span> indexだけ進む → <span class="mono">18df030</span> 表示同期化 → <span class="mono">4fe3114</span> dialog Task timing修正。再発源は「selection transaction」が存在しないこと。</p></article>
+      </div>
+      <div class="note warn">
+        <strong>規模のシグナル:</strong> <code>ImageBrowserViewModel.swift</code>は1,670行、<code>MainWindowView.swift</code>は568行。SwiftLint既定値でもfile/type lengthとcomplexityに抵触する。ViewModelはfolder session、scan、navigation、image loading、favorites/filter、metadata、slideshow、cache、diagnosticsを同時に所有する。
+      </div>
+      <h3>推奨する中心モデル</h3>
+      <div class="architecture">
+        <div class="card bad-line">
+          <h4>現在のcommit単位</h4>
+          <p>複数property + callback + unstructured Task</p>
+          <p class="small">各methodが必要なpropertyを個別に揃える</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="card good-line">
+          <h4><code>BrowserSessionState</code></h4>
+          <p><code>id / folder / phase / urls / selection / filter</code></p>
+          <p class="small">1 transitionで値を置換し、不変条件をassert</p>
+        </div>
+      </div>
+      <p>具体的には、<code>FolderSessionController</code>（scan generation）、<code>ImageNavigationController</code>（selection transaction）、<code>FavoritesController</code>、<code>MetadataController</code>へ責務を分ける。分割自体が目的ではなく、「古いoperationは現sessionへcommitできない」「表示対象は必ず1つのSelection」というルールを型で守ることが目的である。</p>
+    </section>
+
+    <section id="claude">
+      <h2>6. CLAUDE.md と実装原則</h2>
+      <p><a href="../../CLAUDE.md">CLAUDE.md</a>は存在し、仕様書の入口、文書更新ポリシー、per-folder thumbnail cacheの設計思想を明確にしている。実装も<code>.aiview/&lt;original&gt;.jpg</code>、mtime検証、read-only時に中央cacheへfallbackしない、という原則には概ね従っている。</p>
+      <div class="grid cards-2">
+        <div class="card good-line">
+          <h4>書かれていて機能している</h4>
+          <ul><li>canonical specの所在</li><li>文書更新のtrigger</li><li>英日READMEの対応</li><li>cacheをdataと同じ場所へ置く理由</li><li>read-only mediaの扱い</li></ul>
+        </div>
+        <div class="card bad-line">
+          <h4>不足している原則 — これ自体が問題</h4>
+          <ul><li>app-global / scene / view stateの所有範囲</li><li>Task owner、cancel、generation、commit rule</li><li>logging privacy、level、category、retention</li><li>error分類とUI/ログへの伝播</li><li>Swift version / concurrency policy</li><li>必須quality gateとtest policy</li><li>telemetry data、retention、abuse protection</li></ul>
+        </div>
+      </div>
+      <p>現在のCLAUDE.mdは「キャッシュのADR」としては良いが、project-wide implementation principlesとしては狭い。今回のP0/P1を直す際に、上記原則を先に追記し、修正コードをその原則の最初の適用例にするのがよい。</p>
+    </section>
+
+    <section id="verification">
+      <h2>7. 実行した検証</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>検証</th><th>結果</th><th>読み方</th></tr></thead>
+          <tbody>
+            <tr><td><code>xcodebuild analyze</code></td><td><span class="pill ok">成功</span></td><td>Xcode 26.6 / macOS SDK 26.5、CODE_SIGNING_ALLOWED=NO。通常の静的解析buildは成功。</td></tr>
+            <tr><td>unit test</td><td><span class="pill p1">ランナー未起動</span></td><td>app/testsのbuild後、Xcode内部の<code>IDELaunchServicesLauncher</code>が<code>childPID &gt; 0</code> assertionでabort（exit 134）。テストfailureではなく0件実行として扱う。</td></tr>
+            <tr><td>Swift 6強制build</td><td><span class="pill p0">失敗</span></td><td>Sendable/state 3件 + static ISO8601DateFormatter 1件の計4 compile errors。</td></tr>
+            <tr><td><code>task lint</code></td><td><span class="pill p0">コマンド失敗</span></td><td>SwiftLint 0.63.2で<code>--path</code>がunknown option。</td></tr>
+            <tr><td>SwiftLint直接実行</td><td><span class="pill p1">117 / 25 serious</span></td><td>33 source files。既定ruleのため、主にfile/type lengthとcomplexityを構造シグナルとして採用。</td></tr>
+            <tr><td><code>task format:check</code></td><td><span class="pill p0">コマンド失敗</span></td><td>SwiftFormat 0.61.1で<code>--lint</code>引数順が不正。直接実行は56/63 filesを指摘し、Swift version未指定も警告。</td></tr>
+            <tr><td>ShellCheck</td><td><span class="pill ok">成功</span></td><td><code>scripts/*.sh</code>は指摘なし。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note warn"><strong>限界:</strong> 今回は静的レビューとcompile/analyze中心であり、実アプリ操作を伴うInstruments Leaks、Memory Graph、Thread Sanitizerは未実施。LRU cycleはARC上確定できるが、総リーク量や通常利用時の増加曲線は修正前後に実測すべき。</div>
+    </section>
+
+    <section id="plan">
+      <h2>8. 推奨修正計画</h2>
+      <div class="grid phases">
+        <article class="card phase">
+          <h3>安全確保（小さく先行）</h3>
+          <p>LRUのweak linkとrelease test、empty folderのloading解除、privacy ON時の遅延Task cancel、prompt/path logging停止、stats credentialのheader移行とping rate limitを先に入れる。</p>
+          <p class="small">完了条件: delete対象の一致assert、cache clear後deinit、Worker abuse test。</p>
+        </article>
+        <article class="card phase">
+          <h3>Folder/Selection transaction導入</h3>
+          <p><code>FolderSessionID</code>と<code>Selection</code>を導入。Scannerをevent stream/resultにし、全await後commitをgeneration guard。metadata・warmer・prefetchをsession子Taskとして束ねる。</p>
+          <p class="small">完了条件: A→B高速切替、列挙順≠sort順、subdirectory切替、cancel stormの回帰テスト。</p>
+        </article>
+        <article class="card phase">
+          <h3>scene state分離</h3>
+          <p>AppStateをglobal services/settingsとwindow sessionへ分離し、メニューはfocused sceneへ配送。metricsとsecurity scopeもscene ownerに合わせる。</p>
+          <p class="small">完了条件: 2windowで別folderを開き、zoom/reload/delete/pickerがfocused windowだけへ作用。</p>
+        </article>
+        <article class="card phase">
+          <h3>quality gate固定</h3>
+          <p>CLAUDE.mdへ原則を追記し、SwiftLint/SwiftFormat設定とversionをcommit。PR CI、Swift 6 build、unit tests、analyze、ShellCheckをreleaseの前提にする。</p>
+          <p class="small">完了条件: local TaskfileとCIが同じcommandを使用し、tag releaseがquality jobなしで進めない。</p>
+        </article>
+        <article class="card phase">
+          <h3>実測と文書同期</h3>
+          <p>Instruments / TSanでwindow open-close、cache clear、slideshow、folder連打を測る。README cache treeとtelemetry disclosureを修正し、retention/deletion policyを公開する。</p>
+          <p class="small">完了条件: memory plateau、0 leaks、0 data races、英日文書一致。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="positives">
+      <h2>9. 良い点</h2>
+      <div class="grid cards-2">
+        <div class="card good-line"><h4>設計・実装</h4><ul><li>App / Domain / Data / Presentationの4層は文書化され、依存注入できる主要serviceも多い。</li><li><code>@MainActor @Observable</code>をUI modelへ適用し、actor/lockを使う意識がある。</li><li>ThumbnailGeneratorのcontinuation resume guardとcancellation handlerは丁寧。</li><li>favorites/cacheのatomic write、legacy形式の後方互換がある。</li></ul></div>
+        <div class="card good-line"><h4>検証・運用</h4><ul><li>テストコードが約7千行あり、favorites、cache、navigation、performanceまで広い。</li><li>shell scriptsは<code>set -euo pipefail</code>と入力path検証を使い、ShellCheckも通る。</li><li>WorkerはD1 prepared statements/bindと<code>last_seen</code> indexを使用し、secret値自体はrepositoryへcommitしていない。</li><li>production sourceに<code>fatalError</code>、<code>try!</code>、明白なforce unwrapは見つからなかった。</li></ul></div>
+      </div>
+    </section>
+
+    <section id="sources">
+      <h2>10. 予備調査に使用した公式資料</h2>
+      <div class="grid cards-2">
+        <div class="card">
+          <h4>Apple / Swift</h4>
+          <ul>
+            <li><a href="https://developer.apple.com/documentation/swiftui/managing-user-interface-state/">Managing user interface state</a></li>
+            <li><a href="https://developer.apple.com/documentation/swiftui/managing-model-data-in-your-app/">Managing model data in your app</a></li>
+            <li><a href="https://developer.apple.com/documentation/swift/adoptingswift6?changes=latest_min_4__9_2_8">Adopting Swift 6</a></li>
+            <li><a href="https://developer.apple.com/documentation/swift/task/">Task</a> / <a href="https://developer.apple.com/documentation/swift/taskgroup">TaskGroup</a></li>
+            <li><a href="https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/">Automatic Reference Counting</a></li>
+            <li><a href="https://developer.apple.com/documentation/os/generating-log-messages-from-your-code">Generating log messages</a> / <a href="https://developer.apple.com/documentation/os/oslogprivacy">OSLogPrivacy</a></li>
+            <li><a href="https://developer.apple.com/documentation/foundation/url/startaccessingsecurityscopedresource%28%29">startAccessingSecurityScopedResource()</a></li>
+            <li><a href="https://developer.apple.com/documentation/xcode/diagnosing-memory-thread-and-crash-issues-early">Diagnosing memory, thread, and crash issues early</a></li>
+            <li><a href="https://developer.apple.com/documentation/xcode/understanding-and-improving-swiftui-performance">Understanding and improving SwiftUI performance</a></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Cloudflare</h4>
+          <ul>
+            <li><a href="https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/">Workers Rate Limiting binding</a></li>
+            <li><a href="https://developers.cloudflare.com/workers/runtime-apis/bindings/">Workers bindings</a></li>
+            <li><a href="https://developers.cloudflare.com/workers/configuration/secrets/">Secrets</a></li>
+            <li><a href="https://developers.cloudflare.com/d1/worker-api/prepared-statements/">D1 prepared statements</a></li>
+            <li><a href="https://developers.cloudflare.com/d1/best-practices/use-indexes/">D1 indexes</a></li>
+            <li><a href="https://developers.cloudflare.com/d1/reference/migrations/">D1 migrations</a></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <p>Generated for AIview v0.9.0. この文書はコード変更を行わないreview artifactであり、所見のline番号はcommit <span class="mono">14c39d1</span> 時点。</p>
+    </footer>
+  </main>
+</body>
+</html>

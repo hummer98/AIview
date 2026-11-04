@@ -42,7 +42,9 @@ final class ImageLoaderContentionTests: XCTestCase {
         let elapsedMs = (CFAbsoluteTimeGetCurrent() - start) * 1000
 
         // XCTContext は値を XCTest レポートへ残すため、CI ログから後追いできる
-        XCTContext.runActivity(named: "display latency = \(String(format: "%.1f", elapsedMs))ms") { _ in }
+        await MainActor.run {
+            XCTContext.runActivity(named: "display latency = \(String(format: "%.1f", elapsedMs))ms") { _ in }
+        }
 
         XCTAssertLessThan(elapsedMs, 5000, "計測経路が壊れていない")
     }

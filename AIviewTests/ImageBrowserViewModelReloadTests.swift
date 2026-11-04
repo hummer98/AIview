@@ -10,7 +10,7 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
     var tempDirectory: URL!
     var recentStoreHelper: IsolatedRecentFoldersStore!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         recentStoreHelper = IsolatedRecentFoldersStore(label: "ReloadTests")
         sut = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
 
@@ -19,8 +19,8 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
     }
 
-    override func tearDownWithError() throws {
-        sut.stopSlideshow()
+    override func tearDown() async throws {
+        sut.sceneDidDisappear()
         sut = nil
 
         // 一時ディレクトリを削除
@@ -71,13 +71,10 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
     /// Requirements: 4.1, 4.2
     func testReloadCurrentFolder_whenFolderSelected_updatesImageList() async throws {
         // Given - フォルダを開いて初期画像を作成
-        let image1 = try createTestImage(named: "001.png", in: tempDirectory)
+        _ = try createTestImage(named: "001.png", in: tempDirectory)
         _ = try createTestImage(named: "002.png", in: tempDirectory)
 
         await sut.openFolder(tempDirectory)
-
-        // スキャン完了を待機
-        try await Task.sleep(for: .milliseconds(200))
 
         let initialCount = sut.imageURLs.count
         XCTAssertEqual(initialCount, 2, "初期状態で2つの画像があるべき")
@@ -87,9 +84,6 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
 
         // When
         let result = await sut.reloadCurrentFolder()
-
-        // スキャン完了を待機
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then
         XCTAssertTrue(result, "リロード成功時はtrueを返すべき")
@@ -103,11 +97,10 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
     func testReloadCurrentFolder_preservesCurrentImage_whenStillExists() async throws {
         // Given - 3つの画像でフォルダを開き、2番目の画像を選択
         _ = try createTestImage(named: "001.png", in: tempDirectory)
-        let image2 = try createTestImage(named: "002.png", in: tempDirectory)
+        _ = try createTestImage(named: "002.png", in: tempDirectory)
         _ = try createTestImage(named: "003.png", in: tempDirectory)
 
         await sut.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
 
         await sut.jumpToIndex(1)  // 2番目の画像を選択
 
@@ -116,7 +109,6 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
 
         // When
         _ = await sut.reloadCurrentFolder()
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then - 同じ画像が選択されたまま
         XCTAssertEqual(sut.currentImageURL?.lastPathComponent, "002.png", "リロード後も同じ画像が選択されているべき")
@@ -133,7 +125,6 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
         _ = try createTestImage(named: "003.png", in: tempDirectory)
 
         await sut.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
 
         await sut.jumpToIndex(1)  // 2番目の画像を選択
         XCTAssertEqual(sut.currentIndex, 1)
@@ -143,7 +134,6 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
 
         // When
         _ = await sut.reloadCurrentFolder()
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then - 最近接の画像が選択される（元のインデックス1に最も近い有効インデックス）
         XCTAssertEqual(sut.imageURLs.count, 2, "画像が2つになるべき")
@@ -160,7 +150,6 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
         let image1 = try createTestImage(named: "001.png", in: tempDirectory)
 
         await sut.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
 
         XCTAssertEqual(sut.imageURLs.count, 1)
 
@@ -169,7 +158,6 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
 
         // When
         _ = await sut.reloadCurrentFolder()
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then - 空状態
         XCTAssertTrue(sut.imageURLs.isEmpty, "画像リストが空になるべき")
@@ -188,17 +176,13 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
         _ = try createTestImage(named: "sub_001.png", in: subdir)
 
         await sut.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
 
         // サブディレクトリモードを有効化
         await sut.enableSubdirectoryMode()
         XCTAssertTrue(sut.isSubdirectoryMode)
 
-        let countBeforeReload = sut.imageURLs.count
-
         // When
         _ = await sut.reloadCurrentFolder()
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then - サブディレクトリモードが維持される
         XCTAssertTrue(sut.isSubdirectoryMode, "サブディレクトリモードが維持されるべき")
@@ -213,18 +197,16 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
         _ = try createTestImage(named: "002.png", in: tempDirectory)
 
         await sut.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
 
         // お気に入りを設定
         try await sut.setFavoriteLevel(3)
 
         // フィルターを設定
-        sut.setFilterLevel(3)
+        await sut.setFilterLevel(3)
         XCTAssertEqual(sut.filterLevel, 3)
 
         // When
         _ = await sut.reloadCurrentFolder()
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then - フィルターモードが維持される
         XCTAssertEqual(sut.filterLevel, 3, "フィルターレベルが維持されるべき")
@@ -239,7 +221,6 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
         _ = try createTestImage(named: "002.png", in: tempDirectory)
 
         await sut.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
 
         sut.startSlideshow(interval: 5)
         XCTAssertTrue(sut.isSlideshowActive)
@@ -251,7 +232,6 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
 
         // When
         _ = await sut.reloadCurrentFolder()
-        try await Task.sleep(for: .milliseconds(200))
 
         // Then - スライドショー状態が維持される
         XCTAssertTrue(sut.isSlideshowActive, "isSlideshowActiveが維持されるべき")
@@ -265,7 +245,6 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
         // Given
         _ = try createTestImage(named: "001.png", in: tempDirectory)
         await sut.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
 
         // When
         let result = await sut.reloadCurrentFolder()
@@ -283,11 +262,9 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
         _ = try createTestImage(named: "001.png", in: tempDirectory)
 
         await sut.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
         let firstID = sut.folderID
 
         await sut.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
         let secondID = sut.folderID
 
         XCTAssertNotEqual(firstID, secondID, "同じフォルダを再オープンしても folderID は変わるべき")
@@ -298,11 +275,9 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
         _ = try createTestImage(named: "001.png", in: tempDirectory)
 
         await sut.openFolder(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
         let beforeReload = sut.folderID
 
         _ = await sut.reloadCurrentFolder()
-        try await Task.sleep(for: .milliseconds(200))
         let afterReload = sut.folderID
 
         XCTAssertNotEqual(beforeReload, afterReload, "reload で folderID は変わるべき")
@@ -316,7 +291,6 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
         _ = try createTestImage(named: "002.png", in: tempDirectory)
 
         await sut.openPath(tempDirectory)
-        try await Task.sleep(for: .milliseconds(200))
 
         XCTAssertEqual(sut.currentFolderURL, tempDirectory, "ディレクトリ指定でそのフォルダが開かれるべき")
         XCTAssertEqual(sut.imageURLs.count, 2)
@@ -330,7 +304,6 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
         _ = try createTestImage(named: "003.png", in: tempDirectory)
 
         await sut.openPath(target)
-        try await Task.sleep(for: .milliseconds(200))
 
         // deletingLastPathComponent はディレクトリ URL に末尾 / を付けるため path で比較する
         XCTAssertEqual(sut.currentFolderURL?.path, tempDirectory.path, "ファイルの親フォルダが開かれるべき")
@@ -344,7 +317,6 @@ final class ImageBrowserViewModelReloadTests: XCTestCase {
         let missing = tempDirectory.appendingPathComponent("does_not_exist.png")
 
         await sut.openPath(missing)
-        try await Task.sleep(for: .milliseconds(100))
 
         XCTAssertNotNil(sut.errorMessage, "存在しないパスは errorMessage を設定すべき")
         XCTAssertNil(sut.currentFolderURL, "存在しないパスでフォルダを開いてはいけない")

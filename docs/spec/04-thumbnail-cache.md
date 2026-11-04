@@ -75,9 +75,16 @@ abs(cacheMtime.timeIntervalSince(modificationDate)) < tolerance
 
 ## 旧中央キャッシュの自動パージ
 
-task 019 で per-folder 方式に回帰したため、起動時に 1 回だけ `~/Library/Application Support/AIview/DiskCache/` を削除する（`AIviewApp.purgeLegacyCentralCache`）。失敗は warning で握り潰す。
+task 019 で per-folder 方式に回帰したため、起動時に 1 回だけ `~/Library/Application Support/AIview/DiskCache/` を削除する。`AppServices` がメンテナンス Task を process lifetime で所有し、WindowGroup の複数回 appear では再実行しない。失敗は path を露出しない privacy-safe な warning として記録する。
+
+## 書き込み失敗時の観測
+
+read-only mountや権限不足で`.aiview/`へ書けない場合、中央cache等へのfallbackは行わず、thumbnailは必要時に再生成して表示を継続する。書き込み失敗はwindow-local `DiskCacheStore`ごとに全件をmetricへ加算し、同一session中のwarningは1回へdedupeする。error detailとcache filenameはUnified Loggingでprivateとして扱う。
+
+cacheは`<folder>/.aiview/<original filename>.jpg`へ直接置き、その下にthumbnail専用directoryは作らない。READMEの保存treeもこのpathをcanonicalとする。
 
 ## 関連実装
 
 - `Sources/Data/DiskCacheStore.swift` — actor、本ドキュメントの仕様を実装
 - `Sources/Domain/ThumbnailCacheManager.swift` — メモリ層 + DiskCacheStore 連携
+- `Sources/Domain/BrowserSessionController.swift` — sceneごとのcache clear/reload/warmerの世代を調停（UI facadeはI/Oを所有しない）

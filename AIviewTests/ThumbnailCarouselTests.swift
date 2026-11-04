@@ -156,6 +156,52 @@ final class ThumbnailCarouselTests: XCTestCase {
         XCTAssertTrue(states[testURL]?.isFailed == true)
     }
 
+    func testInFlightRegistry_lateOldTaskCannotRemoveReloadedURL() throws {
+        let url = URL(fileURLWithPath: "/tmp/reloaded.png")
+        var registry = ThumbnailInFlightRegistry()
+        registry.ensureFolder(UUID())
+        let tokenA = try XCTUnwrap(registry.begin(url: url))
+
+        registry.ensureFolder(UUID())
+        let tokenB = try XCTUnwrap(registry.begin(url: url))
+
+        XCTAssertFalse(registry.finish(tokenA))
+        XCTAssertEqual(registry.count, 1)
+        XCTAssertTrue(registry.isCurrent(generation: tokenB.generation))
+
+        XCTAssertTrue(registry.finish(tokenB))
+        XCTAssertEqual(registry.count, 0)
+    }
+
+    func testInFlightRegistry_sameFolderEnsureAfterCellBeginKeepsInitialLoadCurrent() throws {
+        let folderID = UUID()
+        let url = URL(fileURLWithPath: "/tmp/initial.png")
+        var registry = ThumbnailInFlightRegistry()
+
+        XCTAssertTrue(registry.ensureFolder(folderID))
+        let token = try XCTUnwrap(registry.begin(url: url))
+
+        // 別cellが同じfolderをensureしても、先行cellの初回loadを無効化しない。
+        XCTAssertFalse(registry.ensureFolder(folderID))
+        XCTAssertTrue(registry.isCurrent(generation: token.generation))
+        XCTAssertEqual(registry.count, 1)
+        XCTAssertTrue(registry.finish(token))
+    }
+
+    func testToastDismissalGeneration_consecutiveToastOnlyLatestCanDismiss() {
+        var generation = ToastDismissalGeneration()
+        let first = UUID()
+        let latest = UUID()
+
+        generation.begin(first)
+        generation.begin(latest)
+
+        XCTAssertFalse(generation.finish(first))
+        XCTAssertEqual(generation.current, latest)
+        XCTAssertTrue(generation.finish(latest))
+        XCTAssertNil(generation.current)
+    }
+
     // MARK: - Retry Logic Tests
 
     func testRetryLogic_maxRetryCount_isTHree() {
@@ -289,8 +335,7 @@ final class ThumbnailCarouselTests: XCTestCase {
             }
         }
 
-        // 少し待ってからキャンセル
-        try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+        // scheduler依存の固定sleepを置かず、ownerから即時cancelしても安全なことを確認する。
         task.cancel()
 
         // Then - クラッシュしない

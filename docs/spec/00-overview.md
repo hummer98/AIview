@@ -42,3 +42,5 @@ JPEG (.jpg/.jpeg)、PNG (.png)、HEIC (.heic)、WebP (.webp)、GIF (.gif)
 3. **書き込めない場合のフォールバックは作らない** — read-only メディアでは都度生成
 4. **ユーザーフォルダに `.aiview/` が残るのを許容** — 高速化を優先
 5. **フォルダ内容は静的前提** — AIview はアーカイブ閲覧ツール。閲覧中に外部からファイルが追加・変更されることへの自動追従（FSEvents 監視・mid-view re-scan）は意図的に持たない。再 scan は `⌘R` の明示要求のみ。これにより並行性モデルを単純に保ち、defensive な状態リセットを最小化する。詳細は [`01-architecture.md`](01-architecture.md) の「並行性モデル」を参照
+6. **window stateはscene-local** — folder、selection、dialog、zoom、metrics、操作Taskはwindowごとに所有し、process-globalにできるのはsettings、recent-folder repository、telemetry coordinatorのように共有自体が仕様のserviceだけとする
+7. **UI facadeとsession orchestrationを分ける** — SwiftUIは`ImageBrowserViewModel`の派生snapshot/actionを消費し、I/O、scan、永続化、metadata抽出は`BrowserSessionController`以下に閉じ込める。詳細は[ADR 003](../adr/003-browser-session-facade.html)

@@ -38,6 +38,8 @@ actor DiskCacheStore {
     private var writeCount: UInt64 = 0
     private var readHistogram = LatencyHistogram()
     private var writeHistogram = LatencyHistogram()
+    private var writeFailureCount: UInt64 = 0
+    private var writeFailureWarningCount: UInt64 = 0
 
     init() {}
 
@@ -56,7 +58,7 @@ actor DiskCacheStore {
             cacheMtime = try cacheURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
         } catch {
             Logger.cacheManager.warning(
-                "Failed to read cache mtime: \(error.localizedDescription, privacy: .public)"
+                "Failed to read cache mtime: \(error.localizedDescription, privacy: .private)"
             )
             return nil
         }
@@ -74,11 +76,11 @@ actor DiskCacheStore {
             let elapsedMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
             readHistogram.record(elapsedMs)
             readCount &+= 1
-            Logger.cacheManager.debug("Disk cache hit: \(cacheURL.lastPathComponent, privacy: .public)")
+            Logger.cacheManager.debug("Disk cache hit: \(cacheURL.lastPathComponent, privacy: .private)")
             return data
         } catch {
             Logger.cacheManager.warning(
-                "Failed to read disk cache: \(error.localizedDescription, privacy: .public)"
+                "Failed to read disk cache: \(error.localizedDescription, privacy: .private)"
             )
             return nil
         }
@@ -119,9 +121,7 @@ actor DiskCacheStore {
         do {
             try fileManager.createDirectory(at: aiviewDir, withIntermediateDirectories: true)
         } catch {
-            Logger.cacheManager.error(
-                "Failed to create .aiview directory: \(error.localizedDescription, privacy: .public)"
-            )
+            recordWriteFailure(error)
             throw error
         }
 
@@ -129,9 +129,7 @@ actor DiskCacheStore {
         do {
             try data.write(to: cacheURL, options: .atomic)
         } catch {
-            Logger.cacheManager.error(
-                "Failed to store thumbnail: \(error.localizedDescription, privacy: .public)"
-            )
+            recordWriteFailure(error)
             throw error
         }
         let elapsedMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
@@ -148,14 +146,12 @@ actor DiskCacheStore {
             values.contentModificationDate = modificationDate
             try urlCopy.setResourceValues(values)
         } catch {
-            Logger.cacheManager.warning(
-                "Failed to stamp cache mtime; removing partial cache: \(error.localizedDescription, privacy: .public)"
-            )
+            recordWriteFailure(error)
             try? fileManager.removeItem(at: cacheURL)
             throw error
         }
 
-        Logger.cacheManager.debug("Stored thumbnail: \(cacheURL.lastPathComponent, privacy: .public)")
+        Logger.cacheManager.debug("Stored thumbnail: \(cacheURL.lastPathComponent, privacy: .private)")
     }
 
     /// 指定した元ファイル群に対応するサムネイルキャッシュ (`.aiview/<name>.jpg`) を削除する。
@@ -173,7 +169,7 @@ actor DiskCacheStore {
                 removed += 1
             } catch {
                 Logger.cacheManager.warning(
-                    "Failed to remove disk cache: \(error.localizedDescription, privacy: .public)"
+                    "Failed to remove disk cache: \(error.localizedDescription, privacy: .private)"
                 )
             }
         }
@@ -191,7 +187,9 @@ actor DiskCacheStore {
             writeCount: writeCount,
             readHistogram: readHistogram.snapshot(),
             writeHistogram: writeHistogram.snapshot(),
-            evictCount: 0
+            evictCount: 0,
+            writeFailureCount: writeFailureCount,
+            writeFailureWarningCount: writeFailureWarningCount
         )
     }
 
@@ -203,5 +201,16 @@ actor DiskCacheStore {
         return folder
             .appendingPathComponent(".aiview", isDirectory: true)
             .appendingPathComponent(fileName)
+    }
+
+    /// Cache write failure は best-effort だが観測不能にしない。同一window/VMが所有する
+    /// store actor の生存期間中は最初の1件だけwarningを出し、全件数はmetricへ残す。
+    private func recordWriteFailure(_ error: Error) {
+        writeFailureCount &+= 1
+        guard writeFailureWarningCount == 0 else { return }
+        writeFailureWarningCount = 1
+        Logger.cacheManager.warning(
+            "Disk thumbnail writes unavailable for this window session: \(error.localizedDescription, privacy: .private)"
+        )
     }
 }

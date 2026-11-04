@@ -28,7 +28,7 @@ final class PerformanceTests: XCTestCase {
     func testFirstImageDisplayTime_with2000Images() async throws {
         // Given: 2000枚の画像フォルダを作成
         let imageCount = 2000
-        try await createTestImages(count: imageCount)
+        try createTestImages(count: imageCount)
 
         let cacheManager = CacheManager(maxSizeBytes: 512 * 1024 * 1024)
         let imageLoader = ImageLoader(cacheManager: cacheManager)
@@ -40,9 +40,9 @@ final class PerformanceTests: XCTestCase {
         // When: フォルダをスキャンして最初の画像を読み込む
         let startTime = CFAbsoluteTimeGetCurrent()
 
-        try await folderScanner.scan(
-            folderURL: tempDirectory,
-            onFirstImage: { firstURL in
+        let stream = await folderScanner.scan(folderURL: tempDirectory)
+        for try await event in stream {
+            if case .first(let firstURL) = event {
                 // 最初の画像が見つかったら読み込む
                 do {
                     let result = try await imageLoader.loadImage(from: firstURL, priority: .display, targetSize: nil)
@@ -52,10 +52,8 @@ final class PerformanceTests: XCTestCase {
                 } catch {
                     XCTFail("Failed to load first image: \(error)")
                 }
-            },
-            onProgress: { _ in },
-            onComplete: { _ in }
-        )
+            }
+        }
 
         await fulfillment(of: [expectation], timeout: 10.0)
 
@@ -74,7 +72,7 @@ final class PerformanceTests: XCTestCase {
     func testFirstImageDisplayTime_with100Images() async throws {
         // Given: 100枚の画像フォルダを作成
         let imageCount = 100
-        try await createTestImages(count: imageCount)
+        try createTestImages(count: imageCount)
 
         let cacheManager = CacheManager(maxSizeBytes: 512 * 1024 * 1024)
         let imageLoader = ImageLoader(cacheManager: cacheManager)
@@ -86,9 +84,9 @@ final class PerformanceTests: XCTestCase {
         // When
         let startTime = CFAbsoluteTimeGetCurrent()
 
-        try await folderScanner.scan(
-            folderURL: tempDirectory,
-            onFirstImage: { firstURL in
+        let stream = await folderScanner.scan(folderURL: tempDirectory)
+        for try await event in stream {
+            if case .first(let firstURL) = event {
                 do {
                     let result = try await imageLoader.loadImage(from: firstURL, priority: .display, targetSize: nil)
                     _ = result.image
@@ -97,10 +95,8 @@ final class PerformanceTests: XCTestCase {
                 } catch {
                     XCTFail("Failed to load first image: \(error)")
                 }
-            },
-            onProgress: { _ in },
-            onComplete: { _ in }
-        )
+            }
+        }
 
         await fulfillment(of: [expectation], timeout: 5.0)
 
@@ -127,10 +123,10 @@ final class PerformanceTests: XCTestCase {
         let imageLoader = ImageLoader(cacheManager: cacheManager)
 
         // プリフェッチを実行
-        await imageLoader.prefetch(urls: urls, priority: .prefetch, direction: .forward)
+        imageLoader.prefetch(urls: urls, priority: .prefetch, direction: .forward)
 
-        // プリフェッチ完了を待つ
-        try await Task.sleep(nanoseconds: 1_000_000_000) // 1秒待機
+        // benchmark protocol: prefetch workloadをsettleさせ、warm-cache表示時間だけを計測する。
+        try await Task.sleep(nanoseconds: 1_000_000_000)
 
         // When: プリフェッチ済み画像をロード
         var loadTimes: [TimeInterval] = []
@@ -206,8 +202,9 @@ final class PerformanceTests: XCTestCase {
         let imageLoader = ImageLoader(cacheManager: cacheManager)
 
         // 全画像をプリフェッチ
-        await imageLoader.prefetch(urls: urls, priority: .prefetch, direction: .forward)
-        try await Task.sleep(nanoseconds: 2_000_000_000) // 2秒待機
+        imageLoader.prefetch(urls: urls, priority: .prefetch, direction: .forward)
+        // benchmark protocol: 100件のprefetch workloadをsettleさせる。
+        try await Task.sleep(nanoseconds: 2_000_000_000)
 
         // When: 連続して画像を切り替え
         var navigationTimes: [TimeInterval] = []
@@ -369,19 +366,11 @@ final class PerformanceTests: XCTestCase {
 
     // MARK: - Helper Methods
 
-    /// テスト画像を一括作成（バックグラウンドで高速に作成）
-    private func createTestImages(count: Int) async throws {
-        // 並列で画像を作成
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            let batchSize = 100
-            for batch in stride(from: 0, to: count, by: batchSize) {
-                group.addTask {
-                    for i in batch..<min(batch + batchSize, count) {
-                        try self.createTestImageSync(name: "img\(String(format: "%05d", i)).png")
-                    }
-                }
-            }
-            try await group.waitForAll()
+    /// テスト画像を一括作成する。
+    /// XCTestCase 自身を child task へ送らず、Swift 6 の ownership を明確に保つ。
+    private func createTestImages(count: Int) throws {
+        for index in 0..<count {
+            try createTestImageSync(name: "img\(String(format: "%05d", index)).png")
         }
     }
 

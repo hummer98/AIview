@@ -212,13 +212,34 @@ final class FavoritesStoreTests: XCTestCase {
         let folderURLs = [parentFolder, subDir1, subDir2]
 
         // When
-        let aggregated = await sut.loadAggregatedFavorites(for: folderURLs)
+        let snapshot = await sut.loadSnapshot(for: folderURLs)
 
         // Then
-        XCTAssertEqual(aggregated.count, 3, "3つのフォルダのデータが読み込まれること")
-        XCTAssertEqual(aggregated[parentFolder]?["parent.png"], 5)
-        XCTAssertEqual(aggregated[subDir1]?["sub1.png"], 4)
-        XCTAssertEqual(aggregated[subDir2]?["sub2.png"], 3)
+        XCTAssertEqual(
+            snapshot,
+            [
+                FavoriteURLKey.normalize(parentFolder.appendingPathComponent("parent.png")): 5,
+                FavoriteURLKey.normalize(subDir1.appendingPathComponent("sub1.png")): 4,
+                FavoriteURLKey.normalize(subDir2.appendingPathComponent("sub2.png")): 3
+            ],
+            "3つのフォルダの完全 URL snapshot が読み込まれること"
+        )
+    }
+
+    /// 正規化後に同一になるフォルダが重複しても集約辞書の生成で trap しない。
+    func testLoadAggregatedFavorites_DeduplicatesEquivalentFolderURLs() async throws {
+        let parentFolder = testFolderURL!
+        try createFavoritesFile(at: parentFolder, favorites: ["parent.png": 5])
+        let equivalentFolder = parentFolder
+            .appendingPathComponent("child")
+            .appendingPathComponent("..")
+
+        let aggregated = await sut.loadAggregatedFavorites(
+            for: [parentFolder, equivalentFolder, parentFolder]
+        )
+
+        XCTAssertEqual(aggregated.count, 1)
+        XCTAssertEqual(aggregated[FavoriteURLKey.normalize(parentFolder)]?["parent.png"], 5)
     }
 
     /// Requirements: 2.2 - 読み込み失敗時は空の辞書として扱う
@@ -236,13 +257,14 @@ final class FavoritesStoreTests: XCTestCase {
         let folderURLs = [parentFolder, subDir1, subDir2]
 
         // When
-        let aggregated = await sut.loadAggregatedFavorites(for: folderURLs)
+        let snapshot = await sut.loadSnapshot(for: folderURLs)
 
         // Then - 読み込みに成功したフォルダのデータが返される
-        XCTAssertEqual(aggregated[subDir1]?["sub1.png"], 4)
-        // 失敗したフォルダは空の辞書
-        XCTAssertTrue(aggregated[parentFolder]?.isEmpty ?? true)
-        XCTAssertTrue(aggregated[subDir2]?.isEmpty ?? true)
+        XCTAssertEqual(
+            snapshot,
+            [FavoriteURLKey.normalize(subDir1.appendingPathComponent("sub1.png")): 4],
+            "favorites.json が無いフォルダは完全 URL snapshot に項目を追加しないこと"
+        )
     }
 
     /// Requirements: 2.3 - 統合モード中のお気に入り設定は正しいフォルダに保存
@@ -277,15 +299,20 @@ final class FavoritesStoreTests: XCTestCase {
         let parentFolder = testFolderURL!
         try createFavoritesFile(at: parentFolder, favorites: ["parent.png": 5])
 
-        // When - loadAggregatedFavorites
-        let aggregated = await sut.loadAggregatedFavorites(for: [parentFolder])
+        let parentImage = parentFolder.appendingPathComponent("parent.png")
+
+        // When - canonical URL snapshot を読み込む
+        let snapshot = await sut.loadSnapshot(for: [parentFolder])
 
         // Then - 返り値確認
-        XCTAssertEqual(aggregated.count, 1, "1つのフォルダが読み込まれること")
-        XCTAssertEqual(aggregated[parentFolder]?["parent.png"], 5, "データが正しく読み込まれること")
+        XCTAssertEqual(snapshot.count, 1, "1件のお気に入りが読み込まれること")
+        XCTAssertEqual(
+            snapshot[FavoriteURLKey.normalize(parentImage)],
+            5,
+            "完全 URL key でデータが正しく読み込まれること"
+        )
 
         // getFavoriteLevelテスト
-        let parentImage = parentFolder.appendingPathComponent("parent.png")
         let parentLevel = await sut.getFavoriteLevel(for: parentImage)
         XCTAssertEqual(parentLevel, 5, "parentLevel should be 5 but was \(parentLevel)")
     }

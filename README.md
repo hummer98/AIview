@@ -8,7 +8,7 @@ A high-performance image viewer for macOS, optimized for browsing large image co
 
 - **Instant First Image Display** - Opens folders immediately without waiting for full scan
 - **Smooth Navigation** - Arrow key rapid-fire without UI blocking
-- **AI Prompt Extraction** - Reads Stable Diffusion prompts from PNG metadata (tEXt chunks / XMP)
+- **AI Prompt Extraction** - Reads Stable Diffusion prompts from ImageIO metadata or bounded PNG text chunks (tEXt / iTXt / zTXt)
 - **Privacy Mode** - Instantly hide all content with spacebar
 - **Smart Prefetching** - Preloads images based on navigation direction
 - **Thumbnail Carousel** - Virtualized scrolling for thousands of images
@@ -19,6 +19,7 @@ A high-performance image viewer for macOS, optimized for browsing large image co
 - **Thumbnail Activity Indicator** - Toolbar icon visible only while thumbnail generation is in flight
 - **Window State Restoration** - Reopens all windows you had open at quit, with their folder, position, and size
 - **Resume Last Viewed Image** - Remembers the last image you viewed per folder and offers to jump back to it next time (toggleable in settings)
+- **Actionable Error Feedback** - Folder, favorite, image-load, and delete failures show recovery-oriented messages; cancellations stay silent
 
 ## Keyboard Shortcuts
 
@@ -35,7 +36,7 @@ A high-performance image viewer for macOS, optimized for browsing large image co
 
 ### Zoom
 
-Zoom the main image with a trackpad pinch, or via the View menu / shortcuts. Drag to pan while zoomed in. Switching images resets to fit.
+Zoom the main image with a trackpad pinch, or via the View menu / shortcuts, centered on the cursor position. Drag or two-finger scroll to pan while zoomed in. Switching images resets to fit.
 
 | Key | Action |
 |-----|--------|
@@ -133,15 +134,40 @@ task run
 
 ## Architecture
 
+### Layer responsibilities
+
 ```
 AIview/
 ├── Sources/
-│   ├── App/           # SwiftUI App, ContentView, AppState, AppCommands
-│   ├── Domain/        # Business logic (ImageLoader, FolderScanner, CacheManager, SlideshowTimer)
+│   ├── App/           # SwiftUI App, shared services, window sessions, focused commands
+│   ├── Domain/        # Session controller, state machine, loaders, caches, slideshow
 │   ├── Data/          # Persistence (FavoritesStore, RecentFolders, Settings, DiskCache)
-│   └── Presentation/  # UI Components (ThumbnailCarousel, InfoPanel, SlideshowSettingsDialog)
+│   └── Presentation/  # Composed views, keyboard routing, dialogs, toolbar/status
 └── Tests/             # Unit tests
 ```
+
+`ImageBrowserViewModel` is a UI facade over one scene-local `BrowserSessionController`; it does not own scanners, persistence, or metadata extraction. `BrowserSessionState` is the single value that atomically commits the displayed URL, index, image, and load identity. `SlideshowController` owns slideshow state and its timer. Process-global `AppServices` is limited to intentionally shared repositories and the telemetry coordinator.
+
+### Data flow
+
+```text
+focused menu / keyboard / dialog
+  → BrowserWindowSession (scene-local task ownership)
+  → ImageBrowserViewModel (UI facade)
+  → BrowserSessionController
+  → FolderScanner / ImageLoader / FavoritesStore / MetadataExtractor
+  → BrowserSessionState atomic commit
+  → SwiftUI observation
+```
+
+### Concurrency and state ownership
+
+- Every window owns an independent folder, selection, dialogs, zoom requests, metrics, and operation tasks.
+- Async commits must match the current browser session and operation/load identity. Replaced or closed scenes cancel their owned tasks; cancellation is not shown as an error.
+- Actors isolate persistence and scanning. Typed locks protect synchronous caches and registries. Production code has no `Task.detached` or `@unchecked Sendable` escape hatch.
+- The process-global telemetry coordinator owns at most one request/retry task, and analytics OFF cancels routine communication immediately.
+
+The binding implementation principles and complete flow are documented in [`CLAUDE.md`](CLAUDE.md) and [`docs/spec/01-architecture.md`](docs/spec/01-architecture.md).
 
 ## Performance Design
 
@@ -161,8 +187,9 @@ your-image-folder/
 ├── image1.png
 ├── image2.jpg
 └── .aiview/
-    ├── favorites.json    # Favorite ratings + last viewed image
-    └── thumbnails/       # Cached thumbnails
+    ├── favorites.json    # Favorite ratings + last viewed image
+    ├── image1.png.jpg    # Cached thumbnail for image1.png
+    └── image2.jpg.jpg    # Cached thumbnail for image2.jpg
 ```
 
 ## Distribution
@@ -181,9 +208,15 @@ Tracking issue: [#1 - Distribution automation](https://github.com/hummer98/AIvie
 
 ## Privacy
 
-AIview sends an **anonymous usage ping** once per day at launch, to understand how much the app is actually used. It contains **no personal data**: only a random install identifier, the app version, the macOS version, the CPU architecture, and the locale. No file paths, image contents, or personally identifying information are ever sent.
+Pressing `Space` enables the scene-local privacy overlay. Enabling it also cancels pending last-viewed writes and metadata/prompt extraction, and clears metadata already held by the info panel.
 
-You can turn this off completely under **Settings → Display → Privacy → "Send anonymous usage statistics"**. When disabled, the app makes no analytics-related network requests at all.
+AIview sends a usage ping at most once per UTC day at launch. The client sends a stable, high-entropy random install UUID (a **pseudonymous identifier**), the app and macOS versions, CPU architecture, and locale. The server adds a country code supplied by Cloudflare; it does not store the source IP. It stores one row per install containing those fields, first/last-seen timestamps, and an active-day count. File paths, image contents, prompts, user names, and other personal content are never sent.
+
+You can turn routine analytics off under **Settings → Display → Privacy → "Send anonymous usage statistics"**. Disabling it immediately cancels any in-flight ping or retry, and no further routine analytics requests are made while it remains off. Server records expire 400 days after the last successful ping.
+
+**Delete and reset pseudonymous ID** asks the server to delete the current UUID, then creates a new local UUID only after the server confirms success. A failed deletion keeps the old UUID so you can retry. This explicit deletion request is available even while routine analytics is off; it is the only analytics-server request initiated in that state.
+
+Application diagnostics use Apple's privacy-aware Unified Logging. File paths, names, URLs, metadata, and error details are private; extracted AI prompts are never logged. Navigation diagnostics remain only in a bounded in-memory, non-content event history and are not written to a plaintext incident file.
 
 Details: [ADR 002](docs/adr/002-anonymous-usage-telemetry.html).
 

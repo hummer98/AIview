@@ -4,7 +4,7 @@ import Foundation
 
 /// レイテンシ（ミリ秒）記録用の対数バケットヒストグラム
 /// `record()` は O(bucketCount) の線形探索。デフォルト 13 バケットで約 50ns 以下を想定。
-struct LatencyHistogram {
+struct LatencyHistogram: Sendable {
     /// デフォルトのバケット境界（ms）: 0.1, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000
     static let defaultBoundariesMs: [Double] = [0.1, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000]
 
@@ -127,7 +127,9 @@ extension DiskIOMetricsSnapshot {
         writeCount: 0,
         readHistogram: .empty,
         writeHistogram: .empty,
-        evictCount: 0
+        evictCount: 0,
+        writeFailureCount: 0,
+        writeFailureWarningCount: 0
     )
 }
 
@@ -170,23 +172,30 @@ struct DiskIOMetricsSnapshot: Sendable, Equatable, Codable {
     let readHistogram: LatencyHistogramSnapshot
     let writeHistogram: LatencyHistogramSnapshot
     let evictCount: UInt64
+    let writeFailureCount: UInt64
+    let writeFailureWarningCount: UInt64
 
     init(
         readCount: UInt64,
         writeCount: UInt64,
         readHistogram: LatencyHistogramSnapshot,
         writeHistogram: LatencyHistogramSnapshot,
-        evictCount: UInt64 = 0
+        evictCount: UInt64 = 0,
+        writeFailureCount: UInt64 = 0,
+        writeFailureWarningCount: UInt64 = 0
     ) {
         self.readCount = readCount
         self.writeCount = writeCount
         self.readHistogram = readHistogram
         self.writeHistogram = writeHistogram
         self.evictCount = evictCount
+        self.writeFailureCount = writeFailureCount
+        self.writeFailureWarningCount = writeFailureWarningCount
     }
 
     enum CodingKeys: String, CodingKey {
         case readCount, writeCount, readHistogram, writeHistogram, evictCount
+        case writeFailureCount, writeFailureWarningCount
     }
 
     init(from decoder: Decoder) throws {
@@ -196,6 +205,8 @@ struct DiskIOMetricsSnapshot: Sendable, Equatable, Codable {
         self.readHistogram = try c.decode(LatencyHistogramSnapshot.self, forKey: .readHistogram)
         self.writeHistogram = try c.decode(LatencyHistogramSnapshot.self, forKey: .writeHistogram)
         self.evictCount = try c.decodeIfPresent(UInt64.self, forKey: .evictCount) ?? 0
+        self.writeFailureCount = try c.decodeIfPresent(UInt64.self, forKey: .writeFailureCount) ?? 0
+        self.writeFailureWarningCount = try c.decodeIfPresent(UInt64.self, forKey: .writeFailureWarningCount) ?? 0
     }
 }
 
@@ -299,6 +310,11 @@ struct MetricsSnapshot: Sendable, Codable {
             diskCacheState.maxBytes,
             diskCacheState.entryCount,
             diskIO.evictCount
+        ))
+        lines.append(String(
+            format: "Disk cache writes: %llu failures, %llu warning emissions",
+            diskIO.writeFailureCount,
+            diskIO.writeFailureWarningCount
         ))
         lines.append(String(
             format: "Thumbnail queue: current=%d, peak=%d, avg=%.2f, total=%llu",

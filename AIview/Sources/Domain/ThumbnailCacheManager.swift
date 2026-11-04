@@ -5,49 +5,24 @@ import os
 /// サムネイル専用キャッシュマネージャー
 /// フルサイズ画像キャッシュとは独立して動作（メモリ容量ベース）
 final class ThumbnailCacheManager: Sendable {
-    // MARK: - LRU Cache Node
-
-    private final class CacheNode {
-        let key: URL
-        let image: NSImage
-        let estimatedSizeBytes: Int
-        var prev: CacheNode?
-        var next: CacheNode?
-
-        init(key: URL, image: NSImage) {
-            self.key = key
-            self.image = image
-            self.estimatedSizeBytes = Self.estimateImageSize(image)
-        }
-
-        /// 画像のメモリサイズを推定（ピクセル数 × 4バイト/ピクセル）
-        private static func estimateImageSize(_ image: NSImage) -> Int {
-            guard let rep = image.representations.first else {
-                return 0
-            }
-            return rep.pixelsWide * rep.pixelsHigh * 4
-        }
-    }
-
     // MARK: - Thread-safe State
 
-    private struct State {
-        var cache: [URL: CacheNode] = [:]
-        var head: CacheNode?
-        var tail: CacheNode?
-        var currentSizeBytes: Int = 0
+    private struct State: Sendable {
+        var storage: LRUStorage<URL, NSImage>
         // Metrics
         var memoryHits: UInt64 = 0
         var memoryMisses: UInt64 = 0
         var diskHits: UInt64 = 0
         var diskMisses: UInt64 = 0
+
+        init(maxSizeBytes: Int) {
+            storage = LRUStorage(maxCost: maxSizeBytes)
+        }
     }
 
     // MARK: - Properties
 
-    private let lock = NSLock()
-    private var state = State()
-    private let maxSizeBytes: Int
+    private let state: OSAllocatedUnfairLock<State>
     private let diskCacheStore: DiskCacheStore
 
     // MARK: - Initialization
@@ -55,8 +30,8 @@ final class ThumbnailCacheManager: Sendable {
     /// メモリ容量ベースでキャッシュを初期化
     /// - Parameter maxSizeBytes: 最大キャッシュサイズ（バイト）。デフォルトは256MB
     init(maxSizeBytes: Int = 256 * 1024 * 1024, diskCacheStore: DiskCacheStore) {
-        self.maxSizeBytes = maxSizeBytes
         self.diskCacheStore = diskCacheStore
+        state = OSAllocatedUnfairLock(initialState: State(maxSizeBytes: max(0, maxSizeBytes)))
     }
 
     // MARK: - Memory Cache Operations
@@ -65,40 +40,24 @@ final class ThumbnailCacheManager: Sendable {
     func getCachedThumbnail(for url: URL, size: CGSize) -> NSImage? {
         let cacheKey = thumbnailCacheKey(for: url, size: size)
 
-        lock.lock()
-        defer { lock.unlock() }
+        return state.withLock { state in
+            guard let image = state.storage.value(forKey: cacheKey) else {
+                state.memoryMisses &+= 1
+                return nil
+            }
 
-        guard let node = state.cache[cacheKey] else {
-            state.memoryMisses &+= 1
-            return nil
+            state.memoryHits &+= 1
+            return image
         }
-
-        moveToHead(node)
-        state.memoryHits &+= 1
-        return node.image
     }
 
     /// サムネイルをメモリキャッシュに保存
     func cacheThumbnail(_ image: NSImage, for url: URL, size: CGSize) {
         let cacheKey = thumbnailCacheKey(for: url, size: size)
+        let cost = ImageMemoryCost.estimatedSize(of: image)
 
-        lock.lock()
-        defer { lock.unlock() }
-
-        if let existingNode = state.cache[cacheKey] {
-            moveToHead(existingNode)
-            return
-        }
-
-        let newNode = CacheNode(key: cacheKey, image: image)
-        state.cache[cacheKey] = newNode
-        state.currentSizeBytes += newNode.estimatedSizeBytes
-        addToHead(newNode)
-
-        while state.currentSizeBytes > maxSizeBytes, let lru = state.tail {
-            state.currentSizeBytes -= lru.estimatedSizeBytes
-            removeNode(lru)
-            state.cache.removeValue(forKey: lru.key)
+        state.withLock { state in
+            _ = state.storage.insert(image, forKey: cacheKey, cost: cost)
         }
     }
 
@@ -125,31 +84,35 @@ final class ThumbnailCacheManager: Sendable {
     }
 
     private func recordDiskHit() {
-        lock.lock()
-        defer { lock.unlock() }
-        state.diskHits &+= 1
+        state.withLock { $0.diskHits &+= 1 }
     }
 
     private func recordDiskMiss() {
-        lock.lock()
-        defer { lock.unlock() }
-        state.diskMisses &+= 1
+        state.withLock { $0.diskMisses &+= 1 }
     }
 
     /// サムネイルをディスクキャッシュに保存
-    func storeThumbnailToDisk(_ image: NSImage, for url: URL, size: CGSize) async {
+    @discardableResult
+    func storeThumbnailToDisk(_ image: NSImage, for url: URL, size: CGSize) async -> Bool {
         if let tiffData = image.tiffRepresentation,
            let bitmapRep = NSBitmapImageRep(data: tiffData),
            let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
             if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
                let modDate = attributes[.modificationDate] as? Date {
-                try? await diskCacheStore.storeThumbnail(
-                    jpegData,
-                    originalURL: url,
-                    modificationDate: modDate
-                )
+                do {
+                    try await diskCacheStore.storeThumbnail(
+                        jpegData,
+                        originalURL: url,
+                        modificationDate: modDate
+                    )
+                    return true
+                } catch {
+                    // DiskCacheStore がdedupe warningとfailure metricを記録済み。
+                    return false
+                }
             }
         }
+        return false
     }
 
     /// バックグラウンドでフォルダ全件のディスクキャッシュを充填する。
@@ -174,7 +137,8 @@ final class ThumbnailCacheManager: Sendable {
         urls: [URL],
         startIndex: Int,
         size: CGSize,
-        generator: ThumbnailGenerator
+        generator: ThumbnailGenerator,
+        beforeProcessing: (@Sendable (URL) async -> Void)? = nil
     ) async {
         guard !urls.isEmpty else { return }
         let clampedStart = max(0, min(startIndex, urls.count - 1))
@@ -182,6 +146,12 @@ final class ThumbnailCacheManager: Sendable {
         for offset in Self.outwardOffsets(count: urls.count, startIndex: clampedStart) {
             if Task.isCancelled { return }
             let url = urls[offset]
+
+            // テストではここを制御可能な suspension point として使う。本番は nil で無コスト。
+            if let beforeProcessing {
+                await beforeProcessing(url)
+                if Task.isCancelled { return }
+            }
 
             // Skip 1: メモリ hit（visible 範囲で取得済みの可能性）
             if getCachedThumbnail(for: url, size: size) != nil { continue }
@@ -233,52 +203,7 @@ final class ThumbnailCacheManager: Sendable {
 
     /// メモリキャッシュをクリア
     func clearMemoryCache() {
-        lock.lock()
-        defer { lock.unlock() }
-
-        state.cache.removeAll()
-        state.head = nil
-        state.tail = nil
-        state.currentSizeBytes = 0
-    }
-
-    // MARK: - Private LRU Operations
-
-    private func addToHead(_ node: CacheNode) {
-        node.prev = nil
-        node.next = state.head
-
-        if let currentHead = state.head {
-            currentHead.prev = node
-        }
-        state.head = node
-
-        if state.tail == nil {
-            state.tail = node
-        }
-    }
-
-    private func removeNode(_ node: CacheNode) {
-        if let prev = node.prev {
-            prev.next = node.next
-        } else {
-            state.head = node.next
-        }
-
-        if let next = node.next {
-            next.prev = node.prev
-        } else {
-            state.tail = node.prev
-        }
-
-        node.prev = nil
-        node.next = nil
-    }
-
-    private func moveToHead(_ node: CacheNode) {
-        if node === state.head { return }
-        removeNode(node)
-        addToHead(node)
+        state.withLock { $0.storage.clear() }
     }
 
     private func thumbnailCacheKey(for url: URL, size: CGSize) -> URL {
@@ -290,11 +215,11 @@ final class ThumbnailCacheManager: Sendable {
 
     /// メモリ/ディスク両層のヒット統計スナップショット
     func metricsSnapshot() -> ThumbnailCacheManagerMetrics {
-        lock.lock()
-        defer { lock.unlock() }
-        return ThumbnailCacheManagerMetrics(
-            memory: CacheMetricsSnapshot(hits: state.memoryHits, misses: state.memoryMisses),
-            disk: CacheMetricsSnapshot(hits: state.diskHits, misses: state.diskMisses)
-        )
+        state.withLock { state in
+            ThumbnailCacheManagerMetrics(
+                memory: CacheMetricsSnapshot(hits: state.memoryHits, misses: state.memoryMisses),
+                disk: CacheMetricsSnapshot(hits: state.diskHits, misses: state.diskMisses)
+            )
+        }
     }
 }

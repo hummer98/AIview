@@ -8,17 +8,29 @@ import XCTest
 final class ImageBrowserViewModelSlideshowTests: XCTestCase {
     var sut: ImageBrowserViewModel!
     var recentStoreHelper: IsolatedRecentFoldersStore!
+    private var settingsDefaults: UserDefaults!
+    private var settingsSuiteName: String!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         recentStoreHelper = IsolatedRecentFoldersStore(label: "SlideshowTests")
-        sut = ImageBrowserViewModel(recentFoldersStore: recentStoreHelper.store, beepPlayer: NoopBeepPlayer())
+        settingsSuiteName = "ImageBrowserViewModelSlideshowTests.\(UUID().uuidString)"
+        settingsDefaults = UserDefaults(suiteName: settingsSuiteName)
+        settingsDefaults.removePersistentDomain(forName: settingsSuiteName)
+        sut = ImageBrowserViewModel(
+            recentFoldersStore: recentStoreHelper.store,
+            beepPlayer: NoopBeepPlayer(),
+            settingsStore: SettingsStore(defaults: settingsDefaults)
+        )
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         sut.stopSlideshow()
         sut = nil
         recentStoreHelper?.cleanup()
         recentStoreHelper = nil
+        settingsDefaults?.removePersistentDomain(forName: settingsSuiteName)
+        settingsDefaults = nil
+        settingsSuiteName = nil
     }
 
     // MARK: - Initial State Tests

@@ -1,10 +1,32 @@
 import SwiftUI
 
+/// 自動dismissの世代identity。新しいtoast開始後に旧Taskが完了してもcurrentを消さない。
+struct ToastDismissalGeneration {
+    private(set) var current: UUID?
+
+    mutating func begin(_ generation: UUID) {
+        current = generation
+    }
+
+    mutating func invalidate() {
+        current = nil
+    }
+
+    @discardableResult
+    mutating func finish(_ generation: UUID) -> Bool {
+        guard current == generation else { return false }
+        current = nil
+        return true
+    }
+}
+
 /// トースト通知を表示するオーバーレイコンポーネント
 /// Requirements: 1.5, 3.3, 3.4, 5.3, 6.2
 struct ToastOverlay: View {
     /// 表示するメッセージ（nilで非表示）
     let message: String?
+    /// 同じ文言が連続しても別toastとしてTaskを入れ替えるidentity。
+    var dismissalID: UUID = UUID()
     /// トースト非表示時に呼ばれるコールバック
     let onDismiss: () -> Void
 
@@ -26,10 +48,14 @@ struct ToastOverlay: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: message)
+        .task(id: dismissalID) {
+            await scheduleAutoDismiss(generation: dismissalID)
+        }
         .onChange(of: message) { _, newValue in
-            if newValue != nil {
-                scheduleAutoDismiss()
-            }
+            if newValue == nil { dismissalGeneration.invalidate() }
+        }
+        .onDisappear {
+            dismissalGeneration.invalidate()
         }
     }
 
@@ -51,12 +77,19 @@ struct ToastOverlay: View {
             .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 4)
     }
 
-    private func scheduleAutoDismiss() {
-        // 既存のタイマーをキャンセルして新しいタイマーを開始
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(dismissDelay * 1_000_000_000))
-            onDismiss()
+    @State private var dismissalGeneration = ToastDismissalGeneration()
+
+    @MainActor
+    private func scheduleAutoDismiss(generation: UUID) async {
+        guard message != nil else { return }
+        dismissalGeneration.begin(generation)
+        do {
+            try await Task.sleep(for: .seconds(dismissDelay))
+        } catch {
+            return
         }
+        guard !Task.isCancelled, dismissalGeneration.finish(generation) else { return }
+        onDismiss()
     }
 }
 
