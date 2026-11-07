@@ -374,3 +374,31 @@ final class FavoritesStoreTests: XCTestCase {
         try data.write(to: favoritesFile)
     }
 }
+
+/// お気に入り key の正規化はファイルシステムに触れない字句処理であること。
+/// `standardizedFileURL` は実在確認（faccessat/stat）を伴い、SwiftUI の cell 描画ごとに
+/// main thread で呼ばれて NAS 上で UI 全体を固めていた。
+final class FavoriteURLKeyTests: XCTestCase {
+    func testNormalizeRemovesDotSegmentsLexically() {
+        let url = URL(fileURLWithPath: "/Volumes/nas/photos/a/../b/./c.png")
+        XCTAssertEqual(FavoriteURLKey.normalize(url).path, "/Volumes/nas/photos/b/c.png")
+    }
+
+    func testNormalizeDoesNotConsultFileSystemForPrivatePrefix() throws {
+        // `/private/var/...` は実在する場合 standardizedFileURL が FS を確認して `/var/...` に書き換える。
+        // 字句正規化なら入力の prefix をそのまま保つ。
+        let tmp = FileManager.default.temporaryDirectory.standardized.path
+        // skip は品質 gate で失敗扱いのため、前提が崩れた場合は明示的に fail させる
+        guard tmp.hasPrefix("/var/") else {
+            return XCTFail("temporaryDirectory is expected under /var: \(tmp)")
+        }
+        let dir = URL(fileURLWithPath: "/private" + tmp)
+            .appendingPathComponent("FavoriteURLKeyTests_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("x.png")
+        FileManager.default.createFile(atPath: file.path, contents: Data())
+
+        XCTAssertEqual(FavoriteURLKey.normalize(file).path, file.path)
+    }
+}

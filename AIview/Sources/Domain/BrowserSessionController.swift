@@ -413,12 +413,16 @@ final class BrowserSessionController {
         }
 
         let parent = currentURL.deletingLastPathComponent()
-        let siblings = siblingDirectoryURLs(of: parent)
+        // directory 列挙は NAS で秒単位になり得るため main actor 外で行う
+        let siblings = await Self.siblingDirectoryURLs(of: parent)
+        guard currentFolderURL == currentURL else { return }
 
-        // 自分の index を探す（シンボリックリンク解決で比較）
-        let currentPath = currentURL.resolvingSymlinksInPath().path
+        // 自分の index を探す。兄弟はすべて同じ parent 直下なのでフォルダ名で一意に照合できる
+        // （列挙結果の prefix は `/private` 付きになり得るため path 比較はしない。
+        //   resolvingSymlinksInPath は path 成分ごとに lstat し、main thread を塞ぐ）。
+        let currentName = currentURL.standardized.lastPathComponent
         guard let index = siblings.firstIndex(where: {
-            $0.resolvingSymlinksInPath().path == currentPath
+            $0.lastPathComponent == currentName
         }) else {
             beepPlayer.beep()
             return
@@ -442,23 +446,38 @@ final class BrowserSessionController {
 
     /// 指定された親ディレクトリ直下のサブディレクトリ URL を名前順（localizedStandardCompare）で返す
     /// - 隠しフォルダは除外、ファイルは除外、読み取り失敗時は空配列
-    private func siblingDirectoryURLs(of parent: URL) -> [URL] {
+    /// - nonisolated async のため main actor 外（global executor）で file I/O を行う
+    private nonisolated static func siblingDirectoryURLs(of parent: URL) async -> [URL] {
+        subdirectoryURLs(of: parent).sorted {
+            $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+        }
+    }
+
+    /// 直下のサブディレクトリ（隠し除外、未ソート）。呼び出し側は main actor 外で使うこと。
+    private nonisolated static func subdirectoryURLs(of folder: URL) -> [URL] {
         let fileManager = FileManager.default
         guard let contents = try? fileManager.contentsOfDirectory(
-            at: parent,
+            at: folder,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else {
             return []
         }
+        // contentsOfDirectory は prefix を解決した URL（`/private/var` 等）を返すことがあるため、
+        // 呼び出し元 folder の prefix に揃えて字句比較の一貫性を保つ。
+        return contents
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .map { folder.appendingPathComponent($0.lastPathComponent, isDirectory: true) }
+    }
 
-        let directories = contents.filter { url in
-            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-        }
+    /// 存在する URL だけを返す。nonisolated async のため main actor 外で stat する。
+    private nonisolated static func existingURLs(_ urls: [URL]) async -> [URL] {
+        urls.filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
 
-        return directories.sorted {
-            $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
-        }
+    /// サブディレクトリ列挙を main actor 外で行う
+    private nonisolated static func listSubdirectories(of folder: URL) async -> [URL] {
+        subdirectoryURLs(of: folder)
     }
 
     // MARK: - Navigation
@@ -1673,21 +1692,9 @@ final class BrowserSessionController {
             parentFolderImageURLs = imageURLs
         }
 
-        // サブディレクトリを取得
-        let fileManager = FileManager.default
-        var subdirs: [URL] = []
-        if let contents = try? fileManager.contentsOfDirectory(
-            at: folderURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) {
-            for itemURL in contents {
-                if let resourceValues = try? itemURL.resourceValues(forKeys: [.isDirectoryKey]),
-                   resourceValues.isDirectory == true {
-                    subdirs.append(itemURL)
-                }
-            }
-        }
+        // サブディレクトリを取得（directory 列挙は main actor 外）
+        let subdirs = await Self.listSubdirectories(of: folderURL)
+        guard isCurrentBrowserSession(sessionID), !Task.isCancelled else { return }
         subdirectoryURLs = subdirs
 
         // 親フォルダ + サブディレクトリのお気に入りを統合読み込み
@@ -1698,12 +1705,12 @@ final class BrowserSessionController {
         favorites = loadedFavorites
 
         // 表示対象も同じ snapshot から派生させ、store の別 dictionary を source にしない。
-        let favoriteURLs: [URL] = loadedFavorites.compactMap { entry in
-            let (url, favoriteLevel) = entry
-            guard favoriteLevel >= level,
-                  FileManager.default.fileExists(atPath: url.path) else { return nil }
-            return url
+        // 存在確認の stat は件数分の file I/O になるため main actor 外で行う。
+        let candidateURLs = loadedFavorites.compactMap { url, favoriteLevel in
+            favoriteLevel >= level ? url : nil
         }
+        let favoriteURLs = await Self.existingURLs(candidateURLs)
+        guard isCurrentBrowserSession(sessionID), !Task.isCancelled else { return }
 
         // ファイル名でソート。同名時は full path を tie-breaker にして順序を安定させる。
         let sortedURLs = favoriteURLs.sorted {

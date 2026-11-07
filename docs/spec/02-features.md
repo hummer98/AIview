@@ -114,7 +114,7 @@
 
 ### Memory snapshot
 
-disk形式はfolder内のfilename keyを維持するが、閲覧中のmemory stateは通常/統合モードとも1個の`[URL: Int]`を使う。keyは`standardizedFileURL`を適用した完全URLなので、親folderとsubfolderに同名fileがあっても独立する。現在評価、thumbnail badge、通常filter、subdirectory filterはすべて同じsnapshotから派生する。
+disk形式はfolder内のfilename keyを維持するが、閲覧中のmemory stateは通常/統合モードとも1個の`[URL: Int]`を使う。keyは`FavoriteURLKey.normalize`（file systemに触れない字句正規化）を適用した完全URLなので、親folderとsubfolderに同名fileがあっても独立する。現在評価、thumbnail badge、通常filter、subdirectory filterはすべて同じsnapshotから派生する。
 
 お気に入りの設定・解除は画像URLから保存先folderを決定し、そのfolderの`favorites.json`をatomic保存する。disk保存に成功した後だけmemory snapshotを更新し、失敗時はUI上の評価・filter結果を変更しない。
 

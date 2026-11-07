@@ -308,7 +308,11 @@ struct BrowserSessionState {
         }
     }
 
+    /// 同一 file 判定。main thread 上で全件 filter / firstIndex に使うため、
+    /// ファイルシステムに触れない字句比較に限定する（`resolvingSymlinksInPath` は
+    /// path 成分ごとに `lstat` するため NAS で UI を固める）。URL は同じ scan 由来で
+    /// prefix が揃っているので、symlink 解決なしで一致判定できる。
     private static func sameFile(_ lhs: URL, _ rhs: URL) -> Bool {
-        lhs.resolvingSymlinksInPath().standardizedFileURL == rhs.resolvingSymlinksInPath().standardizedFileURL
+        lhs.standardized.path == rhs.standardized.path
     }
 }

@@ -2,7 +2,15 @@
 
 All notable changes to AIview will be documented in this file.
 
-## [Unreleased]
+## [0.10.1] - 2026-11-07
+
+### Fixed
+
+- 画像読み込み中・削除中・⌘↑/⌘↓のフォルダ移動中にUI操作（Spaceによる表示/非表示を含む）を受け付けなくなる問題を修正。main thread上でfile systemにアクセスしていた箇所を解消（NASで顕著）
+  - サムネイルcell描画ごとのお気に入りkey正規化（`standardizedFileURL`による`faccessat`/`stat`）を字句正規化に変更
+  - 削除・scan完了時の全件同一file判定（`resolvingSymlinksInPath`によるpath成分ごとの`lstat`）を字句比較に変更
+  - 兄弟フォルダ列挙、サブディレクトリfilterのdirectory列挙・存在確認をmain actor外へ移動
+  - `FolderScanner`の列挙URLを指定folderのprefixへ揃え、字句比較でfavorites keyと一致させる
 
 ## [0.10.0] - 2026-11-04
 

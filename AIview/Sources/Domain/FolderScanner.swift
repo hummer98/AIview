@@ -106,7 +106,9 @@ actor FolderScanner: FolderScanning {
             try Task.checkCancellation()
             let values = try? itemURL.resourceValues(forKeys: [.isDirectoryKey])
             if values?.isDirectory == true {
-                subdirectories.append(itemURL)
+                // contentsOfDirectory は `/var` を `/private/var` に解決した URL を返すことがある。
+                // 指定 folder の prefix に揃え、favorites key と画像 URL を字句比較で一致させる。
+                subdirectories.append(folderURL.appendingPathComponent(itemURL.lastPathComponent, isDirectory: true))
             }
         }
         subdirectories.sort(by: Self.compareByFilename)
@@ -145,7 +147,10 @@ actor FolderScanner: FolderScanning {
                 throw FolderScanError.accessDenied(folderURL)
             }
 
-            while let fileURL = enumerator.nextObject() as? URL {
+            while let enumeratedURL = enumerator.nextObject() as? URL {
+                // enumerator は `/var` を `/private/var` に解決した URL を返すことがある。
+                // 1階層列挙なので指定 folder の prefix へ付け直し、favorites key 等と字句一致させる。
+                let fileURL = folderURL.appendingPathComponent(enumeratedURL.lastPathComponent, isDirectory: false)
                 try Task.checkCancellation()
                 await beforeProcessingEntry(fileURL)
                 try Task.checkCancellation()
@@ -172,7 +177,10 @@ actor FolderScanner: FolderScanning {
                 throw FolderScanError.accessDenied(folderURL)
             }
 
-            while let fileURL = enumerator.nextObject() as? URL {
+            while let enumeratedURL = enumerator.nextObject() as? URL {
+                // enumerator は `/var` を `/private/var` に解決した URL を返すことがある。
+                // 1階層列挙なので指定 folder の prefix へ付け直し、favorites key 等と字句一致させる。
+                let fileURL = folderURL.appendingPathComponent(enumeratedURL.lastPathComponent, isDirectory: false)
                 try Task.checkCancellation()
                 await beforeProcessingEntry(fileURL)
                 try Task.checkCancellation()

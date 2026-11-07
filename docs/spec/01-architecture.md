@@ -112,7 +112,7 @@ BrowserSessionController
 
 削除・お気に入りは `.ready / .loading` のactionable phaseだけを許すproduction guardでselectionのURL/index/loadID整合を確認してから、capture済みURLのみに副作用を行う。削除のawait後は新規副作用を許可しないphase非依存のidentity照合だけを使用する。Trash 成功後は残リストと次 load target を同じ state mutation で確定し、削除前の遅い navigation load は loadID 不一致で commit を拒否する。
 
-お気に入り表示・サムネイル・通常filter・サブディレクトリfilterはすべて、`standardizedFileURL`を適用した完全URL keyの`[URL: Int]` snapshotから派生する。同名fileが別folderにあっても衝突しない。mutationは対象folderのatomic disk保存に成功してからstore/ViewModel双方のsnapshotへ反映し、失敗時は表示stateを変更しない。
+お気に入り表示・サムネイル・通常filter・サブディレクトリfilterはすべて、`FavoriteURLKey.normalize`（`.`/`..`を字句的に除去した非directory URL）を適用した完全URL keyの`[URL: Int]` snapshotから派生する。同名fileが別folderにあっても衝突しない。mutationは対象folderのatomic disk保存に成功してからstore/ViewModel双方のsnapshotへ反映し、失敗時は表示stateを変更しない。
 
 ## Error presentation とlogging privacy
 
@@ -153,6 +153,14 @@ AIview はアーカイブ閲覧ツールで、**閲覧セッション中にフ�
 ## 配布とファイルアクセス
 
 Developer ID による**非 sandbox 配布**を維持し、sandbox entitlement fileおよび`CODE_SIGN_ENTITLEMENTS`指定は持たない。任意pathへ通常のfile URLとしてアクセスし、security-scoped bookmarkの作成・復元・start/stop APIは使用しない。
+
+### main thread でのfile I/O禁止
+
+SwiftUI描画・全件filter/firstIndex・兄弟/サブディレクトリ列挙などmain actor上の処理では、file systemに触れるURL APIを呼ばない。`standardizedFileURL`は`/private`解決のため`faccessat`/`stat`を、`resolvingSymlinksInPath`はpath成分ごとに`lstat`を発行し、NAS上ではcell描画や削除のたびにUI全体を固める（v0.10.0までの実測で確認）。
+
+- URL同一性・favorites keyは字句比較（`URL.standardized`）に限定する
+- `FolderScanner`は列挙結果（`/var`→`/private/var`に解決され得る）を指定folderのprefixへ付け直し、scan由来URLとfavorites keyのprefixを揃える
+- 兄弟/サブディレクトリ列挙とfavorite存在確認は`nonisolated async`関数でmain actor外に出し、await後にsession一致を検証してからcommitする
 
 recent folderはplainな`standardizedFileURL.path`として履歴順・重複除去・最大10件で保存する。旧`recentFolderURLs`とbookmark dictionaryのpath keyは初回アクセス時に一度だけ正規化し、旧bookmark Dataを解決せず削除する。移行前valueはrollback用backup keyへ1 releaseだけ保持し、「履歴をクリア」ではbackupを含めて消去する。存在しないpathは外付けdiskやnetwork mountの再接続を考慮して自動削除せず、開いた時点で通常のnot-found errorを表示する。
 

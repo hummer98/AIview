@@ -88,6 +88,7 @@
 - 現在の言語 mode の基準は repository root の `.swift-version` に記載した Swift 6.0 とする。project、formatter、CI の指定をこの値と矛盾させない
 - Swift concurrency 診断は全 target で有効にし、場当たり的な `@unchecked Sendable`、warning suppression、compiler flag の緩和で診断を隠さない
 - UI state は `@MainActor`、共有 mutable state は actor または lock で保護された同期型として表現し、所有権を型から読み取れるようにする
+- main actor 上（SwiftUI body、全件 filter / 検索を含む）で file system に触れる API を呼ばない。`standardizedFileURL` / `resolvingSymlinksInPath` / `fileExists` / directory 列挙は NAS で UI 全体を固める。URL 比較は字句処理（`URL.standardized`）に限定し、I/O は `nonisolated async` 関数か actor へ出す（詳細は `docs/spec/01-architecture.md`）
 
 ### Test / release gate
 
