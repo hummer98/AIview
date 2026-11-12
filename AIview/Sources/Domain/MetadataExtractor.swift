@@ -30,6 +30,32 @@ struct ImageMetadata: Sendable {
     let prompt: String?
     let negativePrompt: String?
     let additionalInfo: [String: String]
+    /// metadata を書いた生成ツール（判別できた場合）。
+    let generator: GenerationMetadata.Source?
+    /// 生成パラメータ（モデル、seed、steps など）。表示順を保持する。
+    let generationParameters: [MetadataField]
+
+    init(
+        fileName: String,
+        fileSize: Int64,
+        imageSize: CGSize,
+        creationDate: Date?,
+        prompt: String?,
+        negativePrompt: String?,
+        additionalInfo: [String: String],
+        generator: GenerationMetadata.Source? = nil,
+        generationParameters: [MetadataField] = []
+    ) {
+        self.fileName = fileName
+        self.fileSize = fileSize
+        self.imageSize = imageSize
+        self.creationDate = creationDate
+        self.prompt = prompt
+        self.negativePrompt = negativePrompt
+        self.additionalInfo = additionalInfo
+        self.generator = generator
+        self.generationParameters = generationParameters
+    }
 }
 
 /// プロンプトパース結果
@@ -42,7 +68,8 @@ struct PromptParseResult {
 ///
 /// PNG chunk は `[length: 4][type: 4][payload: length][CRC: 4]` の順に並ぶ。
 /// metadata と無関係な chunk は seek だけで飛ばし、text chunk も keyword の確認までは
-/// 最大 80 byte しか読まない。`parameters` chunk だけを 1 MiB 上限で decode する。
+/// 最大 80 byte しか読まない。`parameters`（A1111 / SwarmUI）と `prompt`（ComfyUI）chunk だけを
+/// 1 MiB 上限で decode する。
 enum PNGMetadataParserError: Error, Equatable {
     case invalidSignature
     case truncated
@@ -57,6 +84,8 @@ enum PNGMetadataParserError: Error, Equatable {
 
 struct PNGMetadataParseResult: Equatable {
     let parameters: String?
+    /// ComfyUI が保存する API 形式 node graph（`prompt` keyword）。
+    let comfyPrompt: String?
     let bytesRead: Int
 }
 
@@ -87,6 +116,7 @@ struct PNGMetadataParser {
 
         var chunkCount = 0
         var parameters: String?
+        var comfyPrompt: String?
         while reader.offset < fileLength {
             chunkCount += 1
             guard chunkCount <= maximumChunkCount else {
@@ -113,7 +143,11 @@ struct PNGMetadataParser {
                     throw PNGMetadataParserError.invalidChunkLength
                 }
                 try reader.seek(to: chunkEnd)
-                return PNGMetadataParseResult(parameters: parameters, bytesRead: reader.bytesRead)
+                return PNGMetadataParseResult(
+                    parameters: parameters,
+                    comfyPrompt: comfyPrompt,
+                    bytesRead: reader.bytesRead
+                )
             }
 
             if textChunkTypes.contains(chunkType) {
@@ -133,12 +167,19 @@ struct PNGMetadataParser {
                     throw PNGMetadataParserError.invalidTextChunk
                 }
 
-                guard keyword.caseInsensitiveCompare("parameters") == .orderedSame else {
+                let isParameters = keyword.caseInsensitiveCompare("parameters") == .orderedSame
+                let isComfyPrompt = keyword == "prompt"
+                guard isParameters || (isComfyPrompt && comfyPrompt == nil) else {
                     try reader.seek(to: chunkEnd)
                     continue
                 }
 
                 guard chunkLength <= UInt64(maximumTextBytes) else {
+                    // ComfyUI の graph は補助情報なので、巨大なら読まずに飛ばす。
+                    guard isParameters else {
+                        try reader.seek(to: chunkEnd)
+                        continue
+                    }
                     throw PNGMetadataParserError.oversizedTextChunk
                 }
 
@@ -146,9 +187,14 @@ struct PNGMetadataParser {
                 let remaining = try reader.readExactly(remainingLength)
                 var payload = Data(keywordPrefix)
                 payload.append(remaining)
-                let decodedParameters = try decodeParameters(payload: payload, type: chunkType)
-                if parameters == nil {
-                    parameters = decodedParameters
+                if isParameters {
+                    let decodedText = try decodeParameters(payload: payload, type: chunkType)
+                    if parameters == nil {
+                        parameters = decodedText
+                    }
+                } else {
+                    // 補助情報の decode 失敗で `parameters` の結果まで失わない。
+                    comfyPrompt = try? decodeParameters(payload: payload, type: chunkType)
                 }
                 try reader.seek(to: chunkEnd)
                 continue
@@ -365,16 +411,18 @@ actor MetadataExtractor: MetadataExtracting {
         let imageSize = try getImageSize(from: url)
 
         // プロンプト情報を抽出
-        let (prompt, negativePrompt, additionalInfo) = try extractPromptInfo(from: url)
+        let (generation, additionalInfo) = extractPromptInfo(from: url)
 
         return ImageMetadata(
             fileName: url.lastPathComponent,
             fileSize: fileSize,
             imageSize: imageSize,
             creationDate: creationDate,
-            prompt: prompt,
-            negativePrompt: negativePrompt,
-            additionalInfo: additionalInfo
+            prompt: generation.prompt,
+            negativePrompt: generation.negativePrompt,
+            additionalInfo: additionalInfo,
+            generator: generation.source,
+            generationParameters: generation.fields
         )
     }
 
@@ -437,29 +485,38 @@ actor MetadataExtractor: MetadataExtracting {
     }
 
     /// プロンプト情報を抽出
-    private func extractPromptInfo(from url: URL) throws -> (prompt: String?, negativePrompt: String?, additionalInfo: [String: String]) {
-        var additionalInfo: [String: String] = [:]
-
+    private func extractPromptInfo(from url: URL) -> (generation: GenerationMetadata, additionalInfo: [String: String]) {
         // EXIF/XMP/PNG properties は、ImageIO が認識できる metadata を最優先する。
         if let parameters = extractParametersUsingImageIO(from: url) {
-            let result = parsePrompt(from: parameters)
-            return (result.prompt, result.negativePrompt, additionalInfo)
+            return (GenerationMetadataParser.parse(parameters: parameters, comfyPrompt: nil), [:])
         }
 
-        // Stable Diffusion の独自 `parameters` keyword が ImageIO で公開されない PNG は、
-        // bounded chunk parser へフォールバックする。
-        if url.pathExtension.lowercased() == "png",
-           let parameters = try? PNGMetadataParser.parameters(from: url) {
-            let result = parsePrompt(from: parameters)
-            return (result.prompt, result.negativePrompt, additionalInfo)
+        // Stable Diffusion の独自 `parameters` keyword や ComfyUI の `prompt` keyword は
+        // ImageIO で公開されないため、PNG は bounded chunk parser へフォールバックする。
+        if url.pathExtension.lowercased() == "png" {
+            do {
+                let result = try PNGMetadataParser.parse(url: url)
+                let generation = GenerationMetadataParser.parse(
+                    parameters: result.parameters,
+                    comfyPrompt: result.comfyPrompt
+                )
+                if generation != .empty {
+                    return (generation, [:])
+                }
+            } catch {
+                // 壊れた chunk 構造でもファイル情報と EXIF は表示する。
+                Logger.metadata.info("PNG text chunk parse failed: \(String(describing: error), privacy: .private)")
+            }
         }
 
-        // 他の形式のメタデータ（EXIF等）
-        if let exifInfo = extractEXIFInfo(from: url) {
-            additionalInfo.merge(exifInfo) { _, new in new }
+        // 他の形式のメタデータ（EXIF等）。JPEG / WebP では UserComment に SwarmUI の JSON が入る場合がある。
+        var additionalInfo = extractEXIFInfo(from: url) ?? [:]
+        if let comment = additionalInfo["ソフトウェア"],
+           let swarm = GenerationMetadataParser.parseSwarmUI(comment) {
+            additionalInfo.removeValue(forKey: "ソフトウェア")
+            return (swarm, additionalInfo)
         }
-
-        return (nil, nil, additionalInfo)
+        return (.empty, additionalInfo)
     }
 
     /// ImageIO が正規化した properties / XMP tag を検索する。

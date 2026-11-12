@@ -484,6 +484,12 @@ final class ImageLoader: Sendable {
 
     // MARK: - Private Methods
 
+    /// decode 失敗時、ファイル自体が読めなくなっていれば（NAS 切断・削除）`fileNotFound` に分類し直す。
+    /// 壊れた画像と区別して、UI が接続確認を案内できるようにする。
+    private static func decodeFailure(for url: URL) -> ImageLoaderError {
+        FileManager.default.fileExists(atPath: url.path) ? .decodeFailed(url) : .fileNotFound(url)
+    }
+
     /// 画像をデコード
     static func decodeImage(at url: URL, targetSize: CGSize?) async throws -> NSImage {
         // ファイルの存在確認
@@ -493,14 +499,14 @@ final class ImageLoader: Sendable {
 
         // ImageSourceを作成
         guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-            throw ImageLoaderError.decodeFailed(url)
+            throw decodeFailure(for: url)
         }
 
         // 画像サイズを取得
         guard let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int else {
-            throw ImageLoaderError.decodeFailed(url)
+            throw decodeFailure(for: url)
         }
 
         // デコードオプションを構築
@@ -530,7 +536,7 @@ final class ImageLoader: Sendable {
 
         // サムネイル（ダウンサンプリング済み画像）を生成
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
-            throw ImageLoaderError.decodeFailed(url)
+            throw decodeFailure(for: url)
         }
 
         let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))

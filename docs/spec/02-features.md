@@ -17,7 +17,7 @@
 | `⌘0` | 実際のサイズ（100%） |
 | `⌘9` | ウィンドウに合わせる（フィット） |
 | `d` | 現在の画像を Trash へ移動 |
-| `i` | 情報パネル（EXIF / プロンプト）の表示切替 |
+| `i` | 情報パネル（EXIF / プロンプト / 生成パラメータ）の表示切替 |
 | `t` | サムネイルカルーセルの表示切替 |
 | `Space` | プライバシーモード切替 |
 | `s` | スライドショー設定ダイアログ |
@@ -210,16 +210,36 @@ disk形式はfolder内のfilename keyを維持するが、閲覧中のmemory sta
 `MetadataExtractor` actor が以下を順に試行:
 
 1. **ImageIO metadata** — 正規化済みPNG properties / XMP tagを先に検索し、EXIFは`kCGImagePropertyExifDateTimeOriginal` / `kCGImagePropertyExifUserComment`から取得
-2. **bounded PNG fallback** — ImageIOが独自keywordを公開しない場合だけ、signatureからchunkを逐次走査。`tEXt` / `iTXt` / `zTXt`の`parameters` chunkだけを読み、UTF-8優先・Latin-1 fallbackでdecodeする
+2. **bounded PNG fallback** — ImageIOが独自keywordを公開しない場合だけ、signatureからchunkを逐次走査。`tEXt` / `iTXt` / `zTXt`の`parameters`（A1111 / SwarmUI）と`prompt`（ComfyUI）chunkだけを読み、UTF-8優先・Latin-1 fallbackでdecodeする。`workflow`など他のkeywordは読まない。`prompt` chunkは補助情報なので、1 MiB超過やdecode失敗は`parameters`の結果を失わせずに無視する
+3. **EXIF** — JPEG / WebPでは`UserComment`がSwarmUIのJSONなら同様に解析する
 
 PNG fallbackはraw text chunkとzlib展開後の双方を1 MiBに制限する。metadataと無関係なIDAT/unknown chunkはpayloadをallocateせずseekし、chunk数、keyword delimiter、compression flag/method、offset overflow、CRC領域、IEND終端を検証する。ファイル全体の`Data(contentsOf:)`やbinary全体の`String`化は行わない。ImageIOから受け取るString/Dataにも同じ1 MiB出力上限を適用する。
 
-プロンプトのパース（`parsePrompt`）:
-- `Negative prompt:` の前 → positive prompt
-- `Negative prompt:` 〜 `Steps:` → negative prompt
-- `Steps:` 以降 → 切り捨て（パラメータ部分は表示しない）
+生成ツールの判別と解析（`GenerationMetadataParser`）:
 
-`ImageMetadata` を `InfoPanel` が表示。
+| 判別条件 | 生成ツール | 取り出す値 |
+|---|---|---|
+| `parameters`が`sui_image_params`を持つJSON | SwarmUI | `prompt` / `negativeprompt`、モデル・seed・steps・CFG・サンプラー・サイズ・LoRA・生成時間など |
+| `parameters`がその他の文字列 | Stable Diffusion WebUI（A1111形式） | `Negative prompt:`の前 → prompt、`Negative prompt:`〜`Steps:` → negative、`Steps:`以降を`key: value`に分解（引用符内のカンマでは区切らない） |
+| `prompt`が`class_type`を持つnodeのJSON（API形式graph） | ComfyUI | sampler nodeの`positive` / `negative`（`SamplerCustomAdvanced`は`guider`経由）からconditioning中継node（`conditioning*`入力だけ）を辿ってtext encode nodeの`text`を取得。`text`がprimitive / string nodeへのリンクなら値を辿る。samplerを特定できないgraphはtext encode nodeをid順に連結。モデル（`ckpt_name` / `unet_name`）、LoRA、seed / steps / CFG / サンプラー / スケジューラはsamplerと直接つながるnodeから、guidanceとlatentサイズはgraph全体から取得 |
+| `prompt`がJSONでない | 不明 | 文字列全体をprompt |
+
+`parameters`があれば`prompt`より優先する。graph探索は深さ16・訪問済みnode除外で打ち切り、表示するパラメータは40件・各500文字までに制限する。node構成はworkflowごとに自由なため、ComfyUIの解析はheuristicであり、取り出せない値は表示しない。
+
+`ImageMetadata` を `InfoPanel` が表示する。生成ツール名、prompt / negative prompt（コピーボタンは解析後のprompt文字列だけをコピーし、元のJSONはコピーしない）、「生成パラメータ」を表示順どおりに並べる。panelはmetadataの有無にかかわらず`i`で必ず開き、読み込み中は「読み込み中…」、読み取り失敗時は分類済み`AppError`の文言をpanel内に表示する（alertにはしない）。
+
+## ボリューム切断の検知
+
+NASの切断や外付けディスクの取り外しで、開いているフォルダのボリュームがunmountされると、各windowの`VolumeUnmountMonitor`が`NSWorkspace`の`willUnmount` / `didUnmount`通知を受ける。フォルダpathがそのボリューム配下（字句比較、`/`は対象外）なら次をまとめて行う。
+
+- window session の操作Task、scan、画像load、先読み、metadata抽出、サムネイル生成、スライドショーを止める
+- 読み直せないメモリキャッシュを捨てる（キャッシュに残る画像だけ表示できる中途半端な状態を作らない）
+- 未表示のloadやscanを終端させる（表示済み画像があれば`ready`、なければ`failed`。削除中はtrash操作の失敗経路に任せる）
+- 「フォルダとの接続が切れました」alertを1回だけ表示する（will / didの二重通知は同一フォルダについてdedupe。フォルダを開き直す・再読み込みで解除）
+
+unmountされずに通信だけ失われた場合は、file APIのerror（`ENOTCONN` / `ETIMEDOUT` / `EIO`、ファイル消失など）を`AppError.unavailable`へ分類し、接続確認と再読み込み（⌘R）を案内する。decodeに失敗した時点でファイルが存在しなければ、破損画像ではなく`fileNotFound`として扱う。
+
+alert・sheet・情報パネルを閉じた後は、main viewへkeyboard focusを戻す（focusを失うと全キーが警告音になるため）。
 
 ## ファイルパスヘッダ
 

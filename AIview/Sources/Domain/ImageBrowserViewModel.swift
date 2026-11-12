@@ -68,6 +68,8 @@ final class ImageBrowserViewModel {
     var isInfoPanelVisible: Bool { sessionController.isInfoPanelVisible }
     var isThumbnailVisible: Bool { sessionController.isThumbnailVisible }
     var currentMetadata: ImageMetadata? { sessionController.currentMetadata }
+    var isLoadingMetadata: Bool { sessionController.isLoadingMetadata }
+    var metadataFailure: AppError? { sessionController.metadataFailure }
     var presentedError: AppError? { sessionController.presentedError }
     var errorMessage: String? { sessionController.errorMessage }
     var lastViewedRestorePrompt: LastViewedRestore? { sessionController.lastViewedRestorePrompt }
@@ -112,6 +114,10 @@ final class ImageBrowserViewModel {
 
     func sceneDidDisappear() {
         sessionController.sceneDidDisappear()
+    }
+
+    func handleVolumeUnmount(_ volumeURL: URL) {
+        sessionController.handleVolumeUnmount(volumeURL)
     }
 
     func openFolder(_ url: URL, initialImageURL: URL? = nil) async {

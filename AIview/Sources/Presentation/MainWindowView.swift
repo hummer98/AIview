@@ -12,15 +12,39 @@ struct MainWindowView: View {
     /// SwiftUIのscene復元用。windowごとのplain standardized pathだけを保存する。
     @SceneStorage("currentFolderPath") private var storedFolderPath = ""
 
+    /// key 操作を受けるため、dialog / sheet / panel を閉じた後に main view へ focus を戻す。
+    /// focus を失ったままだと、全キーが macOS の警告音になり操作できなくなる。
+    @FocusState private var isKeyboardFocused: Bool
+
     var body: some View {
         baseContent
             .onChange(of: viewModel.currentFolderURL) {
-                storedFolderPath = viewModel.currentFolderURL?.standardizedFileURL.path ?? ""
+                // standardizedFileURL は file system に触れるため、切断中の NAS で main thread を止める。
+                storedFolderPath = viewModel.currentFolderURL?.standardized.path ?? ""
             }
             .focusedSceneValue(\.browserCommands, session.focusedCommands)
             .navigationTitle(viewModel.currentFolderURL?.path ?? "AIview")
             .onAppear(perform: handleAppear)
             .onDisappear(perform: session.stop)
+            .onChange(of: viewModel.presentedError) { restoreKeyboardFocusIfIdle() }
+            .onChange(of: viewModel.lastViewedRestorePrompt == nil) { restoreKeyboardFocusIfIdle() }
+            .onChange(of: viewModel.showSlideshowSettings) { restoreKeyboardFocusIfIdle() }
+            .onChange(of: session.isFolderPickerPresented) { restoreKeyboardFocusIfIdle() }
+            .onChange(of: session.isFilePathInputPresented) { restoreKeyboardFocusIfIdle() }
+            .onChange(of: viewModel.isInfoPanelVisible) { restoreKeyboardFocusIfIdle() }
+    }
+
+    private var hasModalPresentation: Bool {
+        viewModel.presentedError != nil
+            || viewModel.lastViewedRestorePrompt != nil
+            || viewModel.showSlideshowSettings
+            || session.isFolderPickerPresented
+            || session.isFilePathInputPresented
+    }
+
+    private func restoreKeyboardFocusIfIdle() {
+        guard !hasModalPresentation else { return }
+        isKeyboardFocused = true
     }
 
     private var baseContent: some View {
@@ -33,6 +57,8 @@ struct MainWindowView: View {
         .frame(minWidth: 800, minHeight: 600)
         .background(Color.black)
         .focusable()
+        .focused($isKeyboardFocused)
+        .focusEffectDisabled()
         .onKeyPress { BrowserKeyboardRouter(session: session).handle($0) }
         .modifier(BrowserWindowDialogs(session: session))
         .toolbar { BrowserToolbarContent(session: session) }
@@ -56,8 +82,13 @@ struct MainWindowView: View {
             thumbnailCarousel
         }
         .overlay(alignment: .trailing) {
-            if viewModel.isInfoPanelVisible, let metadata = viewModel.currentMetadata {
-                InfoPanel(metadata: metadata, onClose: viewModel.toggleInfoPanel)
+            if viewModel.isInfoPanelVisible {
+                InfoPanel(
+                    metadata: viewModel.currentMetadata,
+                    isLoading: viewModel.isLoadingMetadata,
+                    failure: viewModel.metadataFailure,
+                    onClose: viewModel.toggleInfoPanel
+                )
                     .frame(width: 320)
                     .transition(.move(edge: .trailing))
             }
@@ -89,6 +120,7 @@ struct MainWindowView: View {
 
     private func handleAppear() {
         session.start()
+        isKeyboardFocused = true
 
         let environment = ProcessInfo.processInfo.environment
         if environment["AIVIEW_UI_TEST_MODE"] == "1",

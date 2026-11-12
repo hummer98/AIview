@@ -33,6 +33,10 @@ final class BrowserSessionController {
     private(set) var isInfoPanelVisible: Bool = false
     private(set) var isThumbnailVisible: Bool = true
     private(set) var currentMetadata: ImageMetadata?
+    /// 情報パネル用 metadata を読み込み中か。panel に「読み込み中」を出すために使う。
+    private(set) var isLoadingMetadata = false
+    /// 現在 selection の metadata 読み取りが失敗した理由。panel 内に表示する（alert にはしない）。
+    private(set) var metadataFailure: AppError?
     private(set) var presentedError: AppError?
 
     /// 既存View/Testとの最小限の互換API。文言はtyped error presentationからのみ導出する。
@@ -262,6 +266,44 @@ final class BrowserSessionController {
         slideshowController.shutdown()
     }
 
+    // MARK: - Volume disconnect
+
+    /// 切断を通知済みのフォルダ。will/did unmount の二重通知で alert を重ねないために使う。
+    private var disconnectedVolumeFolderURL: URL?
+
+    /// ボリュームの unmount 通知を受けたときの終端処理。
+    ///
+    /// 開いているフォルダがそのボリューム上にあれば、scan / 画像 load / 先読み / metadata /
+    /// サムネイル生成をすべて止め、読み直せないメモリキャッシュを捨てて alert で知らせる。
+    /// キャッシュが残っている間だけ表示できてしまう「中途半端な状態」を作らないため。
+    func handleVolumeUnmount(_ volumeURL: URL) {
+        guard let folderURL = currentFolderURL,
+              Self.isPath(folderURL, onVolume: volumeURL),
+              disconnectedVolumeFolderURL != folderURL else { return }
+        disconnectedVolumeFolderURL = folderURL
+        Logger.app.notice("Current folder volume was unmounted")
+
+        folderScanSlot.cancel()
+        lastViewedRecordSlot.cancel()
+        cancelMetadataLoad(clearMetadata: true)
+        currentImageTask?.cancel()
+        currentImageTask = nil
+        cancelThumbnailWarming()
+        imageLoader.cancelAll()
+        stopSlideshow()
+        cacheManager.clearMemoryCache()
+        browserState.interruptForUnavailableVolume()
+        present(.unavailable(.volumeConnection))
+    }
+
+    /// path の字句比較だけで判定する（切断済みボリュームへ file system 問い合わせをしない）。
+    nonisolated static func isPath(_ url: URL, onVolume volumeURL: URL) -> Bool {
+        let path = url.standardized.path
+        let volumePath = volumeURL.standardized.path
+        guard volumePath != "/" else { return false }
+        return path == volumePath || path.hasPrefix(volumePath + "/")
+    }
+
     /// フォルダを開く
     /// フォルダを開く。
     /// - Parameter initialImageURL: 指定すると、スキャン完了後にその画像を選択状態にする
@@ -289,6 +331,7 @@ final class BrowserSessionController {
 
         // 状態をリセット
         currentFolderURL = url
+        disconnectedVolumeFolderURL = nil
         pendingInitialImageURL = initialImageURL
         folderID = UUID()
         browserState.beginScan(clearSelection: true)
@@ -1036,6 +1079,7 @@ final class BrowserSessionController {
         )
         let extractor = metadataExtractor
         let generation = metadataSlot.begin()
+        isLoadingMetadata = true
         let task = Task { [weak self] in
             do {
                 let metadata = try await extractor.extractMetadata(from: request.url)
@@ -1047,8 +1091,7 @@ final class BrowserSessionController {
             } catch is CancellationError {
                 self?.finishMetadataLoad(generation: generation)
             } catch {
-                self?.finishMetadataLoad(generation: generation)
-                Logger.metadata.warning("Failed to extract metadata: \(error.localizedDescription, privacy: .private)")
+                self?.failMetadataLoad(error, request: request, generation: generation)
             }
         }
         metadataSlot.install(task, generation: generation)
@@ -1070,14 +1113,29 @@ final class BrowserSessionController {
         currentMetadata = metadata
     }
 
+    private func failMetadataLoad(_ error: Error, request: MetadataRequest, generation: UUID) {
+        defer { finishMetadataLoad(generation: generation) }
+        let appError = AppError.classify(error, operation: .metadataRead)
+        Logger.app.log(appError, underlying: error)
+        guard metadataSlot.generation == generation,
+              isInfoPanelVisible,
+              browserSessionID == request.sessionID,
+              browserState.selection?.loadID == request.loadID else { return }
+        metadataFailure = appError
+    }
+
     private func finishMetadataLoad(generation: UUID) {
-        metadataSlot.finish(generation: generation)
+        if metadataSlot.finish(generation: generation) {
+            isLoadingMetadata = false
+        }
     }
 
     private func cancelMetadataLoad(clearMetadata: Bool) {
         metadataSlot.cancel()
+        isLoadingMetadata = false
         if clearMetadata {
             currentMetadata = nil
+            metadataFailure = nil
         }
     }
 
@@ -1419,6 +1477,7 @@ final class BrowserSessionController {
         }
 
         Logger.app.info("Reloading folder: \(folderURL.path, privacy: .private)")
+        disconnectedVolumeFolderURL = nil
 
         // 新しい browser session に旧 selection の従属 Task を持ち越さない。
         // preserved transition では selectionDidCommit() を通らないため、metadata は

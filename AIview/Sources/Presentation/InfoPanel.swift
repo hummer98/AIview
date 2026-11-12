@@ -4,7 +4,10 @@ import AppKit
 /// 画像情報パネル
 /// Requirements: 5.1-5.7
 struct InfoPanel: View {
-    let metadata: ImageMetadata
+    let metadata: ImageMetadata?
+    var isLoading = false
+    /// metadata を読めなかった理由。nil かつ metadata も nil なら「表示する画像がない」。
+    var failure: AppError?
     let onClose: () -> Void
 
     var body: some View {
@@ -28,45 +31,95 @@ struct InfoPanel: View {
                 .background(Color.white.opacity(0.2))
 
             // コンテンツ
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // 基本情報
-                    infoSection(title: "ファイル情報") {
-                        infoRow(label: "ファイル名", value: metadata.fileName)
-                        infoRow(label: "サイズ", value: formatFileSize(metadata.fileSize))
-                        infoRow(label: "解像度", value: "\(Int(metadata.imageSize.width)) × \(Int(metadata.imageSize.height))")
-                        if let date = metadata.creationDate {
-                            infoRow(label: "作成日時", value: formatDate(date))
+            if let metadata {
+                metadataContent(metadata)
+            } else {
+                placeholder
+            }
+        }
+        .background(Color(white: 0.15))
+    }
+
+    /// metadata が無いときも panel を開き、i キーの操作結果が必ず見えるようにする。
+    @ViewBuilder
+    private var placeholder: some View {
+        VStack(spacing: 10) {
+            if isLoading {
+                ProgressView()
+                    .controlSize(.small)
+                Text("読み込み中…")
+            } else if let presentation = failure?.presentation {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.title2)
+                    .foregroundColor(.yellow)
+                Text("画像情報を読み取れませんでした")
+                    .fontWeight(.semibold)
+                Text(presentation.message)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text("表示中の画像がありません")
+            }
+        }
+        .font(.caption)
+        .foregroundColor(.white.opacity(0.8))
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func metadataContent(_ metadata: ImageMetadata) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // 基本情報
+                infoSection(title: "ファイル情報") {
+                    infoRow(label: "ファイル名", value: metadata.fileName)
+                    infoRow(label: "サイズ", value: formatFileSize(metadata.fileSize))
+                    infoRow(label: "解像度", value: "\(Int(metadata.imageSize.width)) × \(Int(metadata.imageSize.height))")
+                    if let date = metadata.creationDate {
+                        infoRow(label: "作成日時", value: formatDate(date))
+                    }
+                }
+
+                // プロンプト情報
+                if metadata.prompt != nil || metadata.negativePrompt != nil {
+                    infoSection(title: "生成情報") {
+                        if let generator = metadata.generator {
+                            infoRow(label: "生成ツール", value: generator.rawValue)
+                        }
+                        if let prompt = metadata.prompt {
+                            promptSection(title: "プロンプト", content: prompt)
+                        }
+                        if let negativePrompt = metadata.negativePrompt {
+                            promptSection(title: "ネガティブプロンプト", content: negativePrompt)
                         }
                     }
+                }
 
-                    // プロンプト情報
-                    if metadata.prompt != nil || metadata.negativePrompt != nil {
-                        infoSection(title: "生成情報") {
-                            if let prompt = metadata.prompt {
-                                promptSection(title: "プロンプト", content: prompt)
-                            }
-                            if let negativePrompt = metadata.negativePrompt {
-                                promptSection(title: "ネガティブプロンプト", content: negativePrompt)
-                            }
+                // 生成パラメータ（モデル、seed、steps など）
+                if !metadata.generationParameters.isEmpty {
+                    infoSection(title: "生成パラメータ") {
+                        if metadata.prompt == nil, metadata.negativePrompt == nil,
+                           let generator = metadata.generator {
+                            infoRow(label: "生成ツール", value: generator.rawValue)
+                        }
+                        ForEach(Array(metadata.generationParameters.enumerated()), id: \.offset) { _, field in
+                            infoRow(label: field.label, value: field.value)
                         }
                     }
+                }
 
-                    // 追加情報
-                    if !metadata.additionalInfo.isEmpty {
-                        infoSection(title: "その他") {
-                            ForEach(Array(metadata.additionalInfo.keys.sorted()), id: \.self) { key in
-                                if let value = metadata.additionalInfo[key] {
-                                    infoRow(label: key, value: value)
-                                }
+                // 追加情報
+                if !metadata.additionalInfo.isEmpty {
+                    infoSection(title: "その他") {
+                        ForEach(Array(metadata.additionalInfo.keys.sorted()), id: \.self) { key in
+                            if let value = metadata.additionalInfo[key] {
+                                infoRow(label: key, value: value)
                             }
                         }
                     }
                 }
-                .padding()
             }
+            .padding()
         }
-        .background(Color(white: 0.15))
     }
 
     // MARK: - Components
@@ -162,7 +215,12 @@ struct InfoPanel: View {
             creationDate: Date(),
             prompt: "beautiful landscape, mountains, sunset, masterpiece, best quality",
             negativePrompt: "ugly, blurry, bad quality, worst quality",
-            additionalInfo: ["撮影日時": "2024-01-01 12:00:00"]
+            additionalInfo: ["撮影日時": "2024-01-01 12:00:00"],
+            generator: .swarmUI,
+            generationParameters: [
+                MetadataField(label: "モデル", value: "example-model"),
+                MetadataField(label: "seed", value: "1234")
+            ]
         ),
         onClose: {}
     )

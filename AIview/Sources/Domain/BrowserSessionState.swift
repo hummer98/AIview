@@ -179,6 +179,16 @@ struct BrowserSessionState {
         assertInvariants()
     }
 
+    /// フォルダのボリュームが切断されたとき、scan / load の途中状態を終端させる。
+    /// 表示済み selection は残し（読み直せないだけで不整合ではない）、未表示なら failed にする。
+    /// 削除中は trash 操作自身の失敗経路（`cancelDeletion`）に終端を任せる。
+    mutating func interruptForUnavailableVolume() {
+        guard phase != .deleting else { return }
+        pendingLoad = nil
+        phase = selection == nil ? .failed : .ready
+        assertInvariants()
+    }
+
     mutating func failSession() {
         phase = .failed
         selection = nil

@@ -40,6 +40,8 @@ Presentation/  SwiftUI ビュー
 | `CacheManager.swift` | フルサイズ画像 LRU キャッシュ（メモリ容量ベース、デフォルト 512MB） |
 | `ThumbnailCacheManager.swift` | サムネイル LRU キャッシュ（メモリ 256MB + DiskCacheStore 連携） |
 | `MetadataExtractor.swift` | actor。EXIF / PNG tEXt / XMP からプロンプト・ネガティブプロンプトを抽出 |
+| `GenerationMetadataParser.swift` | SwarmUI / ComfyUI / A1111 形式を判別し、prompt と生成パラメータへ変換する純粋関数 |
+| `VolumeUnmountMonitor.swift` | `NSWorkspace` の unmount 通知を window 単位で購読する（`BrowserWindowSession` が所有し、`stop()` で解除） |
 | `SlideshowTimer.swift` | `@MainActor`。1〜60 秒のクランプ付きタイマー、pause/resume/reset |
 | `SlideshowController.swift` | slideshowのactive/paused/interval/settingsとtimerを所有。image selectionは所有せずtick actionとして受け取る |
 | `Metrics.swift` / `MetricsCollector.swift` | キャッシュヒット率・キュー深さ・ロック待ち・Disk I/O のヒストグラム |
@@ -64,7 +66,7 @@ Presentation/  SwiftUI ビュー
 | `BrowserWindowChrome.swift` | toolbar/path copy/activityとstatus barの表示 |
 | `ImageDisplayView.swift` | 画像表示・プライバシーオーバーレイ表示 |
 | `ThumbnailCarousel.swift` | 仮想スクロール（数千枚に耐える） |
-| `InfoPanel.swift` | EXIF / プロンプト表示 |
+| `InfoPanel.swift` | EXIF / プロンプト / 生成パラメータ表示。読み込み中・失敗もpanel内に表示 |
 | `SlideshowSettingsDialog.swift` | スライドショー間隔設定 |
 | `PrivacyOverlay.swift` | スペースキーで全コンテンツを瞬時に隠す |
 | `SettingsView.swift` | 環境設定（キャッシュサイズ等） |
@@ -164,7 +166,7 @@ SwiftUI描画・全件filter/firstIndex・兄弟/サブディレクトリ列挙�
 
 recent folderはplainな`standardizedFileURL.path`として履歴順・重複除去・最大10件で保存する。旧`recentFolderURLs`とbookmark dictionaryのpath keyは初回アクセス時に一度だけ正規化し、旧bookmark Dataを解決せず削除する。移行前valueはrollback用backup keyへ1 releaseだけ保持し、「履歴をクリア」ではbackupを含めて消去する。存在しないpathは外付けdiskやnetwork mountの再接続を考慮して自動削除せず、開いた時点で通常のnot-found errorを表示する。
 
-情報パネルのmetadata Taskは`BrowserSessionController`のgeneration slotが所有する。panel表示中のselection commitで旧Taskをcancelして再起動し、`BrowserSessionID + selection.loadID + normalized URL`がすべて現行の場合だけmetadata（AI promptを含む）をcommitする。panel close、privacy ON、folder/scene終了でもcancelする。
+情報パネルのmetadata Taskは`BrowserSessionController`のgeneration slotが所有する。panel表示中のselection commitで旧Taskをcancelして再起動し、`BrowserSessionID + selection.loadID + normalized URL`がすべて現行の場合だけmetadata（AI promptを含む）をcommitする。panel close、privacy ON、folder/scene終了でもcancelする。読み込み中は`isLoadingMetadata`、失敗時は同じ現行性検証を通った場合だけ`metadataFailure`（分類済み`AppError`）を立て、panel内に表示する。ボリュームunmount時は`BrowserWindowSession`が操作Taskを、`BrowserSessionController.handleVolumeUnmount`がscan / load / prefetch / metadata / warming Taskとメモリキャッシュを一括で終了・破棄する（`02-features.md`の「ボリューム切断の検知」）。
 
 last-viewed記録Taskもgeneration slotが所有する。debounce後にsession・selection loadID・folder・privacyを再確認し、`FavoritesStore`はdisk write直前にTask cancellationを再確認する。privacy modeはscene-localな一時状態であり`SettingsStore`へ永続化しない。SettingsStoreの「前回位置を確認する」設定は復元ダイアログ表示だけを制御し、privacy modeとは別である。
 

@@ -2,6 +2,20 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [0.11.0] - 2026-11-12
+
+### Added
+
+- 情報パネル（`i`）でSwarmUIとComfyUIのメタ情報を解析して表示。SwarmUIは`parameters`内のJSON（`sui_image_params`）、ComfyUIは`prompt` chunkのnode graphからprompt / negative promptを取り出し、モデル・seed・steps・CFG・サンプラー・サイズなどを「生成パラメータ」として表示。A1111形式も`Steps:`以降のパラメータを分解して表示。生成ツール名も表示し、コピーボタンは解析後のプロンプトだけをコピー
+
+### Fixed
+
+- NASの切断や外付けディスクの取り外しを検知していなかった問題を修正。開いているフォルダのボリュームがunmountされたら読み込み・先読み・サムネイル生成を止め、メモリキャッシュを捨てて「フォルダとの接続が切れました」を1回表示する。キャッシュに残った画像だけ表示できる中途半端な状態や、キャッシュが尽きて初めて警告が出る挙動を解消
+- 通信断（`ENOTCONN` / `ETIMEDOUT` / `EIO`など）やファイル消失を「対象が見つかりません」に分類し、接続確認と再読み込み（⌘R）を案内。ファイルが読めなくなった画像を「破損画像」と表示しないよう修正
+- 情報パネルでメタ情報の読み取りに失敗すると何も表示されなかった問題を修正。読み込み中と失敗理由をパネル内に表示
+- alertやsheetを閉じた後にkeyboard focusが戻らず、キー操作が警告音になる場合がある問題を修正
+- フォルダ変更時にmain threadで`standardizedFileURL`を呼んでいた箇所を字句処理に変更
+
 ## [0.10.1] - 2026-11-07
 
 ### Fixed

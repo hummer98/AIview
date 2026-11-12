@@ -20,6 +20,8 @@
 		A1000007 /* ImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007 /* ImageLoader.swift */; };
 		A1000008 /* CacheManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000008 /* CacheManager.swift */; };
 		A1000009 /* DiskCacheStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000009 /* DiskCacheStore.swift */; };
+		A10000E1 /* GenerationMetadataParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000E1 /* GenerationMetadataParser.swift */; };
+		A10000E2 /* VolumeUnmountMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000E2 /* VolumeUnmountMonitor.swift */; };
 		A1000010 /* MetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000010 /* MetadataExtractor.swift */; };
 		A1000011 /* ImageBrowserViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000011 /* ImageBrowserViewModel.swift */; };
 		A1000012 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000012 /* MainWindowView.swift */; };
@@ -64,6 +66,8 @@
 		A1000054 /* DiskCacheStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000054 /* DiskCacheStoreTests.swift */; };
 		A1000055 /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000055 /* SettingsStoreTests.swift */; };
 		A1000057 /* ThumbnailCarouselTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000057 /* ThumbnailCarouselTests.swift */; };
+		A10000E3 /* GenerationMetadataParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000E3 /* GenerationMetadataParserTests.swift */; };
+		A10000E4 /* VolumeDisconnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000E4 /* VolumeDisconnectTests.swift */; };
 		A10000E0 /* ScrollWheelPanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000E0 /* ScrollWheelPanTests.swift */; };
 		A1000058 /* ImageBrowserViewModelSiblingFolderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */; };
 		A1000059 /* IsolatedRecentFoldersStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000059 /* IsolatedRecentFoldersStore.swift */; };
@@ -125,6 +129,8 @@
 		A2000007 /* ImageLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageLoader.swift; sourceTree = "<group>"; };
 		A2000008 /* CacheManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheManager.swift; sourceTree = "<group>"; };
 		A2000009 /* DiskCacheStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCacheStore.swift; sourceTree = "<group>"; };
+		A20000E1 /* GenerationMetadataParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationMetadataParser.swift; sourceTree = "<group>"; };
+		A20000E2 /* VolumeUnmountMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeUnmountMonitor.swift; sourceTree = "<group>"; };
 		A2000010 /* MetadataExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExtractor.swift; sourceTree = "<group>"; };
 		A2000011 /* ImageBrowserViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserViewModel.swift; sourceTree = "<group>"; };
 		A2000012 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
@@ -171,6 +177,8 @@
 		A2000054 /* DiskCacheStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCacheStoreTests.swift; sourceTree = "<group>"; };
 		A2000055 /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		A2000057 /* ThumbnailCarouselTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCarouselTests.swift; sourceTree = "<group>"; };
+		A20000E3 /* GenerationMetadataParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationMetadataParserTests.swift; sourceTree = "<group>"; };
+		A20000E4 /* VolumeDisconnectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeDisconnectTests.swift; sourceTree = "<group>"; };
 		A20000E0 /* ScrollWheelPanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollWheelPanTests.swift; sourceTree = "<group>"; };
 		A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageBrowserViewModelSiblingFolderTests.swift; sourceTree = "<group>"; };
 		A2000059 /* IsolatedRecentFoldersStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IsolatedRecentFoldersStore.swift; sourceTree = "<group>"; };
@@ -309,6 +317,8 @@
 				A200006D /* FavoriteSnapshot.swift */,
 				A2000027 /* ThumbnailCacheManager.swift */,
 				A2000010 /* MetadataExtractor.swift */,
+				A20000E2 /* VolumeUnmountMonitor.swift */,
+				A20000E1 /* GenerationMetadataParser.swift */,
 				A2000011 /* ImageBrowserViewModel.swift */,
 				A2000077 /* SlideshowController.swift */,
 				A2000035 /* SlideshowTimer.swift */,
@@ -375,6 +385,8 @@
 				A2000055 /* SettingsStoreTests.swift */,
 				A2000057 /* ThumbnailCarouselTests.swift */,
 				A20000E0 /* ScrollWheelPanTests.swift */,
+				A20000E4 /* VolumeDisconnectTests.swift */,
+				A20000E3 /* GenerationMetadataParserTests.swift */,
 				A2000058 /* ImageBrowserViewModelSiblingFolderTests.swift */,
 				A2000050 /* ThumbnailWarmerTests.swift */,
 				A2000062 /* ThumbnailPriorityTests.swift */,
@@ -546,6 +558,8 @@
 				A100006D /* FavoriteSnapshot.swift in Sources */,
 				A1000009 /* DiskCacheStore.swift in Sources */,
 				A1000010 /* MetadataExtractor.swift in Sources */,
+				A10000E2 /* VolumeUnmountMonitor.swift in Sources */,
+				A10000E1 /* GenerationMetadataParser.swift in Sources */,
 				A1000011 /* ImageBrowserViewModel.swift in Sources */,
 				A1000077 /* SlideshowController.swift in Sources */,
 				A1000012 /* MainWindowView.swift in Sources */,
@@ -608,6 +622,8 @@
 				A1000055 /* SettingsStoreTests.swift in Sources */,
 				A1000057 /* ThumbnailCarouselTests.swift in Sources */,
 				A10000E0 /* ScrollWheelPanTests.swift in Sources */,
+				A10000E4 /* VolumeDisconnectTests.swift in Sources */,
+				A10000E3 /* GenerationMetadataParserTests.swift in Sources */,
 				A1000058 /* ImageBrowserViewModelSiblingFolderTests.swift in Sources */,
 				A1000050 /* ThumbnailWarmerTests.swift in Sources */,
 				A1000059 /* IsolatedRecentFoldersStore.swift in Sources */,
@@ -784,7 +800,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.10.1;
+				MARKETING_VERSION = 0.11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIview;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -808,7 +824,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.10.1;
+				MARKETING_VERSION = 0.11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIview;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -826,7 +842,7 @@
 					"$(BUILT_PRODUCTS_DIR)/AIview.app/Contents/MacOS",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.10.1;
+				MARKETING_VERSION = 0.11.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"$(BUILT_PRODUCTS_DIR)/AIview.app/Contents/MacOS/AIview.debug.dylib",
@@ -845,7 +861,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.10.1;
+				MARKETING_VERSION = 0.11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -862,7 +878,7 @@
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.10.1;
+				MARKETING_VERSION = 0.11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -879,7 +895,7 @@
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.10.1;
+				MARKETING_VERSION = 0.11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridgeroot.AIviewUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;

@@ -18,6 +18,8 @@ enum AppError: Error, Equatable, Sendable {
         case cacheWrite
         case metadataRead
         case deleteTelemetryIdentifier
+        /// 開いているフォルダのボリュームが unmount / 切断された。
+        case volumeConnection
     }
 
     enum Category: String, Equatable, Sendable {
@@ -102,10 +104,23 @@ enum AppError: Error, Equatable, Sendable {
                 message: "表示状態を更新できませんでした。フォルダを再読み込みしてください。"
             )
         case .unavailable(let operation):
-            return AppErrorPresentation(
-                title: operation == .openPath ? "パスが見つかりません" : "対象が見つかりません",
-                message: "対象が移動または削除された可能性があります。場所を確認してください。"
-            )
+            switch operation {
+            case .volumeConnection:
+                return AppErrorPresentation(
+                    title: "フォルダとの接続が切れました",
+                    message: "ネットワークドライブや外付けディスクが切断されました。再接続してから、フォルダを再読み込み（⌘R）してください。"
+                )
+            case .openPath:
+                return AppErrorPresentation(
+                    title: "パスが見つかりません",
+                    message: "対象が移動または削除された可能性があります。場所を確認してください。"
+                )
+            default:
+                return AppErrorPresentation(
+                    title: "対象が見つかりません",
+                    message: "ファイルが移動・削除されたか、ネットワークドライブとの接続が切れている可能性があります。接続を確認して、フォルダを再読み込み（⌘R）してください。"
+                )
+            }
         case .transient(let operation):
             if operation == .deleteTelemetryIdentifier {
                 return AppErrorPresentation(
@@ -174,8 +189,11 @@ enum AppError: Error, Equatable, Sendable {
             case .accessDenied:
                 return .permission(operation)
             case .deleteFailed(_, let underlying), .attributeReadFailed(_, let underlying):
-                return Self.isPermissionError(underlying as NSError)
-                    ? .permission(operation)
+                if Self.isPermissionError(underlying as NSError) {
+                    return .permission(operation)
+                }
+                return Self.isConnectionError(underlying as NSError)
+                    ? .unavailable(operation)
                     : .persistence(operation)
             }
         }
@@ -189,6 +207,10 @@ enum AppError: Error, Equatable, Sendable {
             case .invalidImage:
                 return .decode(operation)
             }
+        }
+
+        if Self.isConnectionError(cocoaError) {
+            return .unavailable(operation)
         }
 
         if cocoaError.domain == NSURLErrorDomain {
@@ -208,6 +230,26 @@ enum AppError: Error, Equatable, Sendable {
         default:
             return .unknown(operation)
         }
+    }
+
+    /// ファイルが消えた、またはネットワーク / デバイスとの接続が失われたことを示す error。
+    /// NAS 切断時は file API が `ENOTCONN` / `ETIMEDOUT` / `EIO` などを返す。
+    static func isConnectionError(_ error: NSError, depth: Int = 0) -> Bool {
+        let posixCodes: Set<Int32> = [
+            ENOENT, ENOTCONN, ETIMEDOUT, EHOSTDOWN, EHOSTUNREACH, ENETDOWN, ENETUNREACH,
+            ENETRESET, ECONNRESET, ECONNABORTED, EIO, ENXIO, ENODEV, ESTALE
+        ]
+        if error.domain == NSPOSIXErrorDomain, posixCodes.contains(Int32(truncatingIfNeeded: error.code)) {
+            return true
+        }
+        if error.domain == NSCocoaErrorDomain,
+           [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code) {
+            return true
+        }
+        guard depth < 4, let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError else {
+            return false
+        }
+        return isConnectionError(underlying, depth: depth + 1)
     }
 
     private static func isPermissionError(_ error: NSError) -> Bool {

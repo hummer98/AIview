@@ -8,7 +8,7 @@ A high-performance image viewer for macOS, optimized for browsing large image co
 
 - **Instant First Image Display** - Opens folders immediately without waiting for full scan
 - **Smooth Navigation** - Arrow key rapid-fire without UI blocking
-- **AI Prompt Extraction** - Reads Stable Diffusion prompts from ImageIO metadata or bounded PNG text chunks (tEXt / iTXt / zTXt)
+- **AI Prompt Extraction** - Reads prompts and generation parameters (model, seed, steps, etc.) from ImageIO metadata or bounded PNG text chunks (tEXt / iTXt / zTXt), detecting Stable Diffusion WebUI, SwarmUI, and ComfyUI formats
 - **Privacy Mode** - Instantly hide all content with spacebar
 - **Smart Prefetching** - Preloads images based on navigation direction
 - **Thumbnail Carousel** - Virtualized scrolling for thousands of images
@@ -29,7 +29,7 @@ A high-performance image viewer for macOS, optimized for browsing large image co
 |-----|--------|
 | `←` / `→` | Previous / Next image |
 | `d` | Delete current image (move to Trash) |
-| `i` | Toggle image info panel (EXIF, prompts) |
+| `i` | Toggle image info panel (EXIF, prompts, generation parameters) |
 | `t` | Toggle thumbnail carousel |
 | `Space` | Toggle privacy mode |
 | `s` | Open slideshow settings dialog |

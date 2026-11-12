@@ -179,15 +179,19 @@ final class BrowserWindowSession {
     @ObservationIgnored private let metricsOwner = BrowserWindowTaskOwner()
     @ObservationIgnored private let samplingSleeper: Sleeper
     @ObservationIgnored private let sideEffectCheckpoint: SideEffectCheckpoint
+    @ObservationIgnored private let volumeMonitor: VolumeUnmountMonitor
 
     init(
         appServices: AppServices,
         viewModel: ImageBrowserViewModel? = nil,
         activitySleeper: ThumbnailActivityModel.Sleeper? = nil,
         samplingSleeper: Sleeper? = nil,
-        sideEffectCheckpoint: @escaping SideEffectCheckpoint = {}
+        sideEffectCheckpoint: @escaping SideEffectCheckpoint = {},
+        volumeNotificationCenter: NotificationCenter? = nil
     ) {
         self.appServices = appServices
+        volumeMonitor = volumeNotificationCenter.map(VolumeUnmountMonitor.init(notificationCenter:))
+            ?? VolumeUnmountMonitor()
         let model = viewModel ?? ImageBrowserViewModel(recentFoldersStore: appServices.recentFoldersStore)
         self.viewModel = model
 
@@ -237,10 +241,23 @@ final class BrowserWindowSession {
     func start() {
         startMetricsSampling()
         thumbnailActivityModel.start()
+        volumeMonitor.start { [weak self] volumeURL in
+            self?.handleVolumeUnmount(volumeURL)
+        }
+    }
+
+    /// 開いているフォルダのボリュームが外れたら、window の操作 Task も含めて止める。
+    func handleVolumeUnmount(_ volumeURL: URL) {
+        guard let folderURL = viewModel.currentFolderURL,
+              BrowserSessionController.isPath(folderURL, onVolume: volumeURL) else { return }
+        folderOperationOwner.cancel()
+        navigationOwner.cancel()
+        viewModel.handleVolumeUnmount(volumeURL)
     }
 
     /// scene disappear / close の明示的終了点。
     func stop() {
+        volumeMonitor.stop()
         folderOperationOwner.cancel()
         navigationOwner.cancel()
         sideEffectTasks.cancelAll()

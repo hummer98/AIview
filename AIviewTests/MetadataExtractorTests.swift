@@ -148,6 +148,47 @@ final class MetadataExtractorTests: XCTestCase {
         XCTAssertEqual(metadata.negativePrompt, "blur, noise")
     }
 
+    func testExtractMetadata_parsesSwarmUIJSONInsteadOfShowingRawJSON() async throws {
+        let imageURL = try createPromptImage(
+            name: "swarm.png",
+            parameters: GenerationMetadataParserTests.swarmUIParameters
+        )
+
+        let metadata = try await sut.extractMetadata(from: imageURL)
+
+        XCTAssertEqual(metadata.generator, .swarmUI)
+        XCTAssertEqual(metadata.prompt, "A candid photorealistic photograph of a woman by the seaside.")
+        XCTAssertNil(metadata.negativePrompt)
+        XCTAssertTrue(metadata.generationParameters.contains(MetadataField(label: "seed", value: "1234")))
+    }
+
+    func testExtractMetadata_parsesComfyUIPromptChunk() async throws {
+        let imageURL = try createTextChunkImage(
+            name: "comfy.png",
+            keyword: "prompt",
+            text: GenerationMetadataParserTests.comfyKSamplerPrompt
+        )
+
+        let metadata = try await sut.extractMetadata(from: imageURL)
+
+        XCTAssertEqual(metadata.generator, .comfyUI)
+        XCTAssertEqual(metadata.prompt, "a red fox in snow")
+        XCTAssertEqual(metadata.negativePrompt, "blurry, lowres")
+    }
+
+    func testParser_collectsComfyPromptAndSkipsWorkflow() throws {
+        let url = try writePNG(chunks: [
+            pngChunk(type: "tEXt", payload: Data("workflow\0{\"nodes\": []}".utf8)),
+            pngChunk(type: "tEXt", payload: Data("prompt\0{\"1\": {}}".utf8)),
+            pngChunk(type: "IEND", payload: Data())
+        ])
+
+        let result = try PNGMetadataParser.parse(url: url)
+
+        XCTAssertNil(result.parameters)
+        XCTAssertEqual(result.comfyPrompt, "{\"1\": {}}")
+    }
+
     func testParser_usesLengthOfSecondParametersTextChunk() throws {
         let url = try writePNG(chunks: [
             pngChunk(type: "tEXt", payload: Data("comment\0short".utf8)),
@@ -429,13 +470,17 @@ final class MetadataExtractorTests: XCTestCase {
     }
 
     private func createPromptImage(name: String, parameters: String) throws -> URL {
+        try createTextChunkImage(name: name, keyword: "parameters", text: parameters)
+    }
+
+    private func createTextChunkImage(name: String, keyword: String, text: String) throws -> URL {
         let url = try createTestImage(name: name)
         var png = try Data(contentsOf: url)
         let iendSize = 12
         guard png.count >= iendSize else {
             throw CocoaError(.fileReadCorruptFile)
         }
-        png.insert(contentsOf: pngChunk(type: "tEXt", payload: Data("parameters\0\(parameters)".utf8)), at: png.count - iendSize)
+        png.insert(contentsOf: pngChunk(type: "tEXt", payload: Data("\(keyword)\0\(text)".utf8)), at: png.count - iendSize)
         try png.write(to: url)
         return url
     }
