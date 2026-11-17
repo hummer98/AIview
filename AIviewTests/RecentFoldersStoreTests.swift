@@ -139,6 +139,15 @@ final class RecentFoldersStoreTests: XCTestCase {
         XCTAssertEqual(sut.getRecentFolders().map(\.path), ["/tmp/folder"])
     }
 
+    /// 回帰: 正規化は字句処理だけで行い、file system に問い合わせない。
+    /// `standardizedFileURL` は実在する `/private/var/...` を `/var/...` へ書き換える（= stat する）ため、
+    /// 履歴に切断中の NAS があると main thread を止めていた。
+    func testNormalization_doesNotTouchFileSystem() {
+        sut.addRecentFolder(URL(fileURLWithPath: "/private/var/tmp"))
+
+        XCTAssertEqual(sut.getRecentFolders().map(\.path), ["/private/var/tmp"])
+    }
+
     func testMigration_preservesPathOrderAddsBookmarkOnlyPathsAndRemovesLegacyBookmarks() {
         testDefaults.removeObject(forKey: RecentFoldersStore.migrationVersionKey)
         let legacyPaths = ["/tmp/z/../first", "/tmp/second", "/tmp/first"]
@@ -182,6 +191,6 @@ final class RecentFoldersStoreTests: XCTestCase {
 
         sut.addRecentFolder(missing)
 
-        XCTAssertEqual(sut.getRecentFolders(), [missing.standardizedFileURL])
+        XCTAssertEqual(sut.getRecentFolders(), [missing.standardized])
     }
 }

@@ -122,8 +122,10 @@ final class RecentFoldersStore {
         }
     }
 
+    /// 字句処理だけで正規化する。`standardizedFileURL` は `/private` 解決のため履歴の各 path へ
+    /// `faccessat` / `stat` を発行し、切断中の NAS が履歴にあると main thread を止める。
     private func normalizedPath(_ url: URL) -> String {
-        url.standardizedFileURL.path
+        url.standardized.path
     }
 
     private func persist(_ paths: [String]) {

@@ -291,6 +291,9 @@ final class BrowserSessionController {
         cancelThumbnailWarming()
         imageLoader.cancelAll()
         stopSlideshow()
+        // 復元確認 alert を残したままだと切断 alert と重なり、操作できない状態になる。
+        lastViewedRestorePrompt = nil
+        pendingLastViewedFilename = nil
         cacheManager.clearMemoryCache()
         browserState.interruptForUnavailableVolume()
         present(.unavailable(.volumeConnection))
@@ -411,18 +414,32 @@ final class BrowserSessionController {
     /// - 存在しない場合は errorMessage を設定する。
     /// アプリは非サンドボックスのため、security-scoped bookmark なしで任意パスにアクセスできる。
     func openPath(_ url: URL) async {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+        // 存在確認は main actor 外で行う（切断中の NAS では stat が長時間戻らない）。
+        let kind = await Self.pathKind(of: url)
+        guard !Task.isCancelled else { return }
+        switch kind {
+        case .missing:
             present(.unavailable(.openPath))
             Logger.app.warning("Open path failed: path not found")
-            return
-        }
-
-        if isDirectory.boolValue {
+        case .directory:
             await openFolder(url)
-        } else {
+        case .file:
             await openFile(url)
         }
+    }
+
+    private enum PathKind {
+        case missing
+        case directory
+        case file
+    }
+
+    private nonisolated static func pathKind(of url: URL) async -> PathKind {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+            return .missing
+        }
+        return isDirectory.boolValue ? .directory : .file
     }
 
     /// 画像ファイルのパスを開く（親フォルダを開き、その画像を選択状態にする）。

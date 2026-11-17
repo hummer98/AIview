@@ -49,6 +49,12 @@ final class AppServices {
     let telemetryCoordinator: TelemetryCoordinator
 
     private(set) var recentFolders: [URL]
+
+    /// フォルダを開いたとき前回の表示位置への移動を確認するか。
+    /// メニューと設定画面の両方から切り替えるため、表示 state をここで一元化して store へ書き戻す。
+    var restoreLastViewedConfirmEnabled: Bool {
+        didSet { settingsStore.restoreLastViewedConfirmEnabled = restoreLastViewedConfirmEnabled }
+    }
     @ObservationIgnored private let launchMaintenanceService = LaunchMaintenanceService()
     @ObservationIgnored private var launchMaintenanceTask: Task<Void, Never>?
     @ObservationIgnored private var launchMaintenanceGeneration: UUID?
@@ -61,6 +67,7 @@ final class AppServices {
     ) {
         self.recentFoldersStore = recentFoldersStore
         self.settingsStore = settingsStore
+        restoreLastViewedConfirmEnabled = settingsStore.restoreLastViewedConfirmEnabled
         self.telemetryCoordinator = telemetryCoordinator ?? TelemetryCoordinator(settings: settingsStore)
         recentFolders = recentFoldersStore.getRecentFolders()
     }

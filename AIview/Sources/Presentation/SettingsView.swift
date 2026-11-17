@@ -26,16 +26,13 @@ struct SettingsView: View {
 // MARK: - Display Settings Tab
 
 private struct DisplaySettingsTab: View {
-    let appServices: AppServices
+    @Bindable var appServices: AppServices
 
-    @State private var restoreLastViewedConfirmEnabled: Bool
     @State private var analyticsEnabled: Bool
 
     init(appServices: AppServices) {
         self.appServices = appServices
-        let store = appServices.settingsStore
-        _restoreLastViewedConfirmEnabled = State(initialValue: store.restoreLastViewedConfirmEnabled)
-        _analyticsEnabled = State(initialValue: store.analyticsEnabled)
+        _analyticsEnabled = State(initialValue: appServices.settingsStore.analyticsEnabled)
     }
 
     var body: some View {
@@ -43,15 +40,12 @@ private struct DisplaySettingsTab: View {
             Section {
                 Toggle(
                     "フォルダを開いたとき前回の表示位置を確認する",
-                    isOn: $restoreLastViewedConfirmEnabled
+                    isOn: $appServices.restoreLastViewedConfirmEnabled
                 )
-                .onChange(of: restoreLastViewedConfirmEnabled) { _, newValue in
-                    appServices.settingsStore.restoreLastViewedConfirmEnabled = newValue
-                }
             } header: {
                 Text("前回の表示位置")
             } footer: {
-                Text("ON にすると、記録がある場合にフォルダを開いた直後へ移動確認ダイアログを表示します。記録はこの設定に関わらず行われます（プライバシーモード中を除く）。")
+                Text("ON にすると、記録がある場合にフォルダを開いた直後へ移動確認ダイアログを表示します。「表示」メニューからも切り替えられます。記録はこの設定に関わらず行われます（プライバシーモード中を除く）。")
                     .foregroundStyle(.secondary)
                     .font(.caption)
             }

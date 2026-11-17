@@ -292,12 +292,13 @@ final class BrowserWindowSession {
         }
     }
 
+    // `standardizedFileURL` は file system に触れるため、main actor 上では字句処理に限る。
     func openFolder(_ url: URL) {
-        perform(.openFolder(url.standardizedFileURL))
+        perform(.openFolder(url.standardized))
     }
 
     func openPath(_ url: URL) {
-        perform(.openPath(url.standardizedFileURL))
+        perform(.openPath(url.standardized))
     }
 
     func jumpToIndex(_ index: Int) {

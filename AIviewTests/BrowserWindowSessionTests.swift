@@ -69,9 +69,9 @@ final class BrowserWindowSessionTests: XCTestCase {
         await first._debugWaitForCurrentOperation()
         await second._debugWaitForCurrentOperation()
 
-        XCTAssertEqual(first.viewModel.currentFolderURL, firstFolder.standardizedFileURL)
+        XCTAssertEqual(first.viewModel.currentFolderURL, firstFolder.standardized)
         XCTAssertEqual(first.viewModel.currentImageURL, firstImage)
-        XCTAssertEqual(second.viewModel.currentFolderURL, secondFolder.standardizedFileURL)
+        XCTAssertEqual(second.viewModel.currentFolderURL, secondFolder.standardized)
         XCTAssertEqual(second.viewModel.currentImageURL, secondImage)
 
         first.stop()

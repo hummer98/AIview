@@ -245,6 +245,25 @@ final class LastViewedImageTests: XCTestCase {
         XCTAssertEqual(viewModel.currentIndex, 3, "記録位置（index 3）へ移動が確定する")
     }
 
+    /// 回帰: 復元確認 alert の表示中にボリュームが切断されたら、確認を取り下げて
+    /// 切断 alert だけを残す（2つの alert が重なって操作できなくなるのを防ぐ）。
+    func testViewModel_VolumeUnmountWhilePrompting_ClearsPrompt() async throws {
+        try writeRawFavorites(
+            "{\"favorites\":{},\"lastViewedImage\":\"test_image_04.png\"}",
+            in: testFolderURL
+        )
+
+        let viewModel = makeViewModel(confirmEnabled: true)
+        await viewModel.openFolder(testFolderURL)
+        XCTAssertNotNil(viewModel.lastViewedRestorePrompt)
+
+        viewModel.handleVolumeUnmount(testFolderURL)
+
+        XCTAssertNil(viewModel.lastViewedRestorePrompt, "切断時は復元確認を取り下げる")
+        XCTAssertNotNil(viewModel.presentedError, "切断 alert は表示する")
+        XCTAssertNil(viewModel.confirmRestoreLastViewed(), "切断後に移動は実行しない")
+    }
+
     /// dismissRestoreLastViewed()→位置不変・prompt nil
     func testViewModel_DismissRestore_KeepsPosition() async throws {
         try writeRawFavorites(
@@ -434,5 +453,30 @@ private actor LastViewedCommitCheckpoint {
     func resume() {
         continuation?.resume()
         continuation = nil
+    }
+}
+
+/// メニューと設定画面が共有する「前回の表示位置を確認」トグル。
+@MainActor
+final class RestoreLastViewedSettingTests: XCTestCase {
+    func testToggle_persistsToSettingsStoreAndControlsPrompt() {
+        let suiteName = "RestoreLastViewedSettingTests_\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            return XCTFail("UserDefaults suite を作れない")
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let recentStore = IsolatedRecentFoldersStore(label: "RestoreLastViewedSettingTests")
+        defer { recentStore.cleanup() }
+
+        let settings = SettingsStore(defaults: defaults)
+        let services = AppServices(recentFoldersStore: recentStore.store, settingsStore: settings)
+        XCTAssertTrue(services.restoreLastViewedConfirmEnabled, "既定は ON")
+
+        services.restoreLastViewedConfirmEnabled = false
+        XCTAssertFalse(settings.restoreLastViewedConfirmEnabled, "メニューの切替を永続化する")
+        XCTAssertFalse(
+            AppServices(recentFoldersStore: recentStore.store, settingsStore: settings).restoreLastViewedConfirmEnabled,
+            "再起動後も OFF を保つ"
+        )
     }
 }

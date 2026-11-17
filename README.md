@@ -18,7 +18,7 @@ A high-performance image viewer for macOS, optimized for browsing large image co
 - **Slideshow** - Auto-advance with configurable interval (1-60 seconds)
 - **Thumbnail Activity Indicator** - Toolbar icon visible only while thumbnail generation is in flight
 - **Window State Restoration** - Reopens all windows you had open at quit, with their folder, position, and size
-- **Resume Last Viewed Image** - Remembers the last image you viewed per folder and offers to jump back to it next time (toggleable in settings)
+- **Resume Last Viewed Image** - Remembers the last image you viewed per folder and offers to jump back to it next time (toggleable from the View menu or settings)
 - **Actionable Error Feedback** - Folder, favorite, image-load, and delete failures show recovery-oriented messages; cancellations stay silent
 
 ## Keyboard Shortcuts

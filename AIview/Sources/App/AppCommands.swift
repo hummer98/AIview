@@ -87,6 +87,10 @@ struct AppCommands: Commands {
 
             Divider()
 
+            Toggle("フォルダを開いたとき前回の表示位置を確認", isOn: $appServices.restoreLastViewedConfirmEnabled)
+
+            Divider()
+
             Button("拡大") {
                 browserCommands?.zoom(.zoomIn)
             }
