@@ -182,9 +182,7 @@ final class BrowserWindowSessionTests: XCTestCase {
 
         session.openFolder(root)
         await gate.waitUntilSuspended()
-        for _ in 0..<1_000 where viewModel.currentImageURL == nil {
-            await Task.yield()
-        }
+        await waitUntil { viewModel.currentImageURL != nil }
         XCTAssertEqual(viewModel.currentImageURL, images[0])
 
         session.moveToNext()
@@ -194,6 +192,18 @@ final class BrowserWindowSessionTests: XCTestCase {
         XCTAssertEqual(viewModel.imageURLs, images)
         XCTAssertEqual(viewModel.phase, .ready)
         session.stop()
+    }
+
+    /// 画像の decode は background で進むため、yield 回数ではなく条件成立まで（上限付きで）待つ。
+    /// 回数固定の yield は TSan 下の遅い CI runner で decode 完了前に打ち切られていた。
+    private func waitUntil(
+        timeout: Duration = .seconds(10),
+        _ condition: @MainActor () -> Bool
+    ) async {
+        let deadline = ContinuousClock.now + timeout
+        while !condition(), ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
     }
 
     func testFilterWhileScanIsSuspended_cancelsOldScanBeforeURLSetTransition() async throws {
@@ -219,9 +229,7 @@ final class BrowserWindowSessionTests: XCTestCase {
 
         session.openFolder(root)
         await gate.waitUntilSuspended()
-        for _ in 0..<1_000 where viewModel.currentImageURL == nil {
-            await Task.yield()
-        }
+        await waitUntil { viewModel.currentImageURL != nil }
         XCTAssertEqual(viewModel.currentImageURL, images[0])
 
         session.setFilterLevel(5)
