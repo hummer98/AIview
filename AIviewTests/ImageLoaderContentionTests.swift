@@ -46,6 +46,9 @@ final class ImageLoaderContentionTests: XCTestCase {
             XCTContext.runActivity(named: "display latency = \(String(format: "%.1f", elapsedMs))ms") { _ in }
         }
 
-        XCTAssertLessThan(elapsedMs, 5000, "計測経路が壊れていない")
+        // 性能の合否ではなく「display load が詰まらず完了する」ことだけを見る上限。
+        // TSan 有効の GitHub runner では 50 枚の同時 decode と競合して 9〜11 秒かかる実測があり、
+        // 5 秒では runner の速さで落ちていた。値の推移は上の activity で追う。
+        XCTAssertLessThan(elapsedMs, 30_000, "計測経路が壊れていない（詰まらず完了する）")
     }
 }
