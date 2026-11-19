@@ -44,6 +44,12 @@ assert_no_match 'Task\.detached' "$sources" --glob '*.swift'
 assert_no_match 'Data\(contentsOf:' AIview/Sources/Domain/MetadataExtractor.swift
 assert_no_match 'SWIFT_VERSION = 5' AIview.xcodeproj/project.pbxproj
 
+# File system に問い合わせる URL API は、切断中の NAS で呼び出し thread を長時間止める
+# （main thread なら UI 全体が固まる）。正規化は `URL.standardized`、URL 生成は `isDirectory:` を明示する。
+assert_no_match '^[^/]*\.standardizedFileURL' "$sources" --glob '*.swift'
+assert_no_match 'URL\(fileURLWithPath: [^,()]*\)' "$sources" --glob '*.swift'
+assert_no_match 'appendingPathComponent\([^,()]*\)' "$sources" --glob '*.swift'
+
 # The localized READMEs are maintained as structural translations, and their canonical cache
 # example must never drift back to the removed nested directory.
 english_heading_shape=$(rg '^#{2,3} ' README.md | sed -E 's/^(#+).*/\1/' | paste -sd ' ' -)

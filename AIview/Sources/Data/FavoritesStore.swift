@@ -236,8 +236,8 @@ actor FavoritesStore: FavoritesStoring {
         let cacheDir = ".aiview"
         let filename = "favorites.json"
         let favoritesURL = folderURL
-            .appendingPathComponent(cacheDir)
-            .appendingPathComponent(filename)
+            .appendingPathComponent(cacheDir, isDirectory: true)
+            .appendingPathComponent(filename, isDirectory: false)
 
         guard FileManager.default.fileExists(atPath: favoritesURL.path) else {
             return [:]
@@ -294,8 +294,8 @@ actor FavoritesStore: FavoritesStoring {
 
     private func favoritesFileURL(for folderURL: URL) -> URL {
         return folderURL
-            .appendingPathComponent(cacheDirectoryName)
-            .appendingPathComponent(favoritesFileName)
+            .appendingPathComponent(cacheDirectoryName, isDirectory: true)
+            .appendingPathComponent(favoritesFileName, isDirectory: false)
     }
 
     /// 指定フォルダにお気に入りデータを保存（統合モード用）。
@@ -313,7 +313,7 @@ actor FavoritesStore: FavoritesStoring {
 
     /// v2 形式の `FavoritesFile` を `.aiview/favorites.json` へ atomic 保存する共通処理
     private func writeFile(_ file: FavoritesFile, to folderURL: URL) throws {
-        let cacheDir = folderURL.appendingPathComponent(cacheDirectoryName)
+        let cacheDir = folderURL.appendingPathComponent(cacheDirectoryName, isDirectory: true)
 
         // .aiviewフォルダを作成
         if !fileManager.fileExists(atPath: cacheDir.path) {
@@ -321,7 +321,7 @@ actor FavoritesStore: FavoritesStoring {
             Logger.favorites.debug("Created .aiview directory")
         }
 
-        let favoritesURL = cacheDir.appendingPathComponent(favoritesFileName)
+        let favoritesURL = cacheDir.appendingPathComponent(favoritesFileName, isDirectory: false)
         let data = try JSONEncoder().encode(file)
         try data.write(to: favoritesURL, options: .atomic)
     }

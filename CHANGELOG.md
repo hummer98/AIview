@@ -2,6 +2,12 @@
 
 All notable changes to AIview will be documented in this file.
 
+## [0.11.2] - 2026-11-19
+
+### Fixed
+
+- v0.11.1 でも、ネットワーク切断中にアプリが応答しなくなることがある問題を修正。最近使用したフォルダの一覧を作るとき、`isDirectory:` を省略した `URL(fileURLWithPath:)` が履歴の各 path へ `lstat` を発行し、切断中の NAS で main thread を止めていた。URL 生成はすべて `isDirectory:` を明示し、file system に問い合わせる URL API の使用を architecture check で禁止
+
 ## [0.11.1] - 2026-11-18
 
 ### Added

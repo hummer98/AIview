@@ -76,6 +76,8 @@ struct BrowserWindowDialogs: ViewModifier {
         let raw = session.filePathInput.trimmingCharacters(in: .whitespacesAndNewlines)
         session.filePathInput = ""
         guard !raw.isEmpty else { return }
-        session.openPath(URL(fileURLWithPath: (raw as NSString).expandingTildeInPath))
+        // directory か file かは openPath が main actor 外で判定する。ここで file system に触れない。
+        let path = (raw as NSString).expandingTildeInPath
+        session.openPath(URL(fileURLWithPath: path, isDirectory: false))
     }
 }

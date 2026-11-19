@@ -25,7 +25,7 @@ final class RecentFoldersStoreTests: XCTestCase {
 
     func testAddRecentFolder_addsURLToList() {
         // Given
-        let testURL = URL(fileURLWithPath: "/tmp/test")
+        let testURL = URL(fileURLWithPath: "/tmp/test", isDirectory: true)
 
         // When
         sut.addRecentFolder(testURL)
@@ -39,7 +39,7 @@ final class RecentFoldersStoreTests: XCTestCase {
     func testAddRecentFolder_maintainsMaximum10Entries() {
         // Given
         for i in 0..<15 {
-            let url = URL(fileURLWithPath: "/tmp/folder\(i)")
+            let url = URL(fileURLWithPath: "/tmp/folder\(i)", isDirectory: true)
             sut.addRecentFolder(url)
         }
 
@@ -52,8 +52,8 @@ final class RecentFoldersStoreTests: XCTestCase {
 
     func testAddRecentFolder_movesExistingURLToTop() {
         // Given
-        let url1 = URL(fileURLWithPath: "/tmp/folder1")
-        let url2 = URL(fileURLWithPath: "/tmp/folder2")
+        let url1 = URL(fileURLWithPath: "/tmp/folder1", isDirectory: true)
+        let url2 = URL(fileURLWithPath: "/tmp/folder2", isDirectory: true)
         sut.addRecentFolder(url1)
         sut.addRecentFolder(url2)
 
@@ -70,7 +70,7 @@ final class RecentFoldersStoreTests: XCTestCase {
 
     func testRemoveRecentFolder_removesURLFromList() {
         // Given
-        let testURL = URL(fileURLWithPath: "/tmp/test")
+        let testURL = URL(fileURLWithPath: "/tmp/test", isDirectory: true)
         sut.addRecentFolder(testURL)
 
         // When
@@ -86,7 +86,7 @@ final class RecentFoldersStoreTests: XCTestCase {
     func testClearRecentFolders_removesAllURLs() {
         // Given
         for i in 0..<5 {
-            sut.addRecentFolder(URL(fileURLWithPath: "/tmp/folder\(i)"))
+            sut.addRecentFolder(URL(fileURLWithPath: "/tmp/folder\(i)", isDirectory: true))
         }
 
         // When
@@ -120,7 +120,7 @@ final class RecentFoldersStoreTests: XCTestCase {
 
     func testRecentFolders_persistAcrossInstances() {
         // Given
-        let testURL = URL(fileURLWithPath: "/tmp/test")
+        let testURL = URL(fileURLWithPath: "/tmp/test", isDirectory: true)
         sut.addRecentFolder(testURL)
 
         // When
@@ -133,8 +133,8 @@ final class RecentFoldersStoreTests: XCTestCase {
     }
 
     func testAddRecentFolder_normalizesAndDeduplicatesPaths() {
-        sut.addRecentFolder(URL(fileURLWithPath: "/tmp/parent/../folder"))
-        sut.addRecentFolder(URL(fileURLWithPath: "/tmp/folder"))
+        sut.addRecentFolder(URL(fileURLWithPath: "/tmp/parent/../folder", isDirectory: true))
+        sut.addRecentFolder(URL(fileURLWithPath: "/tmp/folder", isDirectory: true))
 
         XCTAssertEqual(sut.getRecentFolders().map(\.path), ["/tmp/folder"])
     }
@@ -143,9 +143,22 @@ final class RecentFoldersStoreTests: XCTestCase {
     /// `standardizedFileURL` は実在する `/private/var/...` を `/var/...` へ書き換える（= stat する）ため、
     /// 履歴に切断中の NAS があると main thread を止めていた。
     func testNormalization_doesNotTouchFileSystem() {
-        sut.addRecentFolder(URL(fileURLWithPath: "/private/var/tmp"))
+        sut.addRecentFolder(URL(fileURLWithPath: "/private/var/tmp", isDirectory: true))
 
         XCTAssertEqual(sut.getRecentFolders().map(\.path), ["/private/var/tmp"])
+    }
+
+    /// 回帰 (v0.11.1 で残っていたハング): 履歴の URL は `isDirectory:` を明示して作り、
+    /// `URL(fileURLWithPath:)` の directory 判定 `lstat` を発行しない。
+    /// 実在しない path でも directory URL になることが「file system を見ていない」証拠になる
+    /// （`lstat` で判定すると存在しない path は非 directory になる）。
+    func testGetRecentFolders_buildsDirectoryURLsWithoutStat() {
+        let missing = URL(fileURLWithPath: "/Volumes/AIviewDisconnected-\(UUID().uuidString)/folder", isDirectory: true)
+        sut.addRecentFolder(missing)
+
+        let folders = sut.getRecentFolders()
+        XCTAssertEqual(folders.map(\.path), [missing.path])
+        XCTAssertEqual(folders.map(\.hasDirectoryPath), [true])
     }
 
     func testMigration_preservesPathOrderAddsBookmarkOnlyPathsAndRemovesLegacyBookmarks() {
@@ -186,7 +199,7 @@ final class RecentFoldersStoreTests: XCTestCase {
     }
 
     func testGetRecentFolders_keepsMissingPathsForRemount() {
-        let missing = URL(fileURLWithPath: "/Volumes/offline-drive/photos")
+        let missing = URL(fileURLWithPath: "/Volumes/offline-drive/photos", isDirectory: true)
         XCTAssertFalse(FileManager.default.fileExists(atPath: missing.path))
 
         sut.addRecentFolder(missing)

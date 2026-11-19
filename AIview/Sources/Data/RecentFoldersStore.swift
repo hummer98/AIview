@@ -25,7 +25,7 @@ final class RecentFoldersStore {
 
     func getRecentFolders() -> [URL] {
         lock.withLock {
-            storedNormalizedPaths().map { URL(fileURLWithPath: $0) }
+            storedNormalizedPaths().map { URL(fileURLWithPath: $0, isDirectory: true) }
         }
     }
 
@@ -86,7 +86,7 @@ final class RecentFoldersStore {
             // 履歴順を持つ旧 path 配列を優先し、path 配列にない bookmark key は
             // dictionary 順に依存しないよう標準化後の昇順で末尾へ補完する。
             let bookmarkPaths = legacyBookmarks.keys.map {
-                normalizedPath(URL(fileURLWithPath: $0))
+                normalizedPath(URL(fileURLWithPath: $0, isDirectory: true))
             }.sorted()
             let normalized = normalizedUniquePaths(legacyPaths + bookmarkPaths)
             let migrated = Array(normalized.prefix(maxEntries))
@@ -116,7 +116,7 @@ final class RecentFoldersStore {
         var seen = Set<String>()
         return paths.compactMap { path in
             guard !path.isEmpty else { return nil }
-            let normalized = normalizedPath(URL(fileURLWithPath: path))
+            let normalized = normalizedPath(URL(fileURLWithPath: path, isDirectory: true))
             guard seen.insert(normalized).inserted else { return nil }
             return normalized
         }
@@ -124,6 +124,7 @@ final class RecentFoldersStore {
 
     /// 字句処理だけで正規化する。`standardizedFileURL` は `/private` 解決のため履歴の各 path へ
     /// `faccessat` / `stat` を発行し、切断中の NAS が履歴にあると main thread を止める。
+    /// 同じ理由で URL は `isDirectory:` を明示して作る（省略すると `lstat` で directory か調べる）。
     private func normalizedPath(_ url: URL) -> String {
         url.standardized.path
     }

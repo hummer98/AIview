@@ -200,7 +200,7 @@ actor DiskCacheStore {
         let fileName = originalURL.lastPathComponent + ".jpg"
         return folder
             .appendingPathComponent(".aiview", isDirectory: true)
-            .appendingPathComponent(fileName)
+            .appendingPathComponent(fileName, isDirectory: false)
     }
 
     /// Cache write failure は best-effort だが観測不能にしない。同一window/VMが所有する

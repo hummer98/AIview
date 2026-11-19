@@ -51,7 +51,7 @@ Presentation/  SwiftUI ビュー
 | ファイル | 永続化先 | 内容 |
 |---------|--------|------|
 | `FavoritesStore.swift` | `<folder>/.aiview/favorites.json` | diskはフォルダごと `[ファイル名: レベル(1-5)]` + `lastViewedImage` の v2 ラッパー形式。memoryは通常/統合共通のcanonical `[URL: Int]` snapshot。旧素辞書は後方互換で読込 |
-| `RecentFoldersStore.swift` | UserDefaults | `standardizedFileURL.path` の最近のフォルダ最大10件。旧path/bookmark defaultsを一度だけ移行 |
+| `RecentFoldersStore.swift` | UserDefaults | 字句正規化（`URL.standardized.path`）した最近のフォルダ最大10件。旧path/bookmark defaultsを一度だけ移行 |
 | `SettingsStore.swift` | UserDefaults | キャッシュサイズ、スライドショー間隔、前回の表示位置を確認するか |
 | `DiskCacheStore.swift` | `<folder>/.aiview/<original>.jpg` | サムネイル本体。詳細は [`04-thumbnail-cache.md`](04-thumbnail-cache.md) |
 | `FileSystemAccess.swift` | — | フォルダ削除・Trash への移動などの薄いラッパー |
@@ -158,13 +158,13 @@ Developer ID による**非 sandbox 配布**を維持し、sandbox entitlement f
 
 ### main thread でのfile I/O禁止
 
-SwiftUI描画・全件filter/firstIndex・兄弟/サブディレクトリ列挙などmain actor上の処理では、file systemに触れるURL APIを呼ばない。`standardizedFileURL`は`/private`解決のため`faccessat`/`stat`を、`resolvingSymlinksInPath`はpath成分ごとに`lstat`を発行し、NAS上ではcell描画や削除のたびにUI全体を固める（v0.10.0までの実測で確認）。
+SwiftUI描画・全件filter/firstIndex・兄弟/サブディレクトリ列挙などmain actor上の処理では、file systemに触れるURL APIを呼ばない。`standardizedFileURL`は`/private`解決のため`faccessat`/`stat`を、`resolvingSymlinksInPath`はpath成分ごとに`lstat`を発行し、NAS上ではcell描画や削除のたびにUI全体を固める（v0.10.0までの実測で確認）。`isDirectory:`を省略した`URL(fileURLWithPath:)`と`appendingPathComponent(_:)`もdirectory判定の`lstat`を発行する（v0.11.1のハングをsampleで確認）。URLは`isDirectory:`を明示して作り、`scripts/check-architecture.sh`がこれらのAPIの使用を拒否する。
 
 - URL同一性・favorites keyは字句比較（`URL.standardized`）に限定する
 - `FolderScanner`は列挙結果（`/var`→`/private/var`に解決され得る）を指定folderのprefixへ付け直し、scan由来URLとfavorites keyのprefixを揃える
 - 兄弟/サブディレクトリ列挙とfavorite存在確認は`nonisolated async`関数でmain actor外に出し、await後にsession一致を検証してからcommitする
 
-recent folderはplainな`standardizedFileURL.path`として履歴順・重複除去・最大10件で保存する。旧`recentFolderURLs`とbookmark dictionaryのpath keyは初回アクセス時に一度だけ正規化し、旧bookmark Dataを解決せず削除する。移行前valueはrollback用backup keyへ1 releaseだけ保持し、「履歴をクリア」ではbackupを含めて消去する。存在しないpathは外付けdiskやnetwork mountの再接続を考慮して自動削除せず、開いた時点で通常のnot-found errorを表示する。
+recent folderはplainな字句正規化path（`URL.standardized.path`）として履歴順・重複除去・最大10件で保存する。旧`recentFolderURLs`とbookmark dictionaryのpath keyは初回アクセス時に一度だけ正規化し、旧bookmark Dataを解決せず削除する。移行前valueはrollback用backup keyへ1 releaseだけ保持し、「履歴をクリア」ではbackupを含めて消去する。存在しないpathは外付けdiskやnetwork mountの再接続を考慮して自動削除せず、開いた時点で通常のnot-found errorを表示する。
 
 情報パネルのmetadata Taskは`BrowserSessionController`のgeneration slotが所有する。panel表示中のselection commitで旧Taskをcancelして再起動し、`BrowserSessionID + selection.loadID + normalized URL`がすべて現行の場合だけmetadata（AI promptを含む）をcommitする。panel close、privacy ON、folder/scene終了でもcancelする。読み込み中は`isLoadingMetadata`、失敗時は同じ現行性検証を通った場合だけ`metadataFailure`（分類済み`AppError`）を立て、panel内に表示する。ボリュームunmount時は`BrowserWindowSession`が操作Taskを、`BrowserSessionController.handleVolumeUnmount`がscan / load / prefetch / metadata / warming Taskとメモリキャッシュを一括で終了・破棄する（`02-features.md`の「ボリューム切断の検知」）。
 

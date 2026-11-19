@@ -23,7 +23,7 @@ enum FavoriteURLKey {
 
     nonisolated static func snapshot(folderURL: URL, favorites: [String: Int]) -> [URL: Int] {
         favorites.reduce(into: [:]) { result, entry in
-            let url = folderURL.appendingPathComponent(entry.key)
+            let url = folderURL.appendingPathComponent(entry.key, isDirectory: false)
             result[normalize(url)] = entry.value
         }
     }

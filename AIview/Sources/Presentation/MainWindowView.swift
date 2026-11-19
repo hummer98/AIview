@@ -125,9 +125,9 @@ struct MainWindowView: View {
         let environment = ProcessInfo.processInfo.environment
         if environment["AIVIEW_UI_TEST_MODE"] == "1",
            let folderPath = environment["AIVIEW_TEST_FOLDER"] {
-            session.openFolder(URL(fileURLWithPath: folderPath))
+            session.openFolder(URL(fileURLWithPath: folderPath, isDirectory: true))
         } else if !storedFolderPath.isEmpty, viewModel.currentFolderURL == nil {
-            session.openPath(URL(fileURLWithPath: storedFolderPath))
+            session.openPath(URL(fileURLWithPath: storedFolderPath, isDirectory: true))
         }
     }
 }
